@@ -57,11 +57,11 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
       interval: 30s
       timeout: 10s
       retries: 10
-      start_period: 90s
+      start_period: 30s
 
   # ── GraphQL API ───────────────────────────────────────────
   api:
@@ -101,8 +101,7 @@ services:
     container_name: music_edu_web
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_GRAPHQL_URL: http://api:4000/graphql
-      NEXT_PUBLIC_GRAPHQL_WS_URL: ws://api:4000/graphql
+      NEXT_PUBLIC_GRAPHQL_URL: /api/graphql
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-CHANGE_THIS_IN_PRODUCTION}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-musicedu-web}

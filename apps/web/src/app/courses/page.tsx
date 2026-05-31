@@ -1,8 +1,62 @@
 'use client';
 
-import { useQuery, gql } from '@apollo/client';
+import { gql, useQuery } from '@apollo/client';
+import { BookOpen, Clock, Star, Users } from 'lucide-react';
 import Link from 'next/link';
-import { BookOpen, Star, Clock, Users } from 'lucide-react';
+
+const fallbackCourses = [
+  {
+    id: 'fallback-1',
+    slug: 'piano-fundamentals',
+    title: 'Piano Fundamentals for Classical Beginners',
+    shortSummary: 'Build posture, hand position, and first repertoire pieces with structured guidance.',
+    thumbnailUrl: null,
+    price: 0,
+    currency: 'USD',
+    level: 'Beginner',
+    avgRating: 4.8,
+    totalReviews: 122,
+    totalEnrollments: 1860,
+    totalDurationMin: 280,
+    instruments: ['Piano'],
+    isFreeTier: true,
+    teacher: { id: 't1', headline: 'Piano Pedagogue', user: { displayName: 'Anna Keller', avatarUrl: null } },
+  },
+  {
+    id: 'fallback-2',
+    slug: 'ear-training-core',
+    title: 'Ear Training Core: Intervals, Chords, and Dictation',
+    shortSummary: 'Strengthen your listening for auditions, improvisation, and confident ensemble playing.',
+    thumbnailUrl: null,
+    price: 29,
+    currency: 'USD',
+    level: 'Intermediate',
+    avgRating: 4.7,
+    totalReviews: 94,
+    totalEnrollments: 1304,
+    totalDurationMin: 360,
+    instruments: ['All'],
+    isFreeTier: false,
+    teacher: { id: 't2', headline: 'Theory Specialist', user: { displayName: 'Marco De Luca', avatarUrl: null } },
+  },
+  {
+    id: 'fallback-3',
+    slug: 'baroque-performance-practice',
+    title: 'Baroque Performance Practice for Modern Musicians',
+    shortSummary: 'Learn articulation, ornamentation, and historical style to shape informed interpretations.',
+    thumbnailUrl: null,
+    price: 39,
+    currency: 'USD',
+    level: 'Advanced',
+    avgRating: 4.9,
+    totalReviews: 77,
+    totalEnrollments: 742,
+    totalDurationMin: 410,
+    instruments: ['Strings', 'Keyboard'],
+    isFreeTier: false,
+    teacher: { id: 't3', headline: 'Historically Informed Performance', user: { displayName: 'Elise Moreau', avatarUrl: null } },
+  },
+];
 
 const GET_COURSES = gql`
   query GetCourses($filter: CourseFilterInput, $page: Int, $limit: Int) {
@@ -59,9 +113,14 @@ function CourseCard({ course }: { course: any }) {
 }
 
 export default function CoursesPage() {
+  const liveApiEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_API === 'true';
   const { data, loading, error } = useQuery(GET_COURSES, {
     variables: { page: 1, limit: 12 },
+    skip: !liveApiEnabled,
   });
+  const courses = data?.courses?.nodes ?? fallbackCourses;
+  const totalCount = data?.courses?.pageInfo?.totalCount ?? fallbackCourses.length;
+  const usingFallback = !liveApiEnabled || Boolean(error) || !data;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -96,22 +155,32 @@ export default function CoursesPage() {
           </div>
         )}
 
-        {error && (
-          <p className="text-center text-red-500">Failed to load courses. Please try again.</p>
+        {!liveApiEnabled && (
+          <p className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+            Live API is disabled in this environment. Showing sample catalog data.
+          </p>
         )}
 
-        {data && (
+        {error && liveApiEnabled && (
+          <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Live API is currently unavailable. Showing sample catalog data.
+          </p>
+        )}
+
+        {!loading && (
           <>
-            <p className="mb-4 text-sm text-gray-500">{data.courses.pageInfo.totalCount} courses available</p>
+            <p className="mb-4 text-sm text-gray-500">
+              {totalCount} courses available{usingFallback ? ' (sample data)' : ''}
+            </p>
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {data.courses.nodes.map((course: any) => (
+              {courses.map((course: any) => (
                 <CourseCard key={course.id} course={course} />
               ))}
             </div>
           </>
         )}
 
-        {!loading && !error && data?.courses.nodes.length === 0 && (
+        {!loading && !error && courses.length === 0 && (
           <div className="py-20 text-center">
             <BookOpen className="mx-auto mb-4 h-12 w-12 text-gray-300" />
             <p className="text-gray-500">No courses available yet. Check back soon!</p>

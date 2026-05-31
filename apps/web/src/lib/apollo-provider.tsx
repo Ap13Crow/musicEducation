@@ -1,13 +1,16 @@
 'use client';
 
-import { ApolloClient, InMemoryCache, ApolloProvider, createHttpLink, split } from '@apollo/client';
+import { ApolloClient, ApolloProvider, createHttpLink, InMemoryCache, split } from '@apollo/client';
 import { setContext } from '@apollo/client/link/context';
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
-import { createClient } from 'graphql-ws';
 import { getMainDefinition } from '@apollo/client/utilities';
+import { createClient } from 'graphql-ws';
+
+const graphQlHttpUrl = process.env.NEXT_PUBLIC_GRAPHQL_URL ?? '/api/graphql';
+const graphQlWsUrl = process.env.NEXT_PUBLIC_GRAPHQL_WS_URL;
 
 const httpLink = createHttpLink({
-  uri: process.env.NEXT_PUBLIC_GRAPHQL_URL ?? 'http://localhost:4000/graphql',
+  uri: graphQlHttpUrl,
 });
 
 // NOTE: Tokens are read from localStorage for simplicity in this scaffold.
@@ -25,10 +28,10 @@ const authLink = setContext((_, { headers }) => {
 });
 
 const wsLink =
-  typeof window !== 'undefined'
+  typeof window !== 'undefined' && graphQlWsUrl
     ? new GraphQLWsLink(
         createClient({
-          url: process.env.NEXT_PUBLIC_GRAPHQL_WS_URL ?? 'ws://localhost:4000/graphql',
+          url: graphQlWsUrl,
           connectionParams: () => {
             const token = localStorage.getItem('accessToken');
             return token ? { authorization: 'Bearer ' + token } : {};
@@ -53,7 +56,7 @@ const client = new ApolloClient({
   link: splitLink,
   cache: new InMemoryCache(),
   defaultOptions: {
-    watchQuery: { fetchPolicy: 'cache-and-network' },
+    watchQuery: { fetchPolicy: 'cache-first' },
   },
 });
 
