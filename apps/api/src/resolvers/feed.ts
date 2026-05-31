@@ -37,26 +37,41 @@ export const feedResolvers = {
 
     async likeFeedPost(_: unknown, { postId }: any, { prisma, user }: GraphQLContext) {
       requireAuth(user);
+
+      // Check whether the like already existed before the upsert
+      const existing = await prisma.feedLike.findUnique({
+        where: { userId_postId: { userId: user.id, postId } },
+      });
+
       await prisma.feedLike.upsert({
         where: { userId_postId: { userId: user.id, postId } },
         update: {},
         create: { userId: user.id, postId },
       });
-      const post = await prisma.feedPost.update({
-        where: { id: postId },
-        data: { likesCount: { increment: 1 } },
-      });
-      return post;
+
+      // Only increment the counter when a new like was created (not on a no-op update)
+      if (!existing) {
+        return prisma.feedPost.update({
+          where: { id: postId },
+          data: { likesCount: { increment: 1 } },
+        });
+      }
+      return prisma.feedPost.findUniqueOrThrow({ where: { id: postId } });
     },
 
     async unlikeFeedPost(_: unknown, { postId }: any, { prisma, user }: GraphQLContext) {
       requireAuth(user);
-      await prisma.feedLike.deleteMany({ where: { userId: user.id, postId } });
-      const post = await prisma.feedPost.update({
-        where: { id: postId },
-        data: { likesCount: { decrement: 1 } },
-      });
-      return post;
+
+      const deleted = await prisma.feedLike.deleteMany({ where: { userId: user.id, postId } });
+
+      // Only decrement when a record was actually deleted to avoid negative counts
+      if (deleted.count > 0) {
+        return prisma.feedPost.update({
+          where: { id: postId },
+          data: { likesCount: { decrement: 1 } },
+        });
+      }
+      return prisma.feedPost.findUniqueOrThrow({ where: { id: postId } });
     },
 
     async commentOnPost(_: unknown, { postId, body }: any, { prisma, user }: GraphQLContext) {

@@ -3,7 +3,10 @@ import { GraphQLError } from 'graphql';
 import { requireAuth } from '../middleware/auth.js';
 import type { GraphQLContext } from '../types.js';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '', { apiVersion: '2024-04-10' });
+if (!process.env.STRIPE_SECRET_KEY) {
+  throw new Error('STRIPE_SECRET_KEY environment variable is required but was not set.');
+}
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-04-10' });
 
 export const paymentResolvers = {
   Mutation: {
