@@ -21,8 +21,7 @@ export const authResolvers = {
           email,
           username,
           displayName,
-          // Store hash in a secure field — in production use a separate credentials table
-          // For brevity, we store in a JSON profile annotation
+          credential: { create: { passwordHash } },
           profile: {
             create: {
               onboardingDone: false,
@@ -34,9 +33,6 @@ export const authResolvers = {
         include: { profile: true, gamification: true },
       });
 
-      // TODO: store passwordHash securely (separate credentials model or provider)
-      // For now, we rely on OIDC for production auth
-
       const accessToken = signAccessToken({ sub: user.id, role: user.role });
       const refreshToken = signRefreshToken(user.id);
 
@@ -44,11 +40,22 @@ export const authResolvers = {
     },
 
     async login(_: unknown, { email, password }: any, { prisma }: GraphQLContext) {
-      const user = await prisma.user.findUnique({ where: { email } });
-      if (!user) throw new GraphQLError('Invalid credentials.', { extensions: { code: 'UNAUTHENTICATED' } });
+      const user = await prisma.user.findUnique({
+        where: { email },
+        include: { credential: true },
+      });
+      // Use a generic error message to avoid user enumeration
+      const invalidErr = new GraphQLError('Invalid credentials.', { extensions: { code: 'UNAUTHENTICATED' } });
+      if (!user) throw invalidErr;
 
-      // TODO: compare stored hash (requires credentials model)
-      // For scaffolding purposes: production uses OIDC/SAML
+      if (user.credential) {
+        const valid = await bcrypt.compare(password, user.credential.passwordHash);
+        if (!valid) throw invalidErr;
+      } else {
+        // User registered via OIDC — local password login is not supported
+        throw new GraphQLError('Please sign in with your identity provider.', { extensions: { code: 'UNAUTHENTICATED' } });
+      }
+
       const accessToken = signAccessToken({ sub: user.id, role: user.role });
       const refreshToken = signRefreshToken(user.id);
       return { accessToken, refreshToken, user };
@@ -82,7 +89,7 @@ export const authResolvers = {
     },
 
     async resetPassword(_: unknown, { token: _token, newPassword: _pw }: any) {
-      // TODO: validate token from Redis, update password hash
+      // TODO: validate token from Redis, update password hash in UserCredential
       return true;
     },
 

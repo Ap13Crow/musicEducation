@@ -51,7 +51,10 @@ spec:
               mountPath: /var/lib/postgresql/data
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", "musicedu"]
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER"
             initialDelaySeconds: 10
             periodSeconds: 5
   volumeClaimTemplates:

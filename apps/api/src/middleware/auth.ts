@@ -2,7 +2,26 @@ import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import type { PrismaClient, User } from '@music-edu/database';
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'CHANGE_THIS_SECRET_IN_PRODUCTION';
+/** Lightweight user stub attached to every authenticated request */
+export interface AuthUser {
+  id: string;
+  role: string;
+}
+
+// Extend Express Request to include the authenticated user stub
+declare global {
+  namespace Express {
+    interface Request {
+      user?: AuthUser;
+    }
+  }
+}
+
+// Fail fast if JWT_SECRET is not configured — never fall back to a weak default.
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required but was not set.');
+}
+const JWT_SECRET = process.env.JWT_SECRET;
 
 export interface TokenPayload {
   sub: string;  // userId
@@ -45,21 +64,21 @@ export async function authMiddleware(req: Request, _res: Response, next: NextFun
     const payload = verifyToken(token);
     if (payload) {
       // Attach a lightweight user stub; full object fetched in context if needed
-      (req as any).user = { id: payload.sub, role: payload.role };
+      req.user = { id: payload.sub, role: payload.role };
     }
   }
   next();
 }
 
 /** Throw if the context has no authenticated user */
-export function requireAuth(user: User | null): asserts user is User {
+export function requireAuth(user: AuthUser | null): asserts user is AuthUser {
   if (!user) {
     throw new Error('UNAUTHENTICATED: You must be logged in.');
   }
 }
 
 /** Throw if the user does not have the required role */
-export function requireRole(user: User | null, ...roles: string[]) {
+export function requireRole(user: AuthUser | null, ...roles: string[]) {
   requireAuth(user);
   if (!roles.includes(user.role)) {
     throw new Error(`FORBIDDEN: Requires role ${roles.join(' or ')}.`);

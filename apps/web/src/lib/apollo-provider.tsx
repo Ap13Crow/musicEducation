@@ -10,6 +10,10 @@ const httpLink = createHttpLink({
   uri: process.env.NEXT_PUBLIC_GRAPHQL_URL ?? 'http://localhost:4000/graphql',
 });
 
+// NOTE: Tokens are read from localStorage for simplicity in this scaffold.
+// In production, prefer httpOnly cookies set by the API (Keycloak OIDC session)
+// to prevent XSS-based token theft. If localStorage must be used, ensure the
+// application has strict Content-Security-Policy headers in place.
 const authLink = setContext((_, { headers }) => {
   const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
   return {

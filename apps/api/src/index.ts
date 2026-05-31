@@ -99,7 +99,6 @@ async function bootstrap() {
     expressMiddleware(apolloServer, {
       context: async ({ req }): Promise<GraphQLContext> => ({
         prisma,
-        // @ts-ignore — user attached by authMiddleware
         user: req.user ?? null,
         req,
       }),

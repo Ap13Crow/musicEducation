@@ -7,7 +7,7 @@ export const bookingResolvers = {
     async myBookings(_: unknown, { status, page = 1, limit = 20 }: any, { prisma, user }: GraphQLContext) {
       requireAuth(user);
       const where: any = {
-        OR: [{ studentId: user.id }, { teacherUserId: user.id }],
+        OR: [{ studentId: user.id }, { teacherId: user.id }],
       };
       if (status) where.status = status;
 
@@ -19,7 +19,7 @@ export const bookingResolvers = {
       requireAuth(user);
       const booking = await prisma.booking.findUnique({ where: { id } });
       if (!booking) throw new GraphQLError('Booking not found.', { extensions: { code: 'NOT_FOUND' } });
-      if (booking.studentId !== user.id && booking.teacherUserId !== user.id) {
+      if (booking.studentId !== user.id && booking.teacherId !== user.id) {
         throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
       }
       return booking;
@@ -45,7 +45,7 @@ export const bookingResolvers = {
       // Check for conflicts
       const conflict = await prisma.booking.findFirst({
         where: {
-          teacherUserId: teacherProfile.userId,
+          teacherId: teacherProfile.userId,
           status: { in: ['PENDING', 'CONFIRMED'] },
           AND: [{ startsAt: { lt: endsAt } }, { endsAt: { gt: startsAtDate } }],
         },
@@ -55,7 +55,7 @@ export const bookingResolvers = {
       const booking = await prisma.booking.create({
         data: {
           studentId: user.id,
-          teacherUserId: teacherProfile.userId,
+          teacherId: teacherProfile.userId,
           teacherProfileId,
           startsAt: startsAtDate,
           endsAt,
@@ -74,7 +74,7 @@ export const bookingResolvers = {
       requireAuth(user);
       const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
       if (!booking) throw new GraphQLError('Booking not found.', { extensions: { code: 'NOT_FOUND' } });
-      if (booking.teacherUserId !== user.id) throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
+      if (booking.teacherId !== user.id) throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
       return prisma.booking.update({ where: { id: bookingId }, data: { status: 'CONFIRMED' } });
     },
 
@@ -82,7 +82,7 @@ export const bookingResolvers = {
       requireAuth(user);
       const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
       if (!booking) throw new GraphQLError('Booking not found.', { extensions: { code: 'NOT_FOUND' } });
-      if (booking.studentId !== user.id && booking.teacherUserId !== user.id) {
+      if (booking.studentId !== user.id && booking.teacherId !== user.id) {
         throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
       }
       return prisma.booking.update({ where: { id: bookingId }, data: { status: 'CANCELLED' } });
@@ -92,7 +92,7 @@ export const bookingResolvers = {
       requireAuth(user);
       const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
       if (!booking) throw new GraphQLError('Booking not found.', { extensions: { code: 'NOT_FOUND' } });
-      if (booking.teacherUserId !== user.id) throw new GraphQLError('Only the teacher can create the Zoom meeting.', { extensions: { code: 'FORBIDDEN' } });
+      if (booking.teacherId !== user.id) throw new GraphQLError('Only the teacher can create the Zoom meeting.', { extensions: { code: 'FORBIDDEN' } });
 
       // TODO: integrate with Zoom API using teacher's zoomUserId
       // For now, return a stub — replace with real Zoom API call

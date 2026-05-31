@@ -48,7 +48,12 @@ export const eventResolvers = {
       // PostgreSQL haversine approximation using raw query
       const skip = (page - 1) * limit;
       const nodes = await prisma.$queryRaw<any[]>`
-        SELECT * FROM "Event"
+        SELECT
+          "id", "title", "slug", "description", "venueType", "venueName",
+          "venueAddress", "latitude", "longitude", "startsAt", "endsAt",
+          "ticketPrice", "ticketCurrency", "totalCapacity", "availableCapacity",
+          "imageUrl", "isPublished", "organizerId", "createdAt", "updatedAt"
+        FROM "Event"
         WHERE "isPublished" = true
           AND "latitude" IS NOT NULL
           AND (
