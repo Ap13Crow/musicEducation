@@ -1,0 +1,55 @@
+{
+  "realm": "musicedu",
+  "enabled": true,
+  "displayName": "Music Education Platform",
+  "displayNameHtml": "<b>🎵 MusicEdu</b>",
+  "accessTokenLifespan": 900,
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "rememberMe": true,
+  "verifyEmail": true,
+  "loginWithEmailAllowed": true,
+  "sslRequired": "external",
+  "clients": [
+    {
+      "clientId": "musicedu-web",
+      "name": "MusicEdu Web App",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "https://musicedu.app/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "https://musicedu.app"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    },
+    {
+      "clientId": "musicedu-api",
+      "name": "MusicEdu API",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect"
+    }
+  ],
+  "roles": {
+    "realm": [
+      { "name": "GUEST", "description": "Unauthenticated guest user" },
+      { "name": "STUDENT", "description": "Registered student" },
+      { "name": "TEACHER", "description": "Certified teacher" },
+      { "name": "ADMIN", "description": "Platform administrator" }
+    ]
+  },
+  "defaultRoles": ["STUDENT"]
+}
