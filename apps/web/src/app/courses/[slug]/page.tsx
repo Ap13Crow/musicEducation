@@ -113,7 +113,13 @@ export default function CourseDetailPage() {
     skip: !liveApiEnabled,
   });
 
-  const course = data?.course ?? (slug === fallbackCourse.slug ? fallbackCourse : { ...fallbackCourse, slug, title: slug.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) });
+  function getFallbackCourse(courseSlug: string) {
+    if (courseSlug === fallbackCourse.slug) return fallbackCourse;
+    const title = courseSlug.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+    return { ...fallbackCourse, slug: courseSlug, title };
+  }
+
+  const course = data?.course ?? getFallbackCourse(slug);
 
   if (loading) {
     return (
