@@ -39,6 +39,7 @@ export const userResolvers = {
         if (filter.maxHourlyRate !== undefined) where.hourlyRate = { lte: filter.maxHourlyRate };
         if (filter.minRating !== undefined) where.avgRating = { gte: filter.minRating };
         if (filter.isAvailable !== undefined) where.isAvailable = filter.isAvailable;
+        if (filter.minExperience !== undefined) where.yearsExperience = { gte: filter.minExperience };
         if (filter.search) {
           where.OR = [
             { headline: { contains: filter.search, mode: 'insensitive' } },
