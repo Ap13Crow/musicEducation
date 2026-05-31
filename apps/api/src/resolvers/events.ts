@@ -49,10 +49,15 @@ export const eventResolvers = {
       const skip = (page - 1) * limit;
       const nodes = await prisma.$queryRaw<any[]>`
         SELECT
-          "id", "title", "slug", "description", "venueType", "venueName",
-          "venueAddress", "latitude", "longitude", "startsAt", "endsAt",
-          "ticketPrice", "ticketCurrency", "totalCapacity", "availableCapacity",
-          "imageUrl", "isPublished", "organizerId", "createdAt", "updatedAt"
+          "id", "title", "slug", "description", "type", "format",
+          "instruments", "musicStyles", "skillLevels",
+          "thumbnailUrl", "videoStreamUrl",
+          "startsAt", "endsAt", "timezone",
+          "venueName", "venueAddress", "city", "country",
+          "latitude", "longitude", "onlineMeetingUrl",
+          "price", "currency",
+          "maxCapacity", "currentCapacity",
+          "isPublished", "publisherId", "createdAt", "updatedAt"
         FROM "Event"
         WHERE "isPublished" = true
           AND "latitude" IS NOT NULL
