@@ -223,7 +223,7 @@ export default function TeachersPage() {
 
   const filter: any = {};
   if (activeInstrument) filter.instrument = activeInstrument;
-  if (activeFormat) filter.format = activeFormat.toUpperCase();
+  if (activeFormat) filter.format = activeFormat.toUpperCase().replace('-', '_');
   if (minRating !== undefined) filter.minRating = minRating;
   if (availableOnly) filter.isAvailable = true;
   if (searchQuery) filter.search = searchQuery;

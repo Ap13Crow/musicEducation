@@ -407,6 +407,7 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
 export default function AdminPage() {
   const { data: session, status } = useSession();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const isAdmin = (session as any)?.roles?.includes('ADMIN');
 
   if (status === 'loading') {
     return (
@@ -416,7 +417,7 @@ export default function AdminPage() {
     );
   }
 
-  if (status === 'unauthenticated') {
+  if (status === 'unauthenticated' || (status === 'authenticated' && !isAdmin)) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6">
         <div className="card max-w-md p-8 text-center">

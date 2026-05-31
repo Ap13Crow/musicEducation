@@ -15,11 +15,19 @@ const authOptions: NextAuthOptions = {
       if (account) {
         token.accessToken = account.access_token;
         token.idToken = account.id_token;
+        // Extract roles from Keycloak realm_access
+        try {
+          const payload = JSON.parse(Buffer.from(account.access_token.split('.')[1], 'base64').toString());
+          token.roles = payload.realm_access?.roles ?? [];
+        } catch {
+          token.roles = [];
+        }
       }
       return token;
     },
     async session({ session, token }: any) {
       session.accessToken = token.accessToken;
+      session.roles = token.roles ?? [];
       return session;
     },
   },

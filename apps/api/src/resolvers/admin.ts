@@ -70,8 +70,8 @@ export const adminResolvers = {
 
     async adminDeleteUser(_: unknown, { userId }: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'ADMIN');
-      // Prevent self-deletion
-      if (userId === user!.id) {
+      // Prevent self-deletion — user is guaranteed non-null after requireRole
+      if (user && userId === user.id) {
         throw new Error('Cannot delete your own account.');
       }
       await prisma.user.delete({ where: { id: userId } });
