@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter, Playfair_Display } from 'next/font/google';
 import { ApolloWrapper } from '@/lib/apollo-provider';
 import { AuthProvider } from '@/lib/auth-provider';
+import Navbar from '@/components/Navbar';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
@@ -22,7 +23,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${inter.variable} ${playfair.variable}`}>
       <body className="min-h-screen bg-white font-sans antialiased">
         <AuthProvider>
-          <ApolloWrapper>{children}</ApolloWrapper>
+          <ApolloWrapper>
+            <Navbar />
+            {children}
+          </ApolloWrapper>
         </AuthProvider>
       </body>
     </html>
