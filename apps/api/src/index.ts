@@ -14,6 +14,11 @@ import { PrismaClient } from '@music-edu/database';
 import { resolvers } from './resolvers/index.js';
 import { authMiddleware, getUser } from './middleware/auth.js';
 import { logger } from './utils/logger.js';
+import {
+  createPretixWebhookHandler,
+  createLibreBookingWebhookHandler,
+  PretixAdapter,
+} from './integrations/index.js';
 import type { GraphQLContext } from './types.js';
 
 const typeDefs = readFileSync(
@@ -47,6 +52,17 @@ async function bootstrap() {
 
   // ── Auth middleware ────────────────────────────────────────
   app.use(authMiddleware);
+
+  // ── Integration webhook endpoints ────────────────────────
+  const pretixAdapter = process.env.PRETIX_API_TOKEN
+    ? new PretixAdapter(
+        process.env.PRETIX_URL ?? 'http://pretix:8345',
+        process.env.PRETIX_API_TOKEN,
+      )
+    : null;
+
+  app.post('/webhooks/pretix', createPretixWebhookHandler(prisma, pretixAdapter));
+  app.post('/webhooks/librebooking', createLibreBookingWebhookHandler(prisma));
 
   // ── Health check ──────────────────────────────────────────
   app.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
