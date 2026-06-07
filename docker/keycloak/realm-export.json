@@ -17,10 +17,12 @@
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
+        "http://app.musicedu.test/*",
         "http://localhost:3000/*",
         "https://musicedu.app/*"
       ],
       "webOrigins": [
+        "http://app.musicedu.test",
         "http://localhost:3000",
         "https://musicedu.app"
       ],
@@ -41,6 +43,68 @@
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "protocol": "openid-connect"
+    },
+    {
+      "clientId": "moodle-oidc",
+      "name": "Moodle LMS (OIDC Login)",
+      "description": "OpenID Connect client for Moodle single sign-on",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "http://learn.musicedu.test/admin/oauth2callback.php",
+        "http://learn.musicedu.test/auth/oidc/*"
+      ],
+      "webOrigins": [
+        "http://learn.musicedu.test"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    },
+    {
+      "clientId": "pretix-oidc",
+      "name": "pretix (Customer Account OIDC Login)",
+      "description": "OpenID Connect client for pretix customer-account SSO",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "http://tickets.musicedu.test/oidc/callback/",
+        "http://tickets.musicedu.test/account/*"
+      ],
+      "webOrigins": [
+        "http://tickets.musicedu.test"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    },
+    {
+      "clientId": "librebooking-saml",
+      "name": "LibreBooking (OAuth2 / SAML)",
+      "description": "OAuth2 or SAML client for LibreBooking scheduling SSO",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "http://booking.musicedu.test/*"
+      ],
+      "webOrigins": [
+        "http://booking.musicedu.test"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
     }
   ],
   "roles": {
