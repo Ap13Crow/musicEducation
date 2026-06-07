@@ -1,6 +1,44 @@
+# ============================================================
+# MusicEdu Platform — Full Stack (docker compose up)
+# ============================================================
+# Only the gateway (Caddy) is exposed on 0.0.0.0.
+# All other services listen on the internal Docker network.
+# ============================================================
+
 services:
-  # ── PostgreSQL ────────────────────────────────────────────
-  postgres:
+
+  # ── Gateway / Reverse Proxy (Caddy) ────────────────────────
+  gateway:
+    image: caddy:2.8-alpine
+    container_name: music_edu_gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      moodle:
+        condition: service_started
+      librebooking:
+        condition: service_started
+      pretix:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── PostgreSQL (main platform DB) ──────────────────────────
+  postgres-main:
     image: postgres:16-alpine
     container_name: music_edu_postgres
     restart: unless-stopped
@@ -9,32 +47,32 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-musicedu_dev_pw}
       POSTGRES_DB: ${POSTGRES_DB:-musicedu}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+      - postgres_main_data:/var/lib/postgresql/data
+    expose:
+      - "5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-musicedu}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # ── Redis ─────────────────────────────────────────────────
-  redis:
+  # ── Redis (main platform cache / pub-sub) ──────────────────
+  redis-main:
     image: redis:7-alpine
     container_name: music_edu_redis
     restart: unless-stopped
     command: redis-server --requirepass ${REDIS_PASSWORD:-redis_dev_pw}
     volumes:
-      - redis_data:/data
-    ports:
-      - "6379:6379"
+      - redis_main_data:/data
+    expose:
+      - "6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_dev_pw}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # ── Keycloak (OpenID Connect / SAML provider) ────────────
+  # ── Keycloak (central identity provider) ───────────────────
   keycloak:
     image: quay.io/keycloak/keycloak:24.0
     container_name: music_edu_keycloak
@@ -44,17 +82,18 @@ services:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin_dev_pw}
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-musicedu}
+      KC_DB_URL: jdbc:postgresql://postgres-main:5432/${POSTGRES_DB:-musicedu}
       KC_DB_USERNAME: ${POSTGRES_USER:-musicedu}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-musicedu_dev_pw}
-      KC_HOSTNAME: localhost
+      KC_HOSTNAME: auth.musicedu.test
       KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
     volumes:
       - ./docker/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     depends_on:
-      postgres:
+      postgres-main:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
@@ -63,7 +102,7 @@ services:
       retries: 10
       start_period: 30s
 
-  # ── GraphQL API ───────────────────────────────────────────
+  # ── GraphQL API ────────────────────────────────────────────
   api:
     build:
       context: .
@@ -71,27 +110,37 @@ services:
     container_name: music_edu_api
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-musicedu}:${POSTGRES_PASSWORD:-musicedu_dev_pw}@postgres:5432/${POSTGRES_DB:-musicedu}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev_pw}@redis:6379
+      DATABASE_URL: postgresql://${POSTGRES_USER:-musicedu}:${POSTGRES_PASSWORD:-musicedu_dev_pw}@postgres-main:5432/${POSTGRES_DB:-musicedu}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev_pw}@redis-main:6379
       JWT_SECRET: ${JWT_SECRET:-CHANGE_THIS_IN_PRODUCTION_PLEASE}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-      CALENDLY_ACCESS_TOKEN: ${CALENDLY_ACCESS_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       ZOOM_API_KEY: ${ZOOM_API_KEY:-}
       ZOOM_API_SECRET: ${ZOOM_API_SECRET:-}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      # ── Integration layer ────────────────────────────────
+      PRETIX_URL: ${PRETIX_URL:-http://pretix:8345}
+      PRETIX_API_TOKEN: ${PRETIX_API_TOKEN:-}
+      PRETIX_ORGANISER_SLUG: ${PRETIX_ORGANISER_SLUG:-musicedu}
+      MOODLE_URL: ${MOODLE_URL:-http://moodle:8080}
+      MOODLE_WS_TOKEN: ${MOODLE_WS_TOKEN:-}
+      LIBREBOOKING_URL: ${LIBREBOOKING_URL:-http://librebooking:80}
+      LIBREBOOKING_API_USER: ${LIBREBOOKING_API_USER:-admin}
+      LIBREBOOKING_API_PASSWORD: ${LIBREBOOKING_API_PASSWORD:-}
+      PRETIX_WEBHOOK_SECRET: ${PRETIX_WEBHOOK_SECRET:-}
+      # ── General ──────────────────────────────────────────
+      FRONTEND_URL: ${FRONTEND_URL:-http://app.musicedu.test}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://app.musicedu.test}
       PORT: 4000
       NODE_ENV: ${NODE_ENV:-development}
-    ports:
-      - "4000:4000"
+    expose:
+      - "4000"
     depends_on:
-      postgres:
+      postgres-main:
         condition: service_healthy
-      redis:
+      redis-main:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:4000/health || exit 1"]
@@ -100,7 +149,7 @@ services:
       retries: 5
       start_period: 30s
 
-  # ── Next.js Web App ───────────────────────────────────────
+  # ── Next.js Web App ────────────────────────────────────────
   web:
     build:
       context: .
@@ -109,13 +158,14 @@ services:
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_GRAPHQL_URL: /api/graphql
-      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://app.musicedu.test}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-CHANGE_THIS_IN_PRODUCTION}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-musicedu-web}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://keycloak:8080/realms/musicedu}
-    ports:
-      - "3000:3000"
+      NEXT_PUBLIC_PRETIX_WIDGET_URL: ${NEXT_PUBLIC_PRETIX_WIDGET_URL:-http://tickets.musicedu.test}
+    expose:
+      - "3000"
     depends_on:
       api:
         condition: service_healthy
@@ -132,14 +182,14 @@ services:
       DEEPSEEK_API_URL: ${DEEPSEEK_API_URL:-https://api.deepseek.com/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-musicedu}:${POSTGRES_PASSWORD:-musicedu_dev_pw}@postgres:5432/${POSTGRES_DB:-musicedu}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-musicedu}:${POSTGRES_PASSWORD:-musicedu_dev_pw}@postgres-main:5432/${POSTGRES_DB:-musicedu}
     stdin_open: true
     tty: true
     depends_on:
-      postgres:
+      postgres-main:
         condition: service_healthy
 
-  # ── MinIO (object storage for media uploads) ──────────────
+  # ── MinIO (object storage) ────────────────────────────────
   minio:
     image: minio/minio:RELEASE.2024-06-13T22-53-53Z
     container_name: music_edu_minio
@@ -150,20 +200,211 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_dev_pw}
     volumes:
       - minio_data:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+    expose:
+      - "9000"
+      - "9001"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 30s
       timeout: 20s
       retries: 3
 
-volumes:
-  postgres_data:
-  redis_data:
-  minio_data:
+  # ══════════════════════════════════════════════════════════
+  #  MOODLE (online-learning core)
+  # ══════════════════════════════════════════════════════════
 
+  moodle:
+    build:
+      context: ./docker/moodle
+      dockerfile: Dockerfile
+    container_name: music_edu_moodle
+    restart: unless-stopped
+    environment:
+      MOODLE_DATABASE_TYPE: pgsql
+      MOODLE_DATABASE_HOST: moodle-db
+      MOODLE_DATABASE_PORT_NUMBER: 5432
+      MOODLE_DATABASE_USER: ${MOODLE_DB_USER:-moodle}
+      MOODLE_DATABASE_PASSWORD: ${MOODLE_DB_PASSWORD:-moodle_dev_pw}
+      MOODLE_DATABASE_NAME: ${MOODLE_DB_NAME:-moodle}
+      MOODLE_USERNAME: ${MOODLE_ADMIN_USER:-admin}
+      MOODLE_PASSWORD: ${MOODLE_ADMIN_PASSWORD:-moodle_admin_pw}
+      MOODLE_EMAIL: ${MOODLE_ADMIN_EMAIL:-admin@musicedu.app}
+      MOODLE_SITE_NAME: "MusicEdu Learning"
+      MOODLE_SSLPROXY: "true"
+      MOODLE_HOST: learn.musicedu.test
+    volumes:
+      - moodle_data:/bitnami/moodle
+      - moodle_moodledata:/bitnami/moodledata
+    expose:
+      - "8080"
+    depends_on:
+      moodle-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/login/index.php || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  moodle-db:
+    image: postgres:16-alpine
+    container_name: music_edu_moodle_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${MOODLE_DB_USER:-moodle}
+      POSTGRES_PASSWORD: ${MOODLE_DB_PASSWORD:-moodle_dev_pw}
+      POSTGRES_DB: ${MOODLE_DB_NAME:-moodle}
+    volumes:
+      - moodle_db_data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MOODLE_DB_USER:-moodle}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ══════════════════════════════════════════════════════════
+  #  LIBREBOOKING (physical lesson scheduling core)
+  # ══════════════════════════════════════════════════════════
+
+  librebooking:
+    build:
+      context: ./docker/librebooking
+      dockerfile: Dockerfile
+    container_name: music_edu_librebooking
+    restart: unless-stopped
+    environment:
+      LIBREBOOKING_DB_HOST: librebooking-db
+      LIBREBOOKING_DB_USER: ${LIBREBOOKING_DB_USER:-librebooking}
+      LIBREBOOKING_DB_PASSWORD: ${LIBREBOOKING_DB_PASSWORD:-librebooking_dev_pw}
+      LIBREBOOKING_DB_NAME: ${LIBREBOOKING_DB_NAME:-librebooking}
+      LIBREBOOKING_APP_TITLE: "MusicEdu Booking"
+      LIBREBOOKING_TIMEZONE: ${LIBREBOOKING_TIMEZONE:-Europe/Zurich}
+      LIBREBOOKING_SCRIPT_URL: http://booking.musicedu.test
+      LIBREBOOKING_ADMIN_EMAIL: ${LIBREBOOKING_ADMIN_EMAIL:-admin@musicedu.app}
+    expose:
+      - "80"
+    depends_on:
+      librebooking-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  librebooking-db:
+    image: mariadb:11.4
+    container_name: music_edu_librebooking_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${LIBREBOOKING_DB_ROOT_PASSWORD:-librebooking_root_pw}
+      MYSQL_DATABASE: ${LIBREBOOKING_DB_NAME:-librebooking}
+      MYSQL_USER: ${LIBREBOOKING_DB_USER:-librebooking}
+      MYSQL_PASSWORD: ${LIBREBOOKING_DB_PASSWORD:-librebooking_dev_pw}
+    volumes:
+      - librebooking_db_data:/var/lib/mysql
+    expose:
+      - "3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ══════════════════════════════════════════════════════════
+  #  PRETIX (event ticketing core)
+  # ══════════════════════════════════════════════════════════
+
+  pretix:
+    build:
+      context: ./docker/pretix
+      dockerfile: Dockerfile
+    container_name: music_edu_pretix
+    restart: unless-stopped
+    environment:
+      PRETIX_INSTANCE_NAME: "MusicEdu Tickets"
+      PRETIX_URL: http://tickets.musicedu.test
+      PRETIX_CURRENCY: ${PRETIX_CURRENCY:-CHF}
+      PRETIX_DB_HOST: pretix-db
+      PRETIX_DB_USER: ${PRETIX_DB_USER:-pretix}
+      PRETIX_DB_PASSWORD: ${PRETIX_DB_PASSWORD:-pretix_dev_pw}
+      PRETIX_DB_NAME: ${PRETIX_DB_NAME:-pretix}
+      PRETIX_REDIS_HOST: pretix-redis
+      PRETIX_REDIS_PASSWORD: ${PRETIX_REDIS_PASSWORD:-pretix_redis_pw}
+      PRETIX_MAIL_FROM: ${PRETIX_MAIL_FROM:-tickets@musicedu.app}
+      PRETIX_MAIL_HOST: ${PRETIX_MAIL_HOST:-localhost}
+      PRETIX_MAIL_PORT: ${PRETIX_MAIL_PORT:-587}
+      PRETIX_MAIL_USER: ${PRETIX_MAIL_USER:-}
+      PRETIX_MAIL_PASSWORD: ${PRETIX_MAIL_PASSWORD:-}
+    volumes:
+      - pretix_data:/data
+    expose:
+      - "8345"
+    depends_on:
+      pretix-db:
+        condition: service_healthy
+      pretix-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8345/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  pretix-db:
+    image: postgres:16-alpine
+    container_name: music_edu_pretix_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PRETIX_DB_USER:-pretix}
+      POSTGRES_PASSWORD: ${PRETIX_DB_PASSWORD:-pretix_dev_pw}
+      POSTGRES_DB: ${PRETIX_DB_NAME:-pretix}
+    volumes:
+      - pretix_db_data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PRETIX_DB_USER:-pretix}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pretix-redis:
+    image: redis:7-alpine
+    container_name: music_edu_pretix_redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${PRETIX_REDIS_PASSWORD:-pretix_redis_pw}
+    volumes:
+      - pretix_redis_data:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${PRETIX_REDIS_PASSWORD:-pretix_redis_pw}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ── Volumes ──────────────────────────────────────────────────
+volumes:
+  caddy_data:
+  caddy_config:
+  postgres_main_data:
+  redis_main_data:
+  minio_data:
+  moodle_data:
+  moodle_moodledata:
+  moodle_db_data:
+  librebooking_db_data:
+  pretix_data:
+  pretix_db_data:
+  pretix_redis_data:
+
+# ── Network ──────────────────────────────────────────────────
 networks:
   default:
     name: music_edu_network
