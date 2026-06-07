@@ -117,8 +117,8 @@ export const feedResolvers = {
       ]);
       return { nodes, pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount } };
     },
-    async mediaItems(post: any, _: unknown, { prisma }: GraphQLContext) {
-      return prisma.mediaItem.findMany({ where: { feedPostId: post.id } });
+    mediaUrls(post: any) {
+      return post.mediaUrls ?? [];
     },
   },
 };

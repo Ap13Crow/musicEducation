@@ -4,6 +4,9 @@ set -e
 # ── Generate pretix.cfg from environment variables ───────────
 mkdir -p /etc/pretix
 
+DB_PASS="${PRETIX_DB_PASSWORD:-pretix_dev_pw}"
+MAIL_PASS="${PRETIX_MAIL_PASSWORD:-}"
+
 cat > /etc/pretix/pretix.cfg << EOCFG
 [pretix]
 instance_name=${PRETIX_INSTANCE_NAME:-MusicEdu Tickets}
@@ -17,7 +20,7 @@ trust_x_forwarded_proto=on
 backend=postgresql
 name=${PRETIX_DB_NAME:-pretix}
 user=${PRETIX_DB_USER:-pretix}
-******
+password=$DB_PASS
 host=${PRETIX_DB_HOST:-pretix-db}
 port=5432
 
@@ -26,7 +29,7 @@ from=${PRETIX_MAIL_FROM:-tickets@musicedu.app}
 host=${PRETIX_MAIL_HOST:-localhost}
 port=${PRETIX_MAIL_PORT:-587}
 user=${PRETIX_MAIL_USER:-}
-******
+password=$MAIL_PASS
 tls=on
 
 [redis]

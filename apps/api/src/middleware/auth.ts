@@ -8,11 +8,12 @@ export interface AuthUser {
   role: string;
 }
 
-// Extend Express Request to include the authenticated user stub
+// Merge AuthUser into Express.User so it's compatible with @types/passport
 declare global {
   namespace Express {
-    interface Request {
-      user?: AuthUser;
+    interface User {
+      id: string;
+      role: string;
     }
   }
 }

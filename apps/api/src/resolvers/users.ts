@@ -11,17 +11,17 @@ export const userResolvers = {
       });
     },
 
-    async user(_: unknown, { id, username }: any, { prisma }: GraphQLContext) {
+    async user(_: unknown, { id, email }: any, { prisma }: GraphQLContext) {
       if (id) return prisma.user.findUnique({ where: { id }, include: { profile: true, teacherProfile: true } });
-      if (username) return prisma.user.findUnique({ where: { username }, include: { profile: true, teacherProfile: true } });
+      if (email) return prisma.user.findUnique({ where: { email }, include: { profile: true, teacherProfile: true } });
       return null;
     },
 
     async searchUsers(_: unknown, { query, role, page = 1, limit = 20 }: any, { prisma }: GraphQLContext) {
       const where: any = {
         OR: [
-          { displayName: { contains: query, mode: 'insensitive' } },
-          { username: { contains: query, mode: 'insensitive' } },
+          { profile: { displayName: { contains: query, mode: 'insensitive' } } },
+          { email: { contains: query, mode: 'insensitive' } },
         ],
       };
       if (role) where.role = role;
@@ -32,18 +32,12 @@ export const userResolvers = {
       const where: any = { isAvailable: true };
       if (filter) {
         if (filter.instrument) where.instruments = { has: filter.instrument };
-        if (filter.specialization) where.specializations = { has: filter.specialization };
-        if (filter.city) where.locationCity = { contains: filter.city, mode: 'insensitive' };
-        if (filter.country) where.locationCountry = filter.country;
-        if (filter.format) where.teachingFormats = { has: filter.format };
         if (filter.maxHourlyRate !== undefined) where.hourlyRate = { lte: filter.maxHourlyRate };
         if (filter.minRating !== undefined) where.avgRating = { gte: filter.minRating };
         if (filter.isAvailable !== undefined) where.isAvailable = filter.isAvailable;
-        if (filter.minExperience !== undefined) where.yearsExperience = { gte: filter.minExperience };
         if (filter.search) {
           where.OR = [
-            { headline: { contains: filter.search, mode: 'insensitive' } },
-            { teachingBio: { contains: filter.search, mode: 'insensitive' } },
+            { bio: { contains: filter.search, mode: 'insensitive' } },
           ];
         }
       }
@@ -63,30 +57,27 @@ export const userResolvers = {
   Mutation: {
     async updateProfile(_: unknown, { input }: any, { prisma, user }: GraphQLContext) {
       requireAuth(user);
-      const { displayName, bio, city, country, timezone, instruments, musicStyles } = input;
-      const updatedUser = await prisma.user.update({
+      const { displayName, bio, city, country, instruments, musicStyles } = input;
+      return prisma.user.update({
         where: { id: user.id },
         data: {
-          ...(displayName && { displayName }),
           profile: {
             upsert: {
-              create: { bio, city, country, timezone: timezone ?? 'UTC', instruments: instruments ?? [], musicStyles: musicStyles ?? [] },
-              update: { bio, city, country, timezone, instruments, musicStyles },
+              create: { displayName, bio, city, country, instruments: instruments ?? [], musicStyles: musicStyles ?? [] },
+              update: { displayName, bio, city, country, instruments, musicStyles },
             },
           },
         },
         include: { profile: true, teacherProfile: true, gamification: true },
       });
-      return updatedUser;
     },
 
-    async applyAsTeacher(_: unknown, { input }: any, { prisma, user }: GraphQLContext) {
+    async applyAsTeacher(_: unknown, _input: any, { prisma, user }: GraphQLContext) {
       requireAuth(user);
-      // Upsert teacher profile and update role
       const [teacherProfile] = await prisma.$transaction([
         prisma.teacherProfile.upsert({
           where: { userId: user.id },
-          create: { userId: user.id, instruments: [], specializations: [], teachingFormats: [] },
+          create: { userId: user.id, instruments: [], musicStyles: [], languages: [] },
           update: {},
         }),
         prisma.user.update({ where: { id: user.id }, data: { role: 'TEACHER' } }),
@@ -96,10 +87,10 @@ export const userResolvers = {
 
     async updateTeacherProfile(_: unknown, args: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'TEACHER', 'ADMIN');
-      const { headline, teachingBio, hourlyRate, instruments, specializations, teachingFormats, isAvailable, calendlyUsername } = args;
+      const { bio, hourlyRate, currency, instruments, musicStyles, languages, isAvailable, calendlyUsername } = args;
       return prisma.teacherProfile.update({
         where: { userId: user!.id },
-        data: { headline, teachingBio, hourlyRate, instruments, specializations, teachingFormats, isAvailable, calendlyUsername },
+        data: { bio, hourlyRate, currency, instruments, musicStyles, languages, isAvailable, calendlyUsername },
       });
     },
 
@@ -118,7 +109,7 @@ export const userResolvers = {
       if (!teacherProfile) throw new Error('Teacher profile not found.');
       await prisma.teacherAvailability.deleteMany({ where: { teacherProfileId: teacherProfile.id } });
       await prisma.teacherAvailability.createMany({
-        data: slots.map((s: any) => ({ ...s, teacherProfileId: teacherProfile.id, isRecurring: s.isRecurring ?? true })),
+        data: slots.map((s: any) => ({ dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, timezone: s.timezone ?? 'Europe/Zurich', teacherProfileId: teacherProfile.id })),
       });
       return prisma.teacherAvailability.findMany({ where: { teacherProfileId: teacherProfile.id } });
     },

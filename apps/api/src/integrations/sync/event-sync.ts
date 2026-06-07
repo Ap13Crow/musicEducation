@@ -47,7 +47,7 @@ export async function provisionEventToPretix(
 
   // 3. Store the mapping (uses dynamic Prisma model access for forward compatibility)
   try {
-    await (prisma as unknown as Record<string, unknown>).externalEventMapping?.create?.({
+    await (prisma as unknown as Record<string, any>).externalEventMapping?.create?.({
       data: {
         eventId: params.eventId,
         pretixOrganiserSlug: params.organiserSlug,
@@ -84,7 +84,7 @@ export async function syncPretixOrders(
     const orders = await pretix.listOrders(organiserSlug, event.slug);
     for (const order of orders) {
       try {
-        await (prisma as unknown as Record<string, unknown>).eventBooking?.updateMany?.({
+        await (prisma as unknown as Record<string, any>).eventBooking?.updateMany?.({
           where: { pretixOrderCode: order.code },
           data: {
             status:

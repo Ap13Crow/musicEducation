@@ -100,7 +100,7 @@ async function handleOrderPaid(
   }
 
   // Look up the platform event by its pretix mapping
-  const mapping = await (prisma as unknown as Record<string, unknown>).externalEventMapping?.findFirst?.({
+  const mapping = await (prisma as unknown as Record<string, any>).externalEventMapping?.findFirst?.({
     where: { pretixOrganiserSlug: organiser, pretixEventSlug: eventSlug },
   }) as { eventId: string } | null | undefined;
 
@@ -110,7 +110,7 @@ async function handleOrderPaid(
   }
 
   // Upsert the EventBooking record
-  await (prisma as unknown as Record<string, unknown>).eventBooking?.upsert?.({
+  await (prisma as unknown as Record<string, any>).eventBooking?.upsert?.({
     where: { pretixOrderCode: orderCode },
     create: {
       eventId: mapping.eventId,
@@ -134,7 +134,7 @@ async function handleOrderCancelled(
   _eventSlug: string,
   orderCode: string,
 ): Promise<void> {
-  await (prisma as unknown as Record<string, unknown>).eventBooking?.updateMany?.({
+  await (prisma as unknown as Record<string, any>).eventBooking?.updateMany?.({
     where: { pretixOrderCode: orderCode },
     data: { status: 'CANCELLED' },
   });
@@ -147,7 +147,7 @@ async function handleOrderRefunded(
   _eventSlug: string,
   orderCode: string,
 ): Promise<void> {
-  await (prisma as unknown as Record<string, unknown>).eventBooking?.updateMany?.({
+  await (prisma as unknown as Record<string, any>).eventBooking?.updateMany?.({
     where: { pretixOrderCode: orderCode },
     data: { status: 'REFUNDED' },
   });
@@ -160,7 +160,7 @@ async function handleCheckIn(
   _eventSlug: string,
   orderCode: string,
 ): Promise<void> {
-  await (prisma as unknown as Record<string, unknown>).eventBooking?.updateMany?.({
+  await (prisma as unknown as Record<string, any>).eventBooking?.updateMany?.({
     where: { pretixOrderCode: orderCode },
     data: { checkedIn: true },
   });

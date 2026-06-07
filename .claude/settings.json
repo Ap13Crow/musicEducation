@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker stop:*)",
+      "Bash(docker rm:*)",
+      "Bash(docker compose:*)",
+      "WebSearch",
+      "WebFetch(domain:hub.docker.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(docker manifest:*)",
+      "Bash(curl -s \"https://registry.hub.docker.com/v2/repositories/librebooking/librebooking/tags/?page_size=20\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(t['name']\\) for t in data.get\\('results',[]\\)]\")",
+      "Bash(npm view:*)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); c=d[0]['Config']; print\\('Cmd:', c.get\\('Cmd'\\)\\); print\\('Entrypoint:', c.get\\('Entrypoint'\\)\\); print\\('User:', c.get\\('User'\\)\\)\")",
+      "Bash(docker pull:*)",
+      "Bash(docker system:*)",
+      "Bash(grep -v \"^$\")",
+      "Bash(node -e ':*)",
+      "Bash(git -C /workspaces/musicEducation checkout packages/database/prisma/schema.prisma)",
+      "Bash(git -C /workspaces/musicEducation log --oneline -3)",
+      "Bash(git -C /workspaces/musicEducation status --short)",
+      "Bash(python3 -m json.tool)",
+      "Bash(docker run:*)",
+      "Bash(grep -A 50 \"container_name: music_edu_librebooking$\" /workspaces/musicEducation/docker-compose.yml)",
+      "Bash(docker exec:*)",
+      "Bash(grep -A 30 \"container_name: music_edu_librebooking$\" /workspaces/musicEducation/docker-compose.yml)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(echo \"gateway wget exit: $?\")",
+      "Read(//usr/bin/**)",
+      "Bash(echo \"nc exit: $?\")"
+    ]
+  }
+}

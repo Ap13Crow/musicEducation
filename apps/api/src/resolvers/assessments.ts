@@ -89,7 +89,7 @@ export const assessmentResolvers = {
           durationSec,
           skillLevel,
           xpAwarded,
-          aiReport: { score, correctAnswers, totalAnswered, skillLevel, feedback: 'Assessment completed. AI analysis pending.' },
+          aiReport: JSON.stringify({ score, correctAnswers, totalAnswered, skillLevel, feedback: 'Assessment completed. AI analysis pending.' }),
         },
       });
     },

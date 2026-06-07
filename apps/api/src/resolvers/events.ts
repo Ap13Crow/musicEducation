@@ -122,7 +122,7 @@ export const eventResolvers = {
       if (event.maxCapacity !== null && event.currentCapacity >= event.maxCapacity) {
         throw new GraphQLError('Event is fully booked.', { extensions: { code: 'BAD_USER_INPUT' } });
       }
-      if (event.price > 0) throw new GraphQLError('Please complete payment first.', { extensions: { code: 'PAYMENT_REQUIRED' } });
+      if (Number(event.price) > 0) throw new GraphQLError('Please complete payment first.', { extensions: { code: 'PAYMENT_REQUIRED' } });
 
       const booking = await prisma.eventBooking.create({
         data: { userId: user.id, eventId, status: 'CONFIRMED' },

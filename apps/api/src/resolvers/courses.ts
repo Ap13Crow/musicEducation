@@ -136,7 +136,7 @@ export const courseResolvers = {
       requireAuth(user);
       const course = await prisma.course.findUnique({ where: { id: courseId } });
       if (!course) throw new GraphQLError('Course not found.', { extensions: { code: 'NOT_FOUND' } });
-      if (course.price > 0) {
+      if (Number(course.price) > 0) {
         throw new GraphQLError('Please complete payment first.', { extensions: { code: 'PAYMENT_REQUIRED' } });
       }
       return prisma.enrollment.create({ data: { userId: user.id, courseId } });

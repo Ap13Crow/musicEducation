@@ -3,10 +3,49 @@ import { GraphQLError } from 'graphql';
 import { requireAuth } from '../middleware/auth.js';
 import type { GraphQLContext } from '../types.js';
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error('STRIPE_SECRET_KEY environment variable is required but was not set.');
+function getStripe(): Stripe {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error('STRIPE_SECRET_KEY environment variable is required but was not set.');
+  }
+  return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 }
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-04-10' });
+
+// handleStripeWebhook is exported for use as an Express route, not a GraphQL resolver
+export async function handleStripeWebhook(prisma: import('@music-edu/database').PrismaClient, rawBody: Buffer, sig: string): Promise<void> {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret) return;
+  const event = getStripe().webhooks.constructEvent(rawBody, sig, secret);
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const { userId, type, refId } = session.metadata ?? {};
+    const payment = await prisma.payment.create({
+      data: {
+        userId: userId!,
+        amount: (session.amount_total ?? 0) / 100,
+        currency: session.currency?.toUpperCase() ?? 'CHF',
+        status: 'SUCCEEDED',
+        provider: 'STRIPE',
+        providerRef: session.id,
+        description: `${type}:${refId}`,
+      },
+    });
+    if (type === 'course') {
+      await prisma.enrollment.upsert({
+        where: { userId_courseId: { userId: userId!, courseId: refId! } },
+        update: { paymentId: payment.id },
+        create: { userId: userId!, courseId: refId!, paymentId: payment.id },
+      });
+    } else if (type === 'booking') {
+      await prisma.booking.update({ where: { id: refId }, data: { paymentId: payment.id, status: 'CONFIRMED' } });
+    } else if (type === 'event') {
+      await prisma.eventBooking.upsert({
+        where: { userId_eventId: { userId: userId!, eventId: refId! } },
+        update: { paymentId: payment.id, status: 'CONFIRMED' },
+        create: { userId: userId!, eventId: refId!, paymentId: payment.id, status: 'CONFIRMED' },
+      });
+    }
+  }
+}
 
 export const paymentResolvers = {
   Mutation: {
@@ -45,7 +84,7 @@ export const paymentResolvers = {
       }
 
       if (provider === 'STRIPE') {
-        const session = await stripe.checkout.sessions.create({
+        const session = await getStripe().checkout.sessions.create({
           payment_method_types: ['card'],
           line_items: [{ price_data: { currency, product_data: { name: description }, unit_amount: amount }, quantity: 1 }],
           mode: 'payment',
@@ -60,43 +99,5 @@ export const paymentResolvers = {
       throw new GraphQLError('Yapeal integration coming soon.', { extensions: { code: 'NOT_IMPLEMENTED' } });
     },
 
-    async handleWebhook(_: unknown, { provider, payload }: any, { prisma }: GraphQLContext) {
-      if (provider === 'STRIPE') {
-        const event = payload as Stripe.Event;
-        if (event.type === 'checkout.session.completed') {
-          const session = event.data.object as Stripe.CheckoutSession;
-          const { userId, type, refId } = session.metadata ?? {};
-
-          const payment = await prisma.payment.create({
-            data: {
-              userId: userId!,
-              amount: (session.amount_total ?? 0) / 100,
-              currency: session.currency?.toUpperCase() ?? 'CHF',
-              status: 'SUCCEEDED',
-              provider: 'STRIPE',
-              providerRef: session.id,
-              description: `${type}:${refId}`,
-            },
-          });
-
-          if (type === 'course') {
-            await prisma.enrollment.upsert({
-              where: { userId_courseId: { userId: userId!, courseId: refId! } },
-              update: { paymentId: payment.id },
-              create: { userId: userId!, courseId: refId!, paymentId: payment.id },
-            });
-          } else if (type === 'booking') {
-            await prisma.booking.update({ where: { id: refId }, data: { paymentId: payment.id, status: 'CONFIRMED' } });
-          } else if (type === 'event') {
-            await prisma.eventBooking.upsert({
-              where: { userId_eventId: { userId: userId!, eventId: refId! } },
-              update: { paymentId: payment.id, status: 'CONFIRMED' },
-              create: { userId: userId!, eventId: refId!, paymentId: payment.id, status: 'CONFIRMED' },
-            });
-          }
-        }
-      }
-      return true;
-    },
   },
 };

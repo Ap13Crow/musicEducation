@@ -32,7 +32,7 @@ services:
       pretix:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80"]
+      test: ["CMD-SHELL", "nc -z localhost 80"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -121,7 +121,7 @@ services:
       ZOOM_API_KEY: ${ZOOM_API_KEY:-}
       ZOOM_API_SECRET: ${ZOOM_API_SECRET:-}
       # ── Integration layer ────────────────────────────────
-      PRETIX_URL: ${PRETIX_URL:-http://pretix:8345}
+      PRETIX_URL: ${PRETIX_URL:-http://pretix:80}
       PRETIX_API_TOKEN: ${PRETIX_API_TOKEN:-}
       PRETIX_ORGANISER_SLUG: ${PRETIX_ORGANISER_SLUG:-musicedu}
       MOODLE_URL: ${MOODLE_URL:-http://moodle:8080}
@@ -183,11 +183,18 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
       DATABASE_URL: postgresql://${POSTGRES_USER:-musicedu}:${POSTGRES_PASSWORD:-musicedu_dev_pw}@postgres-main:5432/${POSTGRES_DB:-musicedu}
-    stdin_open: true
-    tty: true
+      MCP_PORT: 3100
+    expose:
+      - "3100"
     depends_on:
       postgres-main:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:3100/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   # ── MinIO (object storage) ────────────────────────────────
   minio:
@@ -244,8 +251,8 @@ services:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/login/index.php || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 10
-      start_period: 120s
+      retries: 20
+      start_period: 600s
 
   moodle-db:
     image: postgres:16-alpine
@@ -285,12 +292,12 @@ services:
       LIBREBOOKING_SCRIPT_URL: http://booking.musicedu.test
       LIBREBOOKING_ADMIN_EMAIL: ${LIBREBOOKING_ADMIN_EMAIL:-admin@musicedu.app}
     expose:
-      - "80"
+      - "8080"
     depends_on:
       librebooking-db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
+      test: ["CMD-SHELL", "curl -fL http://localhost:8080/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 10
@@ -343,14 +350,14 @@ services:
     volumes:
       - pretix_data:/data
     expose:
-      - "8345"
+      - "80"
     depends_on:
       pretix-db:
         condition: service_healthy
       pretix-redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8345/ || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 10

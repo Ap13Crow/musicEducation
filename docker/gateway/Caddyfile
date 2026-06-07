@@ -8,6 +8,12 @@
 	admin off
 }
 
+# ── Health endpoint (for Docker healthcheck) ─────────────────
+:80 {
+	respond /health 200
+	abort
+}
+
 # ── Main web app ─────────────────────────────────────────────
 app.musicedu.test {
 	reverse_proxy web:3000
@@ -30,10 +36,10 @@ learn.musicedu.test {
 
 # ── LibreBooking (physical scheduling) ──────────────────────
 booking.musicedu.test {
-	reverse_proxy librebooking:80
+	reverse_proxy librebooking:8080
 }
 
 # ── pretix (event ticketing) ────────────────────────────────
 tickets.musicedu.test {
-	reverse_proxy pretix:8345
+	reverse_proxy pretix:80
 }

@@ -1,119 +1,66 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
 import { createServer } from 'http';
-import { WebSocketServer } from 'ws';
-import { useServer } from 'graphql-ws/lib/use/ws';
 import { ApolloServer } from '@apollo/server';
-import { expressMiddleware } from '@as-integrations/express';
+import { expressMiddleware } from '@apollo/server/express4';
 import { makeExecutableSchema } from '@graphql-tools/schema';
+import { mergeResolvers } from '@graphql-tools/merge';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import pino from 'pino';
 import { PrismaClient } from '@music-edu/database';
-import { resolvers } from './resolvers/index.js';
-import { authMiddleware, getUser } from './middleware/auth.js';
-import { logger } from './utils/logger.js';
-import {
-  createPretixWebhookHandler,
-  createLibreBookingWebhookHandler,
-  PretixAdapter,
-} from './integrations/index.js';
+import { authMiddleware } from './middleware/auth.js';
+import { authResolvers } from './resolvers/auth.js';
+import { userResolvers } from './resolvers/users.js';
+import { bookingResolvers } from './resolvers/bookings.js';
+import { reviewResolvers } from './resolvers/reviews.js';
+import { courseResolvers } from './resolvers/courses.js';
+import { eventResolvers } from './resolvers/events.js';
+import { assessmentResolvers } from './resolvers/assessments.js';
+import { feedResolvers } from './resolvers/feed.js';
+import { paymentResolvers } from './resolvers/payments.js';
 import type { GraphQLContext } from './types.js';
 
+const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
+const prisma = new PrismaClient();
+
 const typeDefs = readFileSync(
-  join(__dirname, '../../packages/graphql-schema/src/schema.graphql'),
+  join(__dirname, '../packages/graphql-schema/src/schema.graphql'),
   'utf-8',
 );
 
-const prisma = new PrismaClient({
-  log: process.env.NODE_ENV === 'development' ? ['query', 'warn', 'error'] : ['warn', 'error'],
-});
+const resolvers = mergeResolvers([
+  authResolvers,
+  userResolvers,
+  bookingResolvers,
+  reviewResolvers,
+  courseResolvers,
+  eventResolvers,
+  assessmentResolvers,
+  feedResolvers,
+  paymentResolvers,
+]);
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });
 
-async function bootstrap() {
+async function main() {
   const app = express();
+  const httpServer = createServer(app);
 
-  // ── Security ───────────────────────────────────────────────
-  app.use(
-    helmet({
-      contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
-      crossOriginEmbedderPolicy: false,
-    }),
-  );
-  app.use(
-    cors({
-      origin: process.env.CORS_ORIGIN?.split(',') ?? ['http://localhost:3000'],
-      credentials: true,
-    }),
-  );
-  app.use(express.json({ limit: '50mb' }));
-
-  // ── Auth middleware ────────────────────────────────────────
+  app.use(cors({ origin: process.env.CORS_ORIGIN ?? '*', credentials: true }));
+  app.use(express.json());
   app.use(authMiddleware);
 
-  // ── Integration webhook endpoints ────────────────────────
-  const pretixAdapter = process.env.PRETIX_API_TOKEN
-    ? new PretixAdapter(
-        process.env.PRETIX_URL ?? 'http://pretix:8345',
-        process.env.PRETIX_API_TOKEN,
-      )
-    : null;
+  app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
-  app.post('/webhooks/pretix', createPretixWebhookHandler(prisma, pretixAdapter));
-  app.post('/webhooks/librebooking', createLibreBookingWebhookHandler(prisma));
-
-  // ── Health check ──────────────────────────────────────────
-  app.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
-
-  // ── HTTP + WebSocket server ────────────────────────────────
-  const httpServer = createServer(app);
-  const wsServer = new WebSocketServer({ server: httpServer, path: '/graphql' });
-
-  // ── Apollo Server ─────────────────────────────────────────
-  const apolloServer = new ApolloServer<GraphQLContext>({
-    schema,
-    plugins: [
-      {
-        async serverWillStart() {
-          return {
-            async drainServer() {
-              wsDisposable.dispose();
-            },
-          };
-        },
-      },
-    ],
-    formatError: (formattedError, _error) => {
-      logger.error(formattedError);
-      // Hide internal details in production
-      if (process.env.NODE_ENV === 'production' && formattedError.extensions?.code === 'INTERNAL_SERVER_ERROR') {
-        return { message: 'An internal error occurred.' };
-      }
-      return formattedError;
-    },
-  });
-
-  // WebSocket cleanup handle
-  const wsDisposable = useServer(
-    {
-      schema,
-      context: async (ctx) => {
-        const token = ctx.connectionParams?.authorization as string | undefined;
-        const user = token ? await getUser(token.replace('Bearer ', ''), prisma) : null;
-        return { prisma, user };
-      },
-    },
-    wsServer,
-  );
-
-  await apolloServer.start();
+  const server = new ApolloServer<GraphQLContext>({ schema });
+  await server.start();
 
   app.use(
     '/graphql',
-    expressMiddleware(apolloServer, {
-      context: async ({ req }): Promise<GraphQLContext> => ({
+    expressMiddleware(server, {
+      context: async ({ req }) => ({
         prisma,
         user: req.user ?? null,
         req,
@@ -121,14 +68,13 @@ async function bootstrap() {
     }),
   );
 
-  const PORT = Number(process.env.PORT ?? 4000);
-  httpServer.listen(PORT, () => {
-    logger.info(`🎵 API server ready at http://localhost:${PORT}/graphql`);
-    logger.info(`🔌 Subscriptions ready at ws://localhost:${PORT}/graphql`);
+  const port = Number(process.env.PORT ?? 4000);
+  httpServer.listen(port, () => {
+    logger.info({ port }, 'API server listening');
   });
 }
 
-bootstrap().catch((err) => {
-  logger.error(err, 'Failed to start server');
+main().catch((err) => {
+  logger.error(err, 'Fatal startup error');
   process.exit(1);
 });
