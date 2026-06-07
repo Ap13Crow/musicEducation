@@ -1,8 +1,27 @@
 import type { Request, Response } from 'express';
+import { createHmac, timingSafeEqual } from 'crypto';
 import type { PrismaClient } from '@music-edu/database';
 import type { PretixAdapter } from '../adapters/pretix.js';
 import type { PretixWebhookPayload } from '../types/index.js';
 import { logger } from '../../utils/logger.js';
+
+/**
+ * Verify the pretix webhook signature.
+ * pretix signs payloads with HMAC-SHA256 using the shared secret.
+ */
+function verifyPretixSignature(req: Request, secret: string): boolean {
+  const signature = req.headers['x-pretix-signature'] as string | undefined;
+  if (!signature) return false;
+
+  const body = JSON.stringify(req.body);
+  const expected = createHmac('sha256', secret).update(body).digest('hex');
+
+  try {
+    return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Express handler for pretix webhook callbacks.
@@ -14,9 +33,18 @@ export function createPretixWebhookHandler(
   prisma: PrismaClient,
   pretix: PretixAdapter | null,
 ) {
+  const webhookSecret = process.env.PRETIX_WEBHOOK_SECRET ?? '';
+
   return async (req: Request, res: Response): Promise<void> => {
     if (!pretix) {
       res.status(503).json({ error: 'pretix integration not configured' });
+      return;
+    }
+
+    // Verify webhook signature when a secret is configured
+    if (webhookSecret && !verifyPretixSignature(req, webhookSecret)) {
+      logger.warn('pretix webhook: invalid signature — rejecting request');
+      res.status(401).json({ error: 'invalid webhook signature' });
       return;
     }
 

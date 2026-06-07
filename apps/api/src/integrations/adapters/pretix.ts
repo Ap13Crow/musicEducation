@@ -50,8 +50,9 @@ export class PretixAdapter implements EventCoreAdapter {
     locale?: string;
   }): Promise<EventDefinition> {
     const locale = params.locale ?? 'en';
+    const safeOrg = encodeURIComponent(params.organiserSlug);
     const res = await this.client.post(
-      `/organizers/${params.organiserSlug}/events/`,
+      `/organizers/${safeOrg}/events/`,
       {
         name: { [locale]: params.name },
         slug: params.slug,
@@ -70,8 +71,10 @@ export class PretixAdapter implements EventCoreAdapter {
 
   async getEvent(organiserSlug: string, eventSlug: string): Promise<EventDefinition | null> {
     try {
+      const safeOrg = encodeURIComponent(organiserSlug);
+      const safeEvent = encodeURIComponent(eventSlug);
       const res = await this.client.get(
-        `/organizers/${organiserSlug}/events/${eventSlug}/`,
+        `/organizers/${safeOrg}/events/${safeEvent}/`,
       );
       return this.mapEvent(res.data, organiserSlug);
     } catch {
@@ -80,8 +83,9 @@ export class PretixAdapter implements EventCoreAdapter {
   }
 
   async listEvents(organiserSlug: string): Promise<EventDefinition[]> {
+    const safeOrg = encodeURIComponent(organiserSlug);
     const res = await this.client.get(
-      `/organizers/${organiserSlug}/events/`,
+      `/organizers/${safeOrg}/events/`,
     );
     return (res.data.results ?? []).map((e: Record<string, unknown>) =>
       this.mapEvent(e, organiserSlug),
@@ -99,8 +103,10 @@ export class PretixAdapter implements EventCoreAdapter {
     quota?: number;
   }): Promise<EventProduct> {
     const locale = 'en';
+    const safeOrg = encodeURIComponent(params.organiserSlug);
+    const safeEvent = encodeURIComponent(params.eventSlug);
     const itemRes = await this.client.post(
-      `/organizers/${params.organiserSlug}/events/${params.eventSlug}/items/`,
+      `/organizers/${safeOrg}/events/${safeEvent}/items/`,
       {
         name: { [locale]: params.name },
         default_price: params.price,
@@ -113,7 +119,7 @@ export class PretixAdapter implements EventCoreAdapter {
     // Create a quota for this product if specified
     if (params.quota != null) {
       await this.client.post(
-        `/organizers/${params.organiserSlug}/events/${params.eventSlug}/quotas/`,
+        `/organizers/${safeOrg}/events/${safeEvent}/quotas/`,
         {
           name: `${params.name} quota`,
           size: params.quota,
@@ -139,8 +145,11 @@ export class PretixAdapter implements EventCoreAdapter {
     code: string,
   ): Promise<EventOrder | null> {
     try {
+      const safeOrg = encodeURIComponent(organiserSlug);
+      const safeEvent = encodeURIComponent(eventSlug);
+      const safeCode = encodeURIComponent(code);
       const res = await this.client.get(
-        `/organizers/${organiserSlug}/events/${eventSlug}/orders/${code}/`,
+        `/organizers/${safeOrg}/events/${safeEvent}/orders/${safeCode}/`,
       );
       return this.mapOrder(res.data);
     } catch {
@@ -149,8 +158,10 @@ export class PretixAdapter implements EventCoreAdapter {
   }
 
   async listOrders(organiserSlug: string, eventSlug: string): Promise<EventOrder[]> {
+    const safeOrg = encodeURIComponent(organiserSlug);
+    const safeEvent = encodeURIComponent(eventSlug);
     const res = await this.client.get(
-      `/organizers/${organiserSlug}/events/${eventSlug}/orders/`,
+      `/organizers/${safeOrg}/events/${safeEvent}/orders/`,
     );
     return (res.data.results ?? []).map((o: Record<string, unknown>) =>
       this.mapOrder(o),
@@ -164,18 +175,23 @@ export class PretixAdapter implements EventCoreAdapter {
     eventSlug: string,
     secret: string,
   ): Promise<CheckInResult> {
+    // Validate inputs to prevent path traversal / SSRF
+    const safeOrg = encodeURIComponent(organiserSlug);
+    const safeEvent = encodeURIComponent(eventSlug);
+    const safeSecret = encodeURIComponent(secret);
+
     // Use the first check-in list available
     const listsRes = await this.client.get(
-      `/organizers/${organiserSlug}/events/${eventSlug}/checkinlists/`,
+      `/organizers/${safeOrg}/events/${safeEvent}/checkinlists/`,
     );
     const listId = listsRes.data.results?.[0]?.id;
     if (!listId) {
-      return { ok: false, position: 0, type: 'entry', errorReason: 'No check-in list configured' };
+      return { ok: false, position: 0, type: 'entry', errorReason: 'No check-in list found for event. Create a check-in list in pretix admin panel.' };
     }
 
     try {
       const res = await this.client.post(
-        `/organizers/${organiserSlug}/events/${eventSlug}/checkinlists/${listId}/positions/${secret}/redeem/`,
+        `/organizers/${safeOrg}/events/${safeEvent}/checkinlists/${listId}/positions/${safeSecret}/redeem/`,
         { type: 'entry' },
       );
       return {

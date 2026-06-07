@@ -56,7 +56,7 @@ export async function provisionEventToPretix(
     });
   } catch (err) {
     // Table may not yet exist during early development — log and continue
-    logger.warn({ err }, 'Could not persist event mapping (table may not exist yet)');
+    logger.warn({ err }, 'Could not persist event mapping (externalEventMapping table may not exist yet — run migrations)');
   }
 
   logger.info(
