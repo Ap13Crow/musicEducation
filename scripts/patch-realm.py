@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build docker/keycloak/realm-export.prod.json from realm-export.json + .env.
 
- - rewrites every client redirectUri/webOrigin: musicedu.test -> mymusic.coach, http -> https
- - drops localhost / musicedu.app entries (prod realm only trusts the live domain)
+ - rewrites every client redirectUri/webOrigin: mymusic-coach.test -> mymusic.coach, http -> https
+ - drops localhost entries (prod realm only trusts the live domain)
  - injects each confidential client's secret from .env so Keycloak's import matches the apps
  - disables email verification so logins work before SMTP is configured (re-enable later)
 """
@@ -11,7 +11,7 @@ import json
 SRC = "docker/keycloak/realm-export.json"
 DST = "docker/keycloak/realm-export.prod.json"
 ENV = ".env"
-OLD, NEW = "musicedu.test", "mymusic.coach"
+OLD, NEW = "mymusic-coach.test", "mymusic.coach"
 
 
 def load_env(path):
@@ -29,8 +29,8 @@ def load_env(path):
 env = load_env(ENV)
 
 SECRETS = {
-    "musicedu-web":      env.get("KEYCLOAK_CLIENT_SECRET", ""),
-    "musicedu-api":      env.get("KEYCLOAK_API_CLIENT_SECRET", ""),
+    "mymusic-coach-web": env.get("KEYCLOAK_CLIENT_SECRET", ""),
+    "mymusic-coach-api": env.get("KEYCLOAK_API_CLIENT_SECRET", ""),
     "moodle-oidc":       env.get("MOODLE_OIDC_CLIENT_SECRET", ""),
     "pretix-oidc":       env.get("PRETIX_OIDC_CLIENT_SECRET", ""),
     "librebooking-saml": env.get("LIBREBOOKING_OIDC_CLIENT_SECRET", ""),
