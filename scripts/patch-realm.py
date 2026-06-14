@@ -28,13 +28,18 @@ def load_env(path):
 
 env = load_env(ENV)
 
-SECRETS = {
-    "mymusic-coach-web": env.get("KEYCLOAK_CLIENT_SECRET", ""),
-    "mymusic-coach-api": env.get("KEYCLOAK_API_CLIENT_SECRET", ""),
-    "moodle-oidc":       env.get("MOODLE_OIDC_CLIENT_SECRET", ""),
-    "pretix-oidc":       env.get("PRETIX_OIDC_CLIENT_SECRET", ""),
-    "librebooking-saml": env.get("LIBREBOOKING_OIDC_CLIENT_SECRET", ""),
+# Maps each confidential Keycloak client ID to the .env variable that holds its
+# secret. Kept separate from the secret values so reporting can reference client
+# IDs (constants) without touching sensitive data.
+CLIENT_SECRET_ENV = {
+    "mymusic-coach-web": "KEYCLOAK_CLIENT_SECRET",
+    "mymusic-coach-api": "KEYCLOAK_API_CLIENT_SECRET",
+    "moodle-oidc":       "MOODLE_OIDC_CLIENT_SECRET",
+    "pretix-oidc":       "PRETIX_OIDC_CLIENT_SECRET",
+    "librebooking-saml": "LIBREBOOKING_OIDC_CLIENT_SECRET",
 }
+
+SECRETS = {client_id: env.get(var, "") for client_id, var in CLIENT_SECRET_ENV.items()}
 
 
 def fix_uris(uris):
@@ -64,7 +69,12 @@ with open(DST, "w") as f:
     json.dump(realm, f, indent=2)
     f.write("\n")
 
-missing = [k for k, v in SECRETS.items() if not v]
+# Report which clients are missing a secret. `missing` is built from the
+# constant CLIENT_SECRET_ENV mapping (client IDs only); each secret is read just
+# to test for presence and is never stored or logged.
+missing = sorted(
+    client_id for client_id, var in CLIENT_SECRET_ENV.items() if not env.get(var, "")
+)
 print(f"Wrote {DST}")
 if missing:
     print("WARNING: no secret found in .env for:", ", ".join(missing))

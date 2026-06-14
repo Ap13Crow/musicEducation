@@ -10,6 +10,14 @@ import {
 } from 'lucide-react';
 import { externalLinks, liveApiEnabled } from '@/lib/external-links';
 
+// NextAuth's session is augmented with Keycloak realm roles in the JWT/session
+// callbacks (see app/api/auth/[...nextauth]/route.ts). Type it locally so we can
+// read roles without an `any` cast.
+type SessionWithRoles = {
+  roles?: string[];
+  user?: { name?: string | null; email?: string | null; image?: string | null };
+};
+
 // ── Dashboard data query ────────────────────────────────────────────
 // Pulls everything the three-pillar overview needs in one round-trip. All
 // fields below exist in the GraphQL schema (apps/api). When live API is
@@ -55,7 +63,7 @@ const GET_DASHBOARD = gql`
   }
 `;
 
-function inDays(days: number): string {
+function daysFromNowISO(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
   d.setHours(18, 0, 0, 0);
@@ -80,16 +88,16 @@ const fallback = {
     ],
   },
   myBookings: [
-    { id: 'f-b1', startsAt: inDays(2), endsAt: inDays(2), durationMin: 60, format: 'ZOOM', instrument: 'Piano', status: 'CONFIRMED', zoomJoinUrl: null, teacher: { user: { displayName: 'Anna Keller' } } },
-    { id: 'f-b2', startsAt: inDays(6), endsAt: inDays(6), durationMin: 45, format: 'IN_PERSON', instrument: 'Violin', status: 'PENDING', zoomJoinUrl: null, teacher: { user: { displayName: 'Marco De Luca' } } },
+    { id: 'f-b1', startsAt: daysFromNowISO(2), endsAt: daysFromNowISO(2), durationMin: 60, format: 'ZOOM', instrument: 'Piano', status: 'CONFIRMED', zoomJoinUrl: null, teacher: { user: { displayName: 'Anna Keller' } } },
+    { id: 'f-b2', startsAt: daysFromNowISO(6), endsAt: daysFromNowISO(6), durationMin: 45, format: 'IN_PERSON', instrument: 'Violin', status: 'PENDING', zoomJoinUrl: null, teacher: { user: { displayName: 'Marco De Luca' } } },
   ],
   myEventBookings: [
-    { id: 'f-eb1', status: 'CONFIRMED', event: { id: 'ev1', slug: 'spring-masterclass', title: 'Spring Piano Masterclass', startsAt: inDays(10), venueName: 'Conservatory Hall', city: 'Zürich', country: 'CH', format: 'IN_PERSON', thumbnailUrl: null } },
+    { id: 'f-eb1', status: 'CONFIRMED', event: { id: 'ev1', slug: 'spring-masterclass', title: 'Spring Piano Masterclass', startsAt: daysFromNowISO(10), venueName: 'Conservatory Hall', city: 'Zürich', country: 'CH', format: 'IN_PERSON', thumbnailUrl: null } },
   ],
   events: {
     nodes: [
-      { id: 'ev2', slug: 'baroque-evening', title: 'Baroque Evening: Bach & Telemann', startsAt: inDays(14), venueName: 'St. Peter Church', city: 'Zürich', country: 'CH', type: 'CONCERT', format: 'IN_PERSON' },
-      { id: 'ev3', slug: 'online-theory-workshop', title: 'Online Workshop: Harmony Foundations', startsAt: inDays(21), venueName: null, city: null, country: null, type: 'WORKSHOP', format: 'ONLINE' },
+      { id: 'ev2', slug: 'baroque-evening', title: 'Baroque Evening: Bach & Telemann', startsAt: daysFromNowISO(14), venueName: 'St. Peter Church', city: 'Zürich', country: 'CH', type: 'CONCERT', format: 'IN_PERSON' },
+      { id: 'ev3', slug: 'online-theory-workshop', title: 'Online Workshop: Harmony Foundations', startsAt: daysFromNowISO(21), venueName: null, city: null, country: null, type: 'WORKSHOP', format: 'ONLINE' },
     ],
   },
 };
@@ -146,7 +154,7 @@ export default function DashboardPage() {
 
   // Prefer the role from the Keycloak token (NextAuth session) so the badge
   // reflects realm roles even before the GraphQL profile loads.
-  const sessionRoles: string[] = (session as any)?.roles ?? [];
+  const sessionRoles: string[] = (session as SessionWithRoles | null)?.roles ?? [];
   const role = pickRole(sessionRoles) ?? me.role ?? 'STUDENT';
   const displayName = me.displayName ?? session?.user?.name ?? 'Musician';
 
