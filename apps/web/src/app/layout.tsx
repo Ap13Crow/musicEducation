@@ -10,8 +10,8 @@ const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-playfa
 
 export const metadata: Metadata = {
   title: {
-    default: 'MusicEdu — Classical Music Education Platform',
-    template: '%s | MusicEdu',
+    default: 'My Music Coach — Classical My Music Coach',
+    template: '%s | My Music Coach',
   },
   description:
     'Learn classical music through theory courses, live lessons with certified teachers, and discover performances near you.',

@@ -156,7 +156,7 @@ export default function HomePage() {
             </div>
           </div>
           <p className="text-center text-xs text-gray-400">
-            © {new Date().getFullYear()} MusicEdu. Open-source · Built with ❤️ for musicians.
+            © {new Date().getFullYear()} My Music Coach. Open-source · Built with ❤️ for musicians.
           </p>
         </div>
       </footer>

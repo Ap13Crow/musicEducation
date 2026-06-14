@@ -146,7 +146,7 @@ export async function recommendContent(input: RecommendContentInput): Promise<st
     .filter(Boolean)
     .join('\n\n');
 
-  const system = `You are a music education recommendation engine for the MusicEdu platform.
+  const system = `You are a music education recommendation engine for the My Music Coach platform.
 Your job is to rank and explain content recommendations tailored to each student's profile.
 Be specific about WHY each recommendation fits this particular student.`;
 

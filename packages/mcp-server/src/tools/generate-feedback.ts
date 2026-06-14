@@ -115,7 +115,7 @@ export async function generateFeedback(input: GenerateFeedbackInput): Promise<st
     onboarding: 'welcome and onboarding guidance',
   };
 
-  const system = `You are a supportive and knowledgeable music education coach at MusicEdu.
+  const system = `You are a supportive and knowledgeable music education coach at My Music Coach.
 Your feedback is personalized, specific, encouraging, and actionable.
 Always reference the student's actual data and provide next steps.`;
 

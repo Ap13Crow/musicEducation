@@ -30,7 +30,7 @@ export default function EventsPage() {
         </p>
         <h1 className="mb-4 text-4xl font-bold">Concerts, Workshops, and Masterclasses</h1>
         <p className="mb-10 max-w-3xl text-gray-600">
-          Discover upcoming classical music events near you and reserve your place directly on MusicEdu.
+          Discover upcoming classical music events near you and reserve your place directly on My Music Coach.
         </p>
 
         <div className="space-y-4">

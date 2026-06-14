@@ -133,7 +133,7 @@ export default function OnboardingPage() {
         {step === 0 && (
           <div className="card p-10 text-center">
             <Music className="mx-auto mb-6 h-16 w-16 text-primary-600" />
-            <h1 className="mb-4 text-3xl font-bold">Welcome to MusicEdu</h1>
+            <h1 className="mb-4 text-3xl font-bold">Welcome to My Music Coach</h1>
             <p className="mb-8 text-gray-600">
               Take our 15-minute music assessment and let our AI build your personalised learning path.
               We&apos;ll evaluate your theory knowledge, musical culture and guide you to the best courses, teachers and events.

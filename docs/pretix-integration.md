@@ -2,9 +2,9 @@
 
 ## Overview
 
-[pretix](https://pretix.eu) is the operational event-ticketing core for MusicEdu. It handles:
+[pretix](https://pretix.eu) is the operational event-ticketing core for My Music Coach. It handles:
 
-- **Organisers** — the MusicEdu organisation
+- **Organisers** — the My Music Coach organisation
 - **Events / sub-events** — individual concerts, masterclasses, workshops
 - **Products / quotas** — ticket types (General Admission, VIP, etc.)
 - **Customer accounts** — linked to Keycloak via OIDC
@@ -18,7 +18,7 @@ Platform API                         pretix
 provisionEventToPretix() ─────────►  Create event + products
                                           │
                                    Ticket purchase (hosted shop
-                                   at tickets.musicedu.test)
+                                   at tickets.mymusic-coach.test)
                                           │
                               pretix webhook POST ◄──────┘
                                           │
@@ -31,7 +31,7 @@ provisionEventToPretix() ─────────►  Create event + products
 
 In v1, we use **pretix's hosted shop** rather than building a fully custom headless checkout:
 
-1. **Custom-domain shop** — pretix runs at `tickets.musicedu.test` and serves its own storefront
+1. **Custom-domain shop** — pretix runs at `tickets.mymusic-coach.test` and serves its own storefront
 2. **Widget embedding** (optional) — The pretix widget can be embedded in the Next.js frontend using `NEXT_PUBLIC_PRETIX_WIDGET_URL`
 
 This minimises the integration surface while still providing a full ticketing flow.
@@ -70,7 +70,7 @@ A periodic sync job (`syncPretixOrders`) runs every 5 minutes as a safety net:
 pretix customer accounts use Keycloak for OIDC login:
 
 - **Client ID**: `pretix-oidc`
-- **Redirect URI**: `http://tickets.musicedu.test/oidc/callback/`
+- **Redirect URI**: `http://tickets.mymusic-coach.test/oidc/callback/`
 - Configured in Keycloak realm export (`docker/keycloak/realm-export.json`)
 
 ## Configuration

@@ -12,9 +12,9 @@ set -e
 : "${MOODLE_DATABASE_NAME:=moodle}"
 : "${MOODLE_USERNAME:=admin}"
 : "${MOODLE_PASSWORD:=moodle_admin_pw}"
-: "${MOODLE_EMAIL:=admin@musicedu.app}"
-: "${MOODLE_SITE_NAME:=MusicEdu Learning}"
-: "${MOODLE_HOST:=learn.musicedu.test}"
+: "${MOODLE_EMAIL:=admin@mymusic.coach}"
+: "${MOODLE_SITE_NAME:=My Music Coach}"
+: "${MOODLE_HOST:=learn.mymusic-coach.test}"
 : "${MOODLE_SSLPROXY:=false}"
 : "${MOODLE_DATA_DIR:=/var/moodledata}"
 
@@ -35,7 +35,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
 
   php /var/www/html/admin/cli/install.php \
     --lang=en \
-    --wwwroot="http://${MOODLE_HOST}" \
+    --wwwroot="${MOODLE_WWWROOT:-http://${MOODLE_HOST}}" \
     --dataroot="${MOODLE_DATA_DIR}" \
     --dbtype="${MOODLE_DATABASE_TYPE}" \
     --dbhost="${MOODLE_DATABASE_HOST}" \
@@ -45,7 +45,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
     --dbpass="${MOODLE_DATABASE_PASSWORD}" \
     --prefix=mdl_ \
     --fullname="${MOODLE_SITE_NAME}" \
-    --shortname="musicedu" \
+    --shortname="mymusic_coach" \
     --adminuser="${MOODLE_USERNAME}" \
     --adminpass="${MOODLE_PASSWORD}" \
     --adminemail="${MOODLE_EMAIL}" \

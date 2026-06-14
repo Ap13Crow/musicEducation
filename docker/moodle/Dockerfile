@@ -9,8 +9,8 @@ FROM moodlehq/moodle-php-apache:8.2-bullseye
 
 ARG MOODLE_VERSION=4.4.4
 
-LABEL maintainer="MusicEdu Platform"
-LABEL description="Moodle LMS for MusicEdu – online learning core"
+LABEL maintainer="My Music Coach"
+LABEL description="Moodle LMS for My Music Coach – online learning core"
 
 # ── Download Moodle ───────────────────────────────────────────
 RUN curl -fsSL \

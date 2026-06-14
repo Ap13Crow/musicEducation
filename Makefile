@@ -1,5 +1,5 @@
 # ============================================================
-# MusicEdu Platform — Makefile
+# My Music Coach — Makefile
 # ============================================================
 
 .DEFAULT_GOAL := help
@@ -57,7 +57,7 @@ realm-import: ## Re-import the Keycloak realm (restarts Keycloak)
 .PHONY: realm-export
 realm-export: ## Export the current Keycloak realm config
 	docker compose exec keycloak /opt/keycloak/bin/kc.sh export \
-	  --dir /opt/keycloak/data/export --realm musicedu
+	  --dir /opt/keycloak/data/export --realm mymusic-coach
 
 # ── Development ──────────────────────────────────────────────
 
@@ -88,12 +88,12 @@ hosts: ## Print /etc/hosts entries needed for local development
 	@echo ""
 	@echo "Add these lines to /etc/hosts:"
 	@echo ""
-	@echo "127.0.0.1  app.musicedu.test"
-	@echo "127.0.0.1  api.musicedu.test"
-	@echo "127.0.0.1  auth.musicedu.test"
-	@echo "127.0.0.1  learn.musicedu.test"
-	@echo "127.0.0.1  booking.musicedu.test"
-	@echo "127.0.0.1  tickets.musicedu.test"
+	@echo "127.0.0.1  app.mymusic-coach.test"
+	@echo "127.0.0.1  api.mymusic-coach.test"
+	@echo "127.0.0.1  auth.mymusic-coach.test"
+	@echo "127.0.0.1  learn.mymusic-coach.test"
+	@echo "127.0.0.1  booking.mymusic-coach.test"
+	@echo "127.0.0.1  tickets.mymusic-coach.test"
 	@echo ""
 
 # ── Utilities ────────────────────────────────────────────────

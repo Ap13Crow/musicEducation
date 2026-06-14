@@ -2,9 +2,9 @@ export default function AboutPage() {
   return (
     <main className="px-6 py-16">
       <section className="mx-auto max-w-4xl">
-        <h1 className="mb-6 text-4xl font-bold">About MusicEdu</h1>
+        <h1 className="mb-6 text-4xl font-bold">About My Music Coach</h1>
         <p className="mb-6 text-gray-700">
-          MusicEdu is an open-source education platform dedicated to classical music learning through three connected pillars:
+          My Music Coach is an open-source education platform dedicated to classical music learning through three connected pillars:
           theory, practice, and performance.
         </p>
         <p className="mb-6 text-gray-700">

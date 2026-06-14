@@ -2,19 +2,19 @@
 
 ## Overview
 
-MusicEdu uses subdomain-based routing for local development via a **Caddy** reverse proxy. All services are accessed through `*.musicedu.test` domains on port 80.
+My Music Coach uses subdomain-based routing for local development via a **Caddy** reverse proxy. All services are accessed through `*.mymusic-coach.test` domains on port 80.
 
 ## Required `/etc/hosts` Entries
 
 Add these lines to your `/etc/hosts` file:
 
 ```
-127.0.0.1  app.musicedu.test
-127.0.0.1  api.musicedu.test
-127.0.0.1  auth.musicedu.test
-127.0.0.1  learn.musicedu.test
-127.0.0.1  booking.musicedu.test
-127.0.0.1  tickets.musicedu.test
+127.0.0.1  app.mymusic-coach.test
+127.0.0.1  api.mymusic-coach.test
+127.0.0.1  auth.mymusic-coach.test
+127.0.0.1  learn.mymusic-coach.test
+127.0.0.1  booking.mymusic-coach.test
+127.0.0.1  tickets.mymusic-coach.test
 ```
 
 ### macOS / Linux
@@ -22,13 +22,13 @@ Add these lines to your `/etc/hosts` file:
 ```bash
 sudo sh -c 'cat >> /etc/hosts << EOF
 
-# MusicEdu local development
-127.0.0.1  app.musicedu.test
-127.0.0.1  api.musicedu.test
-127.0.0.1  auth.musicedu.test
-127.0.0.1  learn.musicedu.test
-127.0.0.1  booking.musicedu.test
-127.0.0.1  tickets.musicedu.test
+# My Music Coach local development
+127.0.0.1  app.mymusic-coach.test
+127.0.0.1  api.mymusic-coach.test
+127.0.0.1  auth.mymusic-coach.test
+127.0.0.1  learn.mymusic-coach.test
+127.0.0.1  booking.mymusic-coach.test
+127.0.0.1  tickets.mymusic-coach.test
 EOF'
 ```
 
@@ -39,13 +39,13 @@ Open PowerShell as Administrator:
 ```powershell
 Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Value @"
 
-# MusicEdu local development
-127.0.0.1  app.musicedu.test
-127.0.0.1  api.musicedu.test
-127.0.0.1  auth.musicedu.test
-127.0.0.1  learn.musicedu.test
-127.0.0.1  booking.musicedu.test
-127.0.0.1  tickets.musicedu.test
+# My Music Coach local development
+127.0.0.1  app.mymusic-coach.test
+127.0.0.1  api.mymusic-coach.test
+127.0.0.1  auth.mymusic-coach.test
+127.0.0.1  learn.mymusic-coach.test
+127.0.0.1  booking.mymusic-coach.test
+127.0.0.1  tickets.mymusic-coach.test
 "@
 ```
 
@@ -55,12 +55,12 @@ Or use `make hosts` to print the required entries.
 
 | Domain | Service | Port (internal) | Description |
 |--------|---------|-----------------|-------------|
-| `app.musicedu.test` | web | 3000 | Next.js frontend |
-| `api.musicedu.test` | api | 4000 | GraphQL API |
-| `auth.musicedu.test` | keycloak | 8080 | Keycloak admin & OIDC |
-| `learn.musicedu.test` | moodle | 8080 | Moodle LMS |
-| `booking.musicedu.test` | librebooking | 80 | LibreBooking scheduler |
-| `tickets.musicedu.test` | pretix | 8345 | pretix event ticketing |
+| `app.mymusic-coach.test` | web | 3000 | Next.js frontend |
+| `api.mymusic-coach.test` | api | 4000 | GraphQL API |
+| `auth.mymusic-coach.test` | keycloak | 8080 | Keycloak admin & OIDC |
+| `learn.mymusic-coach.test` | moodle | 8080 | Moodle LMS |
+| `booking.mymusic-coach.test` | librebooking | 80 | LibreBooking scheduler |
+| `tickets.mymusic-coach.test` | pretix | 8345 | pretix event ticketing |
 
 ## How It Works
 
@@ -71,10 +71,10 @@ The **Caddy** reverse proxy (`docker/gateway/Caddyfile`) listens on port 80 and 
 After starting the stack with `make up` or `docker compose up -d`, verify:
 
 ```bash
-curl -s http://app.musicedu.test | head -5
-curl -s http://api.musicedu.test/health
-curl -s http://auth.musicedu.test
-curl -s http://learn.musicedu.test
-curl -s http://booking.musicedu.test
-curl -s http://tickets.musicedu.test
+curl -s http://app.mymusic-coach.test | head -5
+curl -s http://api.mymusic-coach.test/health
+curl -s http://auth.mymusic-coach.test
+curl -s http://learn.mymusic-coach.test
+curl -s http://booking.mymusic-coach.test
+curl -s http://tickets.mymusic-coach.test
 ```

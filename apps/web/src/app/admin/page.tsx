@@ -24,7 +24,7 @@ const SAMPLE_USERS = [
   { id: '2', displayName: 'Marco De Luca', email: 'marco@example.com', role: 'TEACHER', createdAt: '2024-07-02' },
   { id: '3', displayName: 'Sarah K.', email: 'sarah@example.com', role: 'STUDENT', createdAt: '2024-08-10' },
   { id: '4', displayName: 'Thomas M.', email: 'thomas@example.com', role: 'STUDENT', createdAt: '2024-09-22' },
-  { id: '5', displayName: 'Admin User', email: 'admin@musicedu.app', role: 'ADMIN', createdAt: '2024-01-01' },
+  { id: '5', displayName: 'Admin User', email: 'admin@mymusic.coach', role: 'ADMIN', createdAt: '2024-01-01' },
 ];
 
 const API_KEY_FIELDS = [
@@ -177,7 +177,7 @@ function UsersTab() {
 }
 
 function ContentTab() {
-  const [heroTitle, setHeroTitle] = useState('Your Classical Music Education Platform');
+  const [heroTitle, setHeroTitle] = useState('Your Classical My Music Coach');
   const [heroSubtitle, setHeroSubtitle] = useState('Theory courses, live lessons, and live performances — all in one place.');
   const [statsEnabled, setStatsEnabled] = useState(true);
 
@@ -341,15 +341,15 @@ function SettingsTab() {
         </h3>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Keycloak Issuer URL</label>
-          <input type="text" className="input w-full" defaultValue="http://localhost:8080/realms/musicedu" />
+          <input type="text" className="input w-full" defaultValue="http://localhost:8080/realms/mymusic-coach" />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Client ID</label>
-          <input type="text" className="input w-full" defaultValue="musicedu-web" />
+          <input type="text" className="input w-full" defaultValue="mymusic-coach-web" />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Allowed Redirect URIs</label>
-          <textarea className="input w-full" rows={2} defaultValue={"http://localhost:3000/*\nhttps://musicedu.app/*"} />
+          <textarea className="input w-full" rows={2} defaultValue={"http://localhost:3000/*\nhttps://mymusic.coach/*"} />
         </div>
         <button className="btn-primary flex items-center gap-2">
           <Save className="h-4 w-4" /> Save Keycloak Settings

@@ -4,7 +4,7 @@ export default function BecomeTeacherPage() {
       <section className="mx-auto max-w-4xl">
         <h1 className="mb-4 text-4xl font-bold">Become a Teacher</h1>
         <p className="mb-8 text-gray-600">
-          Join MusicEdu as a verified instructor and teach motivated students online or in person.
+          Join My Music Coach as a verified instructor and teach motivated students online or in person.
         </p>
 
         <div className="grid gap-6 sm:grid-cols-3">

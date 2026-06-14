@@ -15,7 +15,7 @@
 - All other services use `expose` (Docker-internal only)
 - Database ports (`5432`, `3306`) are never mapped to the host
 - Redis ports (`6379`) are never mapped to the host
-- Inter-service communication happens on the `music_edu_network` bridge
+- Inter-service communication happens on the `mymusic_coach_network` bridge
 
 ### Production Considerations
 
@@ -71,8 +71,8 @@ User → Browser → Caddy → Next.js → NextAuth.js → Keycloak OIDC
 
 | Client | Purpose | Protocol | Flow |
 |--------|---------|----------|------|
-| `musicedu-web` | Next.js frontend | OIDC | Authorization Code + PKCE |
-| `musicedu-api` | API service account | OIDC | Client Credentials |
+| `mymusic-coach-web` | Next.js frontend | OIDC | Authorization Code + PKCE |
+| `mymusic-coach-api` | API service account | OIDC | Client Credentials |
 | `moodle-oidc` | Moodle SSO | OIDC | Authorization Code + PKCE |
 | `pretix-oidc` | pretix customer SSO | OIDC | Authorization Code + PKCE |
 | `librebooking-saml` | LibreBooking SSO | OIDC (or SAML) | Authorization Code + PKCE |

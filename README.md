@@ -1,4 +1,4 @@
-# 🎵 MusicEdu — Classical Music Education Platform
+# 🎵 My Music Coach — Classical My Music Coach
 
 A modern, fully open-source, AI-powered education platform for classical music built around **three pillars**:
 
@@ -12,15 +12,15 @@ A modern, fully open-source, AI-powered education platform for classical music b
 
 ## Architecture
 
-MusicEdu is a **hub-and-spoke platform** with five core systems:
+My Music Coach is a **hub-and-spoke platform** with five core systems:
 
 | System | Role | Domain (local) |
 |--------|------|----------------|
-| **musicEducation** | User profiles, orchestration, public event discovery | `app.musicedu.test` / `api.musicedu.test` |
-| **Keycloak** | Central identity provider (OIDC + SAML) | `auth.musicedu.test` |
-| **Moodle** | Online learning core (courses, lessons, quizzes) | `learn.musicedu.test` |
-| **LibreBooking** | Physical lesson scheduling (rooms, resources) | `booking.musicedu.test` |
-| **pretix** | Event ticketing core (orders, check-in, refunds) | `tickets.musicedu.test` |
+| **my-music-coach** | User profiles, orchestration, public event discovery | `app.mymusic-coach.test` / `api.mymusic-coach.test` |
+| **Keycloak** | Central identity provider (OIDC + SAML) | `auth.mymusic-coach.test` |
+| **Moodle** | Online learning core (courses, lessons, quizzes) | `learn.mymusic-coach.test` |
+| **LibreBooking** | Physical lesson scheduling (rooms, resources) | `booking.mymusic-coach.test` |
+| **pretix** | Event ticketing core (orders, check-in, refunds) | `tickets.mymusic-coach.test` |
 
 ### Service Map
 
@@ -70,12 +70,12 @@ MusicEdu is a **hub-and-spoke platform** with five core systems:
 
 ```bash
 # Add to /etc/hosts (or run: make hosts)
-127.0.0.1  app.musicedu.test
-127.0.0.1  api.musicedu.test
-127.0.0.1  auth.musicedu.test
-127.0.0.1  learn.musicedu.test
-127.0.0.1  booking.musicedu.test
-127.0.0.1  tickets.musicedu.test
+127.0.0.1  app.mymusic-coach.test
+127.0.0.1  api.mymusic-coach.test
+127.0.0.1  auth.mymusic-coach.test
+127.0.0.1  learn.mymusic-coach.test
+127.0.0.1  booking.mymusic-coach.test
+127.0.0.1  tickets.mymusic-coach.test
 ```
 
 ### 3. Start the full stack
@@ -92,12 +92,12 @@ make migrate     # Run DB migrations
 
 | Service | URL |
 |---------|-----|
-| 🌐 Web App | http://app.musicedu.test |
-| 🔌 GraphQL API | http://api.musicedu.test/graphql |
-| 🔑 Keycloak Admin | http://auth.musicedu.test |
-| 📚 Moodle LMS | http://learn.musicedu.test |
-| 📅 LibreBooking | http://booking.musicedu.test |
-| 🎫 pretix Ticketing | http://tickets.musicedu.test |
+| 🌐 Web App | http://app.mymusic-coach.test |
+| 🔌 GraphQL API | http://api.mymusic-coach.test/graphql |
+| 🔑 Keycloak Admin | http://auth.mymusic-coach.test |
+| 📚 Moodle LMS | http://learn.mymusic-coach.test |
+| 📅 LibreBooking | http://booking.mymusic-coach.test |
+| 🎫 pretix Ticketing | http://tickets.mymusic-coach.test |
 
 ### 5. Development (hot-reload, no Docker)
 

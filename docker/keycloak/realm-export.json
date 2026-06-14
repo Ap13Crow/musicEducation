@@ -1,8 +1,8 @@
 {
-  "realm": "musicedu",
+  "realm": "mymusic-coach",
   "enabled": true,
-  "displayName": "Music Education Platform",
-  "displayNameHtml": "<b>🎵 MusicEdu</b>",
+  "displayName": "My Music Coach",
+  "displayNameHtml": "<b>🎵 My Music Coach</b>",
   "accessTokenLifespan": 900,
   "registrationAllowed": true,
   "registrationEmailAsUsername": true,
@@ -10,21 +10,33 @@
   "verifyEmail": true,
   "loginWithEmailAllowed": true,
   "sslRequired": "external",
+  "smtpServer": {
+    "host": "mail.infomaniak.com",
+    "port": "587",
+    "from": "admin@mymusic.coach",
+    "fromDisplayName": "My Music Coach",
+    "replyTo": "admin@mymusic.coach",
+    "ssl": "false",
+    "starttls": "true",
+    "auth": "true",
+    "user": "admin@mymusic.coach",
+    "password": ""
+  },
   "clients": [
     {
-      "clientId": "musicedu-web",
-      "name": "MusicEdu Web App",
+      "clientId": "mymusic-coach-web",
+      "name": "My Music Coach Web App",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
-        "http://app.musicedu.test/*",
+        "http://app.mymusic-coach.test/*",
         "http://localhost:3000/*",
-        "https://musicedu.app/*"
+        "https://mymusic.coach/*"
       ],
       "webOrigins": [
-        "http://app.musicedu.test",
+        "http://app.mymusic-coach.test",
         "http://localhost:3000",
-        "https://musicedu.app"
+        "https://mymusic.coach"
       ],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
@@ -35,8 +47,8 @@
       }
     },
     {
-      "clientId": "musicedu-api",
-      "name": "MusicEdu API",
+      "clientId": "mymusic-coach-api",
+      "name": "My Music Coach API",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
       "serviceAccountsEnabled": true,
@@ -51,11 +63,11 @@
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
-        "http://learn.musicedu.test/admin/oauth2callback.php",
-        "http://learn.musicedu.test/auth/oidc/*"
+        "http://learn.mymusic-coach.test/admin/oauth2callback.php",
+        "http://learn.mymusic-coach.test/auth/oidc/*"
       ],
       "webOrigins": [
-        "http://learn.musicedu.test"
+        "http://learn.mymusic-coach.test"
       ],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
@@ -72,11 +84,11 @@
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
-        "http://tickets.musicedu.test/oidc/callback/",
-        "http://tickets.musicedu.test/account/*"
+        "http://tickets.mymusic-coach.test/oidc/callback/",
+        "http://tickets.mymusic-coach.test/account/*"
       ],
       "webOrigins": [
-        "http://tickets.musicedu.test"
+        "http://tickets.mymusic-coach.test"
       ],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
@@ -93,10 +105,10 @@
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
-        "http://booking.musicedu.test/*"
+        "http://booking.mymusic-coach.test/*"
       ],
       "webOrigins": [
-        "http://booking.musicedu.test"
+        "http://booking.mymusic-coach.test"
       ],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,

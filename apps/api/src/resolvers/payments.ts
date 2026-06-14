@@ -11,7 +11,7 @@ function getStripe(): Stripe {
 }
 
 // handleStripeWebhook is exported for use as an Express route, not a GraphQL resolver
-export async function handleStripeWebhook(prisma: import('@music-edu/database').PrismaClient, rawBody: Buffer, sig: string): Promise<void> {
+export async function handleStripeWebhook(prisma: import('@my-music-coach/database').PrismaClient, rawBody: Buffer, sig: string): Promise<void> {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret) return;
   const event = getStripe().webhooks.constructEvent(rawBody, sig, secret);

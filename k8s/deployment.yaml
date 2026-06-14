@@ -1,5 +1,5 @@
 # ============================================================
-# Kubernetes deployment — Music Education Platform
+# Kubernetes deployment — My Music Coach
 # Apply with: kubectl apply -f k8s/
 # ============================================================
 
@@ -8,7 +8,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: music-edu
+  name: mymusic-coach
 
 ---
 # PostgreSQL StatefulSet
@@ -16,7 +16,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres
-  namespace: music-edu
+  namespace: mymusic-coach
 spec:
   serviceName: postgres
   replicas: 1
@@ -43,7 +43,7 @@ spec:
                   name: db-secret
                   key: password
             - name: POSTGRES_DB
-              value: musicedu
+              value: mymusic_coach
           ports:
             - containerPort: 5432
           volumeMounts:
@@ -71,7 +71,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres
-  namespace: music-edu
+  namespace: mymusic-coach
 spec:
   selector:
     app: postgres
@@ -86,7 +86,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: redis
-  namespace: music-edu
+  namespace: mymusic-coach
 spec:
   replicas: 1
   selector:
@@ -115,7 +115,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: redis
-  namespace: music-edu
+  namespace: mymusic-coach
 spec:
   selector:
     app: redis
@@ -128,7 +128,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: api
-  namespace: music-edu
+  namespace: mymusic-coach
 spec:
   replicas: 2
   selector:
@@ -141,7 +141,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: music-edu/api:latest
+          image: mymusic-coach/api:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 4000
@@ -173,7 +173,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: api
-  namespace: music-edu
+  namespace: mymusic-coach
 spec:
   selector:
     app: api
@@ -187,7 +187,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: web
-  namespace: music-edu
+  namespace: mymusic-coach
 spec:
   replicas: 2
   selector:
@@ -200,7 +200,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: music-edu/web:latest
+          image: mymusic-coach/web:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
@@ -220,7 +220,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: web
-  namespace: music-edu
+  namespace: mymusic-coach
 spec:
   selector:
     app: web
@@ -233,8 +233,8 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: music-edu-ingress
-  namespace: music-edu
+  name: mymusic-coach-ingress
+  namespace: mymusic-coach
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /
     cert-manager.io/cluster-issuer: letsencrypt-prod
@@ -250,11 +250,11 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - musicedu.app
-        - api.musicedu.app
-      secretName: musicedu-tls
+        - mymusic.coach
+        - api.mymusic.coach
+      secretName: mymusic-coach-tls
   rules:
-    - host: musicedu.app
+    - host: mymusic.coach
       http:
         paths:
           - path: /
@@ -264,7 +264,7 @@ spec:
                 name: web
                 port:
                   number: 3000
-    - host: api.musicedu.app
+    - host: api.mymusic.coach
       http:
         paths:
           - path: /
@@ -281,7 +281,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: api-hpa
-  namespace: music-edu
+  namespace: mymusic-coach
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -303,7 +303,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: web-hpa
-  namespace: music-edu
+  namespace: mymusic-coach
 spec:
   scaleTargetRef:
     apiVersion: apps/v1

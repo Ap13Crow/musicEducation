@@ -87,7 +87,7 @@ export class LibreBookingAdapter implements SchedulingAdapter {
       resourceId: Number(params.resourceId),
       startDateTime: params.start.toISOString(),
       endDateTime: params.end.toISOString(),
-      title: `MusicEdu Booking (user:${params.userId})`,
+      title: `My Music Coach Booking (user:${params.userId})`,
       description: params.notes ?? '',
     });
 

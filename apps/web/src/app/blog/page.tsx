@@ -17,7 +17,7 @@ export default function BlogPage() {
   return (
     <main className="px-6 py-16">
       <section className="mx-auto max-w-4xl">
-        <h1 className="mb-4 text-4xl font-bold">MusicEdu Blog</h1>
+        <h1 className="mb-4 text-4xl font-bold">My Music Coach Blog</h1>
         <p className="mb-10 text-gray-600">
           Practical advice, teacher insights, and classical music learning strategies.
         </p>

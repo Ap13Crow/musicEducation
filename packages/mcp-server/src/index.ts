@@ -10,7 +10,7 @@ const PORT = Number(process.env.MCP_PORT ?? 3100);
 
 function createMcpServer(): McpServer {
   const server = new McpServer({
-    name: 'music-edu-mcp',
+    name: 'mymusic-coach-mcp',
     version: '0.1.0',
   });
 
@@ -90,7 +90,7 @@ app.post('/messages', async (req, res) => {
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
-    service: 'music-edu-mcp',
+    service: 'mymusic-coach-mcp',
     tools: ['analyze_recording', 'evaluate_assessment', 'generate_feedback', 'recommend_content'],
     timestamp: new Date().toISOString(),
   });

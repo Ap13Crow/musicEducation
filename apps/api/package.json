@@ -1,5 +1,5 @@
 {
-  "name": "@music-edu/api",
+  "name": "@my-music-coach/api",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -13,8 +13,8 @@
     "@apollo/server": "^4.11.0",
     "@graphql-tools/merge": "^9.0.4",
     "@graphql-tools/schema": "^10.0.5",
-    "@music-edu/database": "*",
-    "@music-edu/graphql-schema": "*",
+    "@my-music-coach/database": "*",
+    "@my-music-coach/graphql-schema": "*",
     "express": "^4.19.2",
     "graphql": "^16.9.0",
     "graphql-scalars": "^1.23.0",

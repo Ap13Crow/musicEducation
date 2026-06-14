@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { createHmac, timingSafeEqual } from 'crypto';
-import type { PrismaClient } from '@music-edu/database';
+import type { PrismaClient } from '@my-music-coach/database';
 import type { PretixAdapter } from '../adapters/pretix.js';
 import type { PretixWebhookPayload } from '../types/index.js';
 import { logger } from '../../utils/logger.js';

@@ -13,12 +13,12 @@ cat > "$CONFIG_DIR/config.php" << EOPHP
 \$conf['settings']['database']['hostspec'] = '${LIBREBOOKING_DB_HOST:-librebooking-db}';
 \$conf['settings']['database']['name'] = '${LIBREBOOKING_DB_NAME:-librebooking}';
 
-\$conf['settings']['app.title'] = '${LIBREBOOKING_APP_TITLE:-MusicEdu Booking}';
+\$conf['settings']['app.title'] = '${LIBREBOOKING_APP_TITLE:-My Music Coach Booking}';
 \$conf['settings']['default.timezone'] = '${LIBREBOOKING_TIMEZONE:-Europe/Zurich}';
-\$conf['settings']['script.url'] = '${LIBREBOOKING_SCRIPT_URL:-http://booking.musicedu.test}';
+\$conf['settings']['script.url'] = '${LIBREBOOKING_SCRIPT_URL:-http://booking.mymusic-coach.test}';
 
-\$conf['settings']['admin.email'] = '${LIBREBOOKING_ADMIN_EMAIL:-admin@musicedu.app}';
-\$conf['settings']['admin.email.name'] = 'MusicEdu Booking';
+\$conf['settings']['admin.email'] = '${LIBREBOOKING_ADMIN_EMAIL:-admin@mymusic.coach}';
+\$conf['settings']['admin.email.name'] = 'My Music Coach Booking';
 
 \$conf['settings']['authentication']['type'] = 'ActiveDirectory';
 \$conf['settings']['authentication']['required.email.domain'] = '';

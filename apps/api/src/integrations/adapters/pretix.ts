@@ -14,7 +14,7 @@ import { logger } from '../../utils/logger.js';
  * pretix event-ticketing adapter.
  *
  * Wraps the pretix REST API to manage organisers, events, products,
- * orders and check-in from the musicEducation platform.
+ * orders and check-in from the my-music-coach platform.
  */
 export class PretixAdapter implements EventCoreAdapter {
   readonly key = 'pretix';

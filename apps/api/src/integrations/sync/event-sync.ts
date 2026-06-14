@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@music-edu/database';
+import type { PrismaClient } from '@my-music-coach/database';
 import type { PretixAdapter } from '../adapters/pretix.js';
 import { logger } from '../../utils/logger.js';
 

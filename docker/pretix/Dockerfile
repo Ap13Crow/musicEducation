@@ -1,11 +1,11 @@
 # ── pretix ───────────────────────────────────────────────────
-# Event ticketing core for MusicEdu.
+# Event ticketing core for My Music Coach.
 # Pinned to a stable release; pretix.cfg is mounted at runtime.
 
 FROM pretix/standalone:2024.7.0
 
-LABEL maintainer="MusicEdu Platform"
-LABEL description="pretix for MusicEdu – event ticketing core"
+LABEL maintainer="My Music Coach"
+LABEL description="pretix for My Music Coach – event ticketing core"
 
 # Copy entrypoint that generates pretix.cfg from env-driven template.
 # --chmod=755 sets the bit at COPY time (build runs as root), avoiding

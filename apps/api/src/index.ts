@@ -9,7 +9,7 @@ import { mergeResolvers } from '@graphql-tools/merge';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import pino from 'pino';
-import { PrismaClient } from '@music-edu/database';
+import { PrismaClient } from '@my-music-coach/database';
 import { authMiddleware } from './middleware/auth.js';
 import { authResolvers } from './resolvers/auth.js';
 import { userResolvers } from './resolvers/users.js';

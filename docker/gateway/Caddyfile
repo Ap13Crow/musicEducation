@@ -1,6 +1,6 @@
 # ── Caddy Reverse Proxy ──────────────────────────────────────
 # Subdomain-based routing for local development.
-# All services are accessed through *.musicedu.test
+# All services are accessed through *.mymusic-coach.test
 
 {
 	# Local development — no HTTPS auto-provisioning
@@ -15,31 +15,31 @@
 }
 
 # ── Main web app ─────────────────────────────────────────────
-app.musicedu.test {
+app.mymusic-coach.test {
 	reverse_proxy web:3000
 }
 
 # ── GraphQL API ──────────────────────────────────────────────
-api.musicedu.test {
+api.mymusic-coach.test {
 	reverse_proxy api:4000
 }
 
 # ── Keycloak (identity provider) ─────────────────────────────
-auth.musicedu.test {
+auth.mymusic-coach.test {
 	reverse_proxy keycloak:8080
 }
 
 # ── Moodle (online learning) ────────────────────────────────
-learn.musicedu.test {
+learn.mymusic-coach.test {
 	reverse_proxy moodle:8080
 }
 
 # ── LibreBooking (physical scheduling) ──────────────────────
-booking.musicedu.test {
+booking.mymusic-coach.test {
 	reverse_proxy librebooking:8080
 }
 
 # ── pretix (event ticketing) ────────────────────────────────
-tickets.musicedu.test {
+tickets.mymusic-coach.test {
 	reverse_proxy pretix:80
 }

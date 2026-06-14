@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import type { PrismaClient, User } from '@music-edu/database';
+import type { PrismaClient, User } from '@my-music-coach/database';
 
 /** Lightweight user stub attached to every authenticated request */
 export interface AuthUser {

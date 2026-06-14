@@ -9,8 +9,8 @@ MAIL_PASS="${PRETIX_MAIL_PASSWORD:-}"
 
 cat > /etc/pretix/pretix.cfg << EOCFG
 [pretix]
-instance_name=${PRETIX_INSTANCE_NAME:-MusicEdu Tickets}
-url=${PRETIX_URL:-http://tickets.musicedu.test}
+instance_name=${PRETIX_INSTANCE_NAME:-My Music Coach Tickets}
+url=${PRETIX_URL:-http://tickets.mymusic-coach.test}
 currency=${PRETIX_CURRENCY:-CHF}
 datadir=/data
 trust_x_forwarded_for=on
@@ -25,7 +25,7 @@ host=${PRETIX_DB_HOST:-pretix-db}
 port=5432
 
 [mail]
-from=${PRETIX_MAIL_FROM:-tickets@musicedu.app}
+from=${PRETIX_MAIL_FROM:-tickets@mymusic.coach}
 host=${PRETIX_MAIL_HOST:-localhost}
 port=${PRETIX_MAIL_PORT:-587}
 user=${PRETIX_MAIL_USER:-}

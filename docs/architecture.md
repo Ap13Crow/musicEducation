@@ -1,4 +1,4 @@
-# Music Education Platform — Architecture
+# My Music Coach — Architecture
 
 ## Overview
 
@@ -53,7 +53,7 @@ A fully open-source, containerised classical music education platform built arou
 ## Repository Structure
 
 ```
-musicEducation/
+my-music-coach/
 ├── apps/
 │   ├── api/                      # GraphQL API server (Apollo + Express)
 │   │   ├── src/
@@ -153,9 +153,9 @@ Browser → Next.js → NextAuth.js → Keycloak (OIDC)
 ```
 
 ### OpenID Connect endpoints (Keycloak)
-- Discovery: `http://localhost:8080/realms/musicedu/.well-known/openid-configuration`
-- Auth: `http://localhost:8080/realms/musicedu/protocol/openid-connect/auth`
-- Token: `http://localhost:8080/realms/musicedu/protocol/openid-connect/token`
+- Discovery: `http://localhost:8080/realms/mymusic-coach/.well-known/openid-configuration`
+- Auth: `http://localhost:8080/realms/mymusic-coach/protocol/openid-connect/auth`
+- Token: `http://localhost:8080/realms/mymusic-coach/protocol/openid-connect/token`
 
 ---
 
@@ -235,19 +235,19 @@ Ports:
 ```bash
 # Create secrets first (never commit real secrets!)
 kubectl create secret generic db-secret \
-  --from-literal=username=musicedu \
+  --from-literal=username=mymusic_coach \
   --from-literal=****** \
-  -n music-edu
+  -n mymusic-coach
 
 kubectl create secret generic redis-secret \
   --from-literal=****** \
-  -n music-edu
+  -n mymusic-coach
 
 # Apply all manifests
 kubectl apply -f k8s/
 
 # Check status
-kubectl get pods -n music-edu
+kubectl get pods -n mymusic-coach
 ```
 
 ---

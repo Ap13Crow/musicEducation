@@ -2,11 +2,11 @@
 
 ## Overview
 
-MusicEdu uses a hub-and-spoke model where the **platform API** (`apps/api`) is the central orchestrator and four specialised systems handle their respective domains:
+My Music Coach uses a hub-and-spoke model where the **platform API** (`apps/api`) is the central orchestrator and four specialised systems handle their respective domains:
 
 | System | Role | Auth method |
 |--------|------|-------------|
-| **musicEducation** (apps/api + apps/web) | User profiles, public event discovery, orchestration | Keycloak OIDC (NextAuth.js) |
+| **my-music-coach** (apps/api + apps/web) | User profiles, public event discovery, orchestration | Keycloak OIDC (NextAuth.js) |
 | **Keycloak** | Central identity provider | — |
 | **Moodle** | Online learning (courses, lessons, quizzes) | Keycloak OIDC via `moodle-oidc` client |
 | **LibreBooking** | Physical lesson scheduling (rooms, resources) | Keycloak OAuth2 / SAML via `librebooking-saml` client |

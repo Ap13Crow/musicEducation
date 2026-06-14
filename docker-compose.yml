@@ -1,5 +1,5 @@
 # ============================================================
-# MusicEdu Platform — Full Stack (docker compose up)
+# My Music Coach — Full Stack (docker compose up)
 # ============================================================
 # Only the gateway (Caddy) is exposed on 0.0.0.0.
 # All other services listen on the internal Docker network.
@@ -10,7 +10,7 @@ services:
   # ── Gateway / Reverse Proxy (Caddy) ────────────────────────
   gateway:
     image: caddy:2.8-alpine
-    container_name: music_edu_gateway
+    container_name: mymusic_coach_gateway
     restart: unless-stopped
     ports:
       - "80:80"
@@ -40,18 +40,18 @@ services:
   # ── PostgreSQL (main platform DB) ──────────────────────────
   postgres-main:
     image: postgres:16-alpine
-    container_name: music_edu_postgres
+    container_name: mymusic_coach_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-musicedu}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-musicedu_dev_pw}
-      POSTGRES_DB: ${POSTGRES_DB:-musicedu}
+      POSTGRES_USER: ${POSTGRES_USER:-mymusic_coach}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mymusic_coach_dev_pw}
+      POSTGRES_DB: ${POSTGRES_DB:-mymusic_coach}
     volumes:
       - postgres_main_data:/var/lib/postgresql/data
     expose:
       - "5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-musicedu}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mymusic_coach}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -59,7 +59,7 @@ services:
   # ── Redis (main platform cache / pub-sub) ──────────────────
   redis-main:
     image: redis:7-alpine
-    container_name: music_edu_redis
+    container_name: mymusic_coach_redis
     restart: unless-stopped
     command: redis-server --requirepass ${REDIS_PASSWORD:-redis_dev_pw}
     volumes:
@@ -75,21 +75,21 @@ services:
   # ── Keycloak (central identity provider) ───────────────────
   keycloak:
     image: quay.io/keycloak/keycloak:24.0
-    container_name: music_edu_keycloak
+    container_name: mymusic_coach_keycloak
     restart: unless-stopped
     command: start-dev --import-realm
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin_dev_pw}
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres-main:5432/${POSTGRES_DB:-musicedu}
-      KC_DB_USERNAME: ${POSTGRES_USER:-musicedu}
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-musicedu_dev_pw}
-      KC_HOSTNAME: auth.musicedu.test
+      KC_DB_URL: jdbc:postgresql://postgres-main:5432/${POSTGRES_DB:-mymusic_coach}
+      KC_DB_USERNAME: ${POSTGRES_USER:-mymusic_coach}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-mymusic_coach_dev_pw}
+      KC_HOSTNAME: auth.mymusic-coach.test
       KC_HTTP_ENABLED: "true"
       KC_PROXY_HEADERS: xforwarded
     volumes:
-      - ./docker/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      - ./docker/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
     expose:
       - "8080"
     depends_on:
@@ -107,10 +107,10 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    container_name: music_edu_api
+    container_name: mymusic_coach_api
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-musicedu}:${POSTGRES_PASSWORD:-musicedu_dev_pw}@postgres-main:5432/${POSTGRES_DB:-musicedu}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mymusic_coach}:${POSTGRES_PASSWORD:-mymusic_coach_dev_pw}@postgres-main:5432/${POSTGRES_DB:-mymusic_coach}
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev_pw}@redis-main:6379
       JWT_SECRET: ${JWT_SECRET:-CHANGE_THIS_IN_PRODUCTION_PLEASE}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
@@ -123,7 +123,7 @@ services:
       # ── Integration layer ────────────────────────────────
       PRETIX_URL: ${PRETIX_URL:-http://pretix:80}
       PRETIX_API_TOKEN: ${PRETIX_API_TOKEN:-}
-      PRETIX_ORGANISER_SLUG: ${PRETIX_ORGANISER_SLUG:-musicedu}
+      PRETIX_ORGANISER_SLUG: ${PRETIX_ORGANISER_SLUG:-mymusic-coach}
       MOODLE_URL: ${MOODLE_URL:-http://moodle:8080}
       MOODLE_WS_TOKEN: ${MOODLE_WS_TOKEN:-}
       LIBREBOOKING_URL: ${LIBREBOOKING_URL:-http://librebooking:80}
@@ -131,8 +131,8 @@ services:
       LIBREBOOKING_API_PASSWORD: ${LIBREBOOKING_API_PASSWORD:-}
       PRETIX_WEBHOOK_SECRET: ${PRETIX_WEBHOOK_SECRET:-}
       # ── General ──────────────────────────────────────────
-      FRONTEND_URL: ${FRONTEND_URL:-http://app.musicedu.test}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://app.musicedu.test}
+      FRONTEND_URL: ${FRONTEND_URL:-http://app.mymusic-coach.test}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://app.mymusic-coach.test}
       PORT: 4000
       NODE_ENV: ${NODE_ENV:-development}
     expose:
@@ -154,16 +154,16 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-    container_name: music_edu_web
+    container_name: mymusic_coach_web
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_GRAPHQL_URL: /api/graphql
-      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://app.musicedu.test}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://app.mymusic-coach.test}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-CHANGE_THIS_IN_PRODUCTION}
-      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-musicedu-web}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-mymusic-coach-web}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
-      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://keycloak:8080/realms/musicedu}
-      NEXT_PUBLIC_PRETIX_WIDGET_URL: ${NEXT_PUBLIC_PRETIX_WIDGET_URL:-http://tickets.musicedu.test}
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://keycloak:8080/realms/mymusic-coach}
+      NEXT_PUBLIC_PRETIX_WIDGET_URL: ${NEXT_PUBLIC_PRETIX_WIDGET_URL:-http://tickets.mymusic-coach.test}
     expose:
       - "3000"
     depends_on:
@@ -175,14 +175,14 @@ services:
     build:
       context: .
       dockerfile: packages/mcp-server/Dockerfile
-    container_name: music_edu_mcp
+    container_name: mymusic_coach_mcp
     restart: unless-stopped
     environment:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_API_URL: ${DEEPSEEK_API_URL:-https://api.deepseek.com/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-musicedu}:${POSTGRES_PASSWORD:-musicedu_dev_pw}@postgres-main:5432/${POSTGRES_DB:-musicedu}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mymusic_coach}:${POSTGRES_PASSWORD:-mymusic_coach_dev_pw}@postgres-main:5432/${POSTGRES_DB:-mymusic_coach}
       MCP_PORT: 3100
     expose:
       - "3100"
@@ -199,7 +199,7 @@ services:
   # ── MinIO (object storage) ────────────────────────────────
   minio:
     image: minio/minio:RELEASE.2024-06-13T22-53-53Z
-    container_name: music_edu_minio
+    container_name: mymusic_coach_minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -224,7 +224,7 @@ services:
     build:
       context: ./docker/moodle
       dockerfile: Dockerfile
-    container_name: music_edu_moodle
+    container_name: mymusic_coach_moodle
     restart: unless-stopped
     environment:
       MOODLE_DATABASE_TYPE: pgsql
@@ -235,10 +235,10 @@ services:
       MOODLE_DATABASE_NAME: ${MOODLE_DB_NAME:-moodle}
       MOODLE_USERNAME: ${MOODLE_ADMIN_USER:-admin}
       MOODLE_PASSWORD: ${MOODLE_ADMIN_PASSWORD:-moodle_admin_pw}
-      MOODLE_EMAIL: ${MOODLE_ADMIN_EMAIL:-admin@musicedu.app}
-      MOODLE_SITE_NAME: "MusicEdu Learning"
+      MOODLE_EMAIL: ${MOODLE_ADMIN_EMAIL:-admin@mymusic.coach}
+      MOODLE_SITE_NAME: "My Music Coach"
       MOODLE_SSLPROXY: "true"
-      MOODLE_HOST: learn.musicedu.test
+      MOODLE_HOST: learn.mymusic-coach.test
     volumes:
       - moodle_data:/bitnami/moodle
       - moodle_moodledata:/bitnami/moodledata
@@ -256,7 +256,7 @@ services:
 
   moodle-db:
     image: postgres:16-alpine
-    container_name: music_edu_moodle_db
+    container_name: mymusic_coach_moodle_db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${MOODLE_DB_USER:-moodle}
@@ -280,17 +280,17 @@ services:
     build:
       context: ./docker/librebooking
       dockerfile: Dockerfile
-    container_name: music_edu_librebooking
+    container_name: mymusic_coach_librebooking
     restart: unless-stopped
     environment:
       LIBREBOOKING_DB_HOST: librebooking-db
       LIBREBOOKING_DB_USER: ${LIBREBOOKING_DB_USER:-librebooking}
       LIBREBOOKING_DB_PASSWORD: ${LIBREBOOKING_DB_PASSWORD:-librebooking_dev_pw}
       LIBREBOOKING_DB_NAME: ${LIBREBOOKING_DB_NAME:-librebooking}
-      LIBREBOOKING_APP_TITLE: "MusicEdu Booking"
+      LIBREBOOKING_APP_TITLE: "My Music Coach Booking"
       LIBREBOOKING_TIMEZONE: ${LIBREBOOKING_TIMEZONE:-Europe/Zurich}
-      LIBREBOOKING_SCRIPT_URL: http://booking.musicedu.test
-      LIBREBOOKING_ADMIN_EMAIL: ${LIBREBOOKING_ADMIN_EMAIL:-admin@musicedu.app}
+      LIBREBOOKING_SCRIPT_URL: http://booking.mymusic-coach.test
+      LIBREBOOKING_ADMIN_EMAIL: ${LIBREBOOKING_ADMIN_EMAIL:-admin@mymusic.coach}
     expose:
       - "8080"
     depends_on:
@@ -305,7 +305,7 @@ services:
 
   librebooking-db:
     image: mariadb:11.4
-    container_name: music_edu_librebooking_db
+    container_name: mymusic_coach_librebooking_db
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${LIBREBOOKING_DB_ROOT_PASSWORD:-librebooking_root_pw}
@@ -330,11 +330,11 @@ services:
     build:
       context: ./docker/pretix
       dockerfile: Dockerfile
-    container_name: music_edu_pretix
+    container_name: mymusic_coach_pretix
     restart: unless-stopped
     environment:
-      PRETIX_INSTANCE_NAME: "MusicEdu Tickets"
-      PRETIX_URL: http://tickets.musicedu.test
+      PRETIX_INSTANCE_NAME: "My Music Coach Tickets"
+      PRETIX_URL: http://tickets.mymusic-coach.test
       PRETIX_CURRENCY: ${PRETIX_CURRENCY:-CHF}
       PRETIX_DB_HOST: pretix-db
       PRETIX_DB_USER: ${PRETIX_DB_USER:-pretix}
@@ -342,7 +342,7 @@ services:
       PRETIX_DB_NAME: ${PRETIX_DB_NAME:-pretix}
       PRETIX_REDIS_HOST: pretix-redis
       PRETIX_REDIS_PASSWORD: ${PRETIX_REDIS_PASSWORD:-pretix_redis_pw}
-      PRETIX_MAIL_FROM: ${PRETIX_MAIL_FROM:-tickets@musicedu.app}
+      PRETIX_MAIL_FROM: ${PRETIX_MAIL_FROM:-tickets@mymusic.coach}
       PRETIX_MAIL_HOST: ${PRETIX_MAIL_HOST:-localhost}
       PRETIX_MAIL_PORT: ${PRETIX_MAIL_PORT:-587}
       PRETIX_MAIL_USER: ${PRETIX_MAIL_USER:-}
@@ -365,7 +365,7 @@ services:
 
   pretix-db:
     image: postgres:16-alpine
-    container_name: music_edu_pretix_db
+    container_name: mymusic_coach_pretix_db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${PRETIX_DB_USER:-pretix}
@@ -383,7 +383,7 @@ services:
 
   pretix-redis:
     image: redis:7-alpine
-    container_name: music_edu_pretix_redis
+    container_name: mymusic_coach_pretix_redis
     restart: unless-stopped
     command: redis-server --requirepass ${PRETIX_REDIS_PASSWORD:-pretix_redis_pw}
     volumes:
@@ -414,4 +414,4 @@ volumes:
 # ── Network ──────────────────────────────────────────────────
 networks:
   default:
-    name: music_edu_network
+    name: mymusic_coach_network
