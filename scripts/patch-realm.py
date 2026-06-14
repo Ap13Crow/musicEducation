@@ -43,6 +43,12 @@ SECRETS = {client_id: env.get(var, "") for client_id, var in CLIENT_SECRET_ENV.i
 
 
 def fix_uris(uris):
+    """Rewrite client redirect/web-origin URIs for production.
+
+    Replaces the dev domain (``mymusic-coach.test``) with the live domain
+    (``mymusic.coach``), upgrades ``http://`` to ``https://``, and keeps only
+    live-domain entries (dropping localhost), de-duplicated and order-preserving.
+    """
     out = []
     for u in uris:
         u2 = u.replace(OLD, NEW).replace("http://", "https://")
@@ -69,12 +75,12 @@ with open(DST, "w") as f:
     json.dump(realm, f, indent=2)
     f.write("\n")
 
-# Report which clients are missing a secret. `missing` is built from the
-# constant CLIENT_SECRET_ENV mapping (client IDs only); each secret is read just
-# to test for presence and is never stored or logged.
-missing = sorted(
-    client_id for client_id, var in CLIENT_SECRET_ENV.items() if not env.get(var, "")
-)
+# Report which clients are missing a secret. The set of clients that have a
+# secret is computed first; `missing` is then derived purely from the constant
+# CLIENT_SECRET_ENV client IDs via set membership, so no secret value flows into
+# the logged message.
+configured_clients = {cid for cid, var in CLIENT_SECRET_ENV.items() if env.get(var, "")}
+missing = sorted(cid for cid in CLIENT_SECRET_ENV if cid not in configured_clients)
 print(f"Wrote {DST}")
 if missing:
     print("WARNING: no secret found in .env for:", ", ".join(missing))
