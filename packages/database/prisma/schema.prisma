@@ -1,0 +1,519 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum SkillLevel {
+  BEGINNER
+  ELEMENTARY
+  INTERMEDIATE
+  ADVANCED
+  PROFESSIONAL
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum BookingFormat {
+  IN_PERSON
+  ONLINE
+  HYBRID
+}
+
+enum EventType {
+  MASTERCLASS
+  WORKSHOP
+  CONCERT
+  COMPETITION
+  OPEN_MIC
+  LECTURE
+  OTHER
+}
+
+enum EventFormat {
+  IN_PERSON
+  ONLINE
+  HYBRID
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum PaymentProvider {
+  STRIPE
+  YAPEAL
+}
+
+enum EventBookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  REFUNDED
+  ATTENDED
+}
+
+// ── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  role          Role      @default(STUDENT)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  credential         UserCredential?
+  profile            UserProfile?
+  teacherProfile     TeacherProfile?
+  gamification       GamificationProfile?
+  externalIdentities UserExternalIdentity[]
+  enrollments        Enrollment[]
+  bookings           Booking[]
+  eventBookings      EventBooking[]
+  payments           Payment[]
+  assessments        Assessment[]
+  feedPosts          FeedPost[]
+  feedLikes          FeedLike[]
+  feedComments       FeedComment[]
+  following          Follow[]               @relation("follower")
+  followers          Follow[]               @relation("following")
+  reviews            Review[]
+  publishedEvents    Event[]
+}
+
+model UserCredential {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  passwordHash String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model UserProfile {
+  id             String     @id @default(cuid())
+  userId         String     @unique
+  displayName    String?
+  bio            String?
+  avatarUrl      String?
+  instruments    String[]
+  musicStyles    String[]
+  skillLevel     SkillLevel @default(BEGINNER)
+  city           String?
+  country        String?
+  language       String     @default("en")
+  onboardingDone Boolean    @default(false)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model TeacherProfile {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  bio              String?
+  instruments      String[]
+  musicStyles      String[]
+  languages        String[]
+  hourlyRate       Decimal? @db.Decimal(10, 2)
+  currency         String   @default("CHF")
+  isAvailable      Boolean  @default(true)
+  calendlyUsername String?
+  avgRating        Float    @default(0)
+  totalReviews     Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user           User                   @relation(fields: [userId], references: [id])
+  certifications TeacherCertification[]
+  availability   TeacherAvailability[]
+  courses        Course[]
+  bookings       Booking[]
+}
+
+model TeacherCertification {
+  id               String   @id @default(cuid())
+  teacherProfileId String
+  title            String
+  issuingBody      String?
+  issuedYear       Int?
+  documentUrl      String?
+  createdAt        DateTime @default(now())
+
+  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+}
+
+model TeacherAvailability {
+  id               String   @id @default(cuid())
+  teacherProfileId String
+  dayOfWeek        Int
+  startTime        String
+  endTime          String
+  timezone         String   @default("Europe/Zurich")
+  createdAt        DateTime @default(now())
+
+  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+}
+
+model GamificationProfile {
+  id          String     @id @default(cuid())
+  userId      String     @unique
+  xp          Int        @default(0)
+  totalPoints Int        @default(0)
+  level       Int        @default(1)
+  skillLevel  SkillLevel @default(BEGINNER)
+  badges      String[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model UserExternalIdentity {
+  id         String   @id @default(cuid())
+  userId     String
+  provider   String
+  externalId String
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([provider, externalId])
+}
+
+model Category {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  slug     String  @unique
+  parentId String?
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  courses  Course[]
+}
+
+model Course {
+  id               String       @id @default(cuid())
+  slug             String       @unique
+  title            String
+  description      String?
+  level            SkillLevel   @default(BEGINNER)
+  instruments      String[]
+  musicStyles      String[]
+  price            Decimal      @default(0) @db.Decimal(10, 2)
+  currency         String       @default("CHF")
+  status           CourseStatus @default(DRAFT)
+  isFreeTier       Boolean      @default(false)
+  language         String       @default("en")
+  thumbnailUrl     String?
+  categoryId       String?
+  teacherProfileId String
+  avgRating        Float        @default(0)
+  totalReviews     Int          @default(0)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  teacherProfile TeacherProfile  @relation(fields: [teacherProfileId], references: [id])
+  category       Category?       @relation(fields: [categoryId], references: [id])
+  sections       CourseSection[]
+  enrollments    Enrollment[]
+  reviews        Review[]
+}
+
+model CourseSection {
+  id       String @id @default(cuid())
+  courseId String
+  title    String
+  order    Int    @default(0)
+
+  course  Course   @relation(fields: [courseId], references: [id])
+  lessons Lesson[]
+}
+
+model Lesson {
+  id          String   @id @default(cuid())
+  sectionId   String
+  title       String
+  description String?
+  videoUrl    String?
+  duration    Int?
+  order       Int      @default(0)
+  xpReward    Int      @default(10)
+  isPreview   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  section  CourseSection    @relation(fields: [sectionId], references: [id])
+  progress LessonProgress[]
+}
+
+model Enrollment {
+  id          String    @id @default(cuid())
+  userId      String
+  courseId    String
+  paymentId   String?   @unique
+  progress    Float     @default(0)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user           User             @relation(fields: [userId], references: [id])
+  course         Course           @relation(fields: [courseId], references: [id])
+  payment        Payment?         @relation(fields: [paymentId], references: [id])
+  lessonProgress LessonProgress[]
+
+  @@unique([userId, courseId])
+}
+
+model LessonProgress {
+  id           String    @id @default(cuid())
+  enrollmentId String
+  lessonId     String
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id])
+  lesson     Lesson     @relation(fields: [lessonId], references: [id])
+
+  @@unique([enrollmentId, lessonId])
+}
+
+model Assessment {
+  id          String    @id @default(cuid())
+  userId      String
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  durationSec Int?
+  skillLevel  String?
+  xpAwarded   Int?
+  aiReport    String?
+  createdAt   DateTime  @default(now())
+
+  user    User               @relation(fields: [userId], references: [id])
+  answers AssessmentAnswer[]
+}
+
+model AssessmentQuestion {
+  id         String   @id @default(cuid())
+  category   String
+  difficulty String
+  instrument String?
+  prompt     String
+  options    Json?
+  createdAt  DateTime @default(now())
+
+  answers AssessmentAnswer[]
+}
+
+model AssessmentAnswer {
+  id             String   @id @default(cuid())
+  assessmentId   String
+  questionId     String
+  selectedOption String?
+  openAnswer     String?
+  isCorrect      Boolean?
+  createdAt      DateTime @default(now())
+
+  assessment Assessment         @relation(fields: [assessmentId], references: [id])
+  question   AssessmentQuestion @relation(fields: [questionId], references: [id])
+}
+
+model Booking {
+  id               String        @id @default(cuid())
+  userId           String
+  teacherProfileId String
+  startsAt         DateTime
+  endsAt           DateTime?
+  durationMin      Int           @default(60)
+  format           BookingFormat @default(ONLINE)
+  status           BookingStatus @default(PENDING)
+  paymentId        String?
+  instrument       String?
+  notes            String?
+  meetingUrl       String?
+  zoomMeetingId    String?
+  zoomJoinUrl      String?
+  zoomStartUrl     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  user           User           @relation(fields: [userId], references: [id])
+  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+  reviews        Review[]
+}
+
+model Event {
+  id               String      @id @default(cuid())
+  slug             String      @unique
+  title            String
+  description      String?
+  type             EventType
+  format           EventFormat
+  instruments      String[]
+  musicStyles      String[]
+  skillLevels      String[]
+  thumbnailUrl     String?
+  videoStreamUrl   String?
+  startsAt         DateTime
+  endsAt           DateTime?
+  timezone         String      @default("Europe/Zurich")
+  venueName        String?
+  venueAddress     String?
+  city             String?
+  country          String?
+  latitude         Float?
+  longitude        Float?
+  onlineMeetingUrl String?
+  price            Decimal     @default(0) @db.Decimal(10, 2)
+  currency         String      @default("CHF")
+  maxCapacity      Int?
+  currentCapacity  Int         @default(0)
+  isPublished      Boolean     @default(false)
+  publisherId      String
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  publisher User           @relation(fields: [publisherId], references: [id])
+  bookings  EventBooking[]
+  reviews   Review[]
+}
+
+model EventBooking {
+  id              String             @id @default(cuid())
+  userId          String?
+  eventId         String
+  status          EventBookingStatus @default(PENDING)
+  paymentId       String?            @unique
+  bookedAt        DateTime           @default(now())
+  pretixOrderCode String?            @unique
+  email           String?
+  total           Float?
+  currency        String?
+  checkedIn       Boolean            @default(false)
+
+  user    User?    @relation(fields: [userId], references: [id])
+  event   Event    @relation(fields: [eventId], references: [id])
+  payment Payment? @relation(fields: [paymentId], references: [id])
+
+  @@unique([userId, eventId])
+}
+
+model Payment {
+  id          String          @id @default(cuid())
+  userId      String
+  amount      Decimal         @db.Decimal(10, 2)
+  currency    String          @default("CHF")
+  status      PaymentStatus   @default(PENDING)
+  provider    PaymentProvider
+  providerRef String?
+  description String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id])
+  enrollment   Enrollment?
+  eventBooking EventBooking?
+}
+
+model FeedPost {
+  id         String   @id @default(cuid())
+  authorId   String
+  content    String
+  mediaUrls  String[]
+  likesCount Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  author   User          @relation(fields: [authorId], references: [id])
+  likes    FeedLike[]
+  comments FeedComment[]
+}
+
+model FeedLike {
+  id     String @id @default(cuid())
+  userId String
+  postId String
+
+  user User     @relation(fields: [userId], references: [id])
+  post FeedPost @relation(fields: [postId], references: [id])
+
+  @@unique([userId, postId])
+}
+
+model FeedComment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  post   FeedPost @relation(fields: [postId], references: [id])
+  author User     @relation(fields: [authorId], references: [id])
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("follower", fields: [followerId], references: [id])
+  following User @relation("following", fields: [followingId], references: [id])
+
+  @@unique([followerId, followingId])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  userId    String
+  courseId  String?
+  eventId   String?
+  bookingId String?  @unique
+  rating    Int
+  body      String?
+  isPublic  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id])
+  course  Course?  @relation(fields: [courseId], references: [id])
+  event   Event?   @relation(fields: [eventId], references: [id])
+  booking Booking? @relation(fields: [bookingId], references: [id])
+}
+
+model AdminSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}

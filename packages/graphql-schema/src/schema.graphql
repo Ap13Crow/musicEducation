@@ -1,0 +1,777 @@
+scalar DateTime
+scalar JSON
+
+# ── Enums ───────────────────────────────────────────────────────
+
+enum Role {
+  GUEST
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum SkillLevel {
+  BEGINNER
+  ELEMENTARY
+  INTERMEDIATE
+  ADVANCED
+  PROFESSIONAL
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum BookingFormat {
+  ZOOM
+  IN_PERSON
+}
+
+enum EventType {
+  CONCERT
+  MASTERCLASS
+  WORKSHOP
+  COMPETITION
+  RECITAL
+  OTHER
+}
+
+enum EventFormat {
+  IN_PERSON
+  ONLINE
+  HYBRID
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  STRIPE
+  YAPEAL
+}
+
+enum EventBookingStatus {
+  CONFIRMED
+  CANCELLED
+}
+
+# ── Pagination ───────────────────────────────────────────────────
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  totalCount: Int!
+}
+
+# ── Auth ─────────────────────────────────────────────────────────
+
+type AuthPayload {
+  accessToken: String!
+  refreshToken: String!
+  user: User!
+}
+
+type ZoomMeetingInfo {
+  meetingId: String!
+  joinUrl: String!
+  startUrl: String!
+}
+
+# ── Users ─────────────────────────────────────────────────────────
+
+type User {
+  id: ID!
+  email: String!
+  username: String!
+  displayName: String!
+  role: Role!
+  isEmailVerified: Boolean!
+  avatarUrl: String
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  profile: UserProfile
+  teacherProfile: TeacherProfile
+  gamification: GamificationProfile
+  enrollments(page: Int, limit: Int): EnrollmentConnection
+  eventsPublished(page: Int, limit: Int): EventConnection
+  followers: [User!]
+  following: [User!]
+  feedPosts(page: Int, limit: Int): FeedPostConnection
+}
+
+type UserProfile {
+  id: ID!
+  userId: ID!
+  bio: String
+  city: String
+  country: String
+  timezone: String!
+  instruments: [String!]!
+  musicStyles: [String!]!
+  onboardingDone: Boolean!
+  onboardingStep: Int!
+}
+
+type TeacherProfile {
+  id: ID!
+  userId: ID!
+  headline: String
+  teachingBio: String
+  hourlyRate: Float
+  currency: String!
+  instruments: [String!]!
+  specializations: [String!]!
+  teachingFormats: [String!]!
+  isAvailable: Boolean!
+  avgRating: Float!
+  totalReviews: Int!
+  yearsExperience: Int
+  locationCity: String
+  locationCountry: String
+  calendlyUsername: String
+  certifications: [TeacherCertification!]
+  availability: [TeacherAvailability!]
+}
+
+type TeacherCertification {
+  id: ID!
+  teacherProfileId: ID!
+  title: String!
+  issuingBody: String
+  issuedYear: Int
+  documentUrl: String
+}
+
+type TeacherAvailability {
+  id: ID!
+  teacherProfileId: ID!
+  startDate: DateTime
+  endDate: DateTime
+  isRecurring: Boolean!
+  dayOfWeek: Int
+  startTime: String
+  endTime: String
+}
+
+type GamificationProfile {
+  id: ID!
+  userId: ID!
+  skillLevel: SkillLevel!
+  xp: Int!
+  totalPoints: Int!
+  level: Int!
+  currentStreak: Int!
+}
+
+type UserConnection {
+  nodes: [User!]!
+  pageInfo: PageInfo!
+}
+
+type TeacherConnection {
+  nodes: [TeacherProfile!]!
+  pageInfo: PageInfo!
+}
+
+# ── Courses ───────────────────────────────────────────────────────
+
+type Category {
+  id: ID!
+  name: String!
+  parentId: ID
+  children: [Category!]
+}
+
+type Course {
+  id: ID!
+  slug: String!
+  title: String!
+  description: String
+  level: SkillLevel!
+  instruments: [String!]!
+  musicStyles: [String!]!
+  price: Float!
+  currency: String!
+  status: CourseStatus!
+  isFreeTier: Boolean!
+  language: String!
+  thumbnailUrl: String
+  categoryId: ID
+  teacherProfileId: ID
+  avgRating: Float!
+  totalReviews: Int!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  teacher: TeacherProfile
+  category: Category
+  sections: [CourseSection!]
+  reviews(page: Int, limit: Int): ReviewConnection
+}
+
+type CourseSection {
+  id: ID!
+  courseId: ID!
+  title: String!
+  order: Int!
+  lessons: [Lesson!]
+}
+
+type Lesson {
+  id: ID!
+  sectionId: ID!
+  title: String!
+  content: String
+  order: Int!
+  xpReward: Int!
+}
+
+type Enrollment {
+  id: ID!
+  userId: ID!
+  courseId: ID!
+  progress: Float!
+  paymentId: ID
+  completedAt: DateTime
+  createdAt: DateTime!
+  course: Course
+}
+
+type LessonProgress {
+  id: ID!
+  enrollmentId: ID!
+  lessonId: ID!
+  completedAt: DateTime
+}
+
+type CourseConnection {
+  nodes: [Course!]!
+  pageInfo: PageInfo!
+}
+
+type EnrollmentConnection {
+  nodes: [Enrollment!]!
+  pageInfo: PageInfo!
+}
+
+# ── Assessment ─────────────────────────────────────────────────────
+
+type Assessment {
+  id: ID!
+  userId: ID!
+  startedAt: DateTime!
+  completedAt: DateTime
+  skillLevel: SkillLevel
+  durationSec: Int
+  xpAwarded: Int
+  aiReport: String
+}
+
+type AssessmentQuestion {
+  id: ID!
+  category: String!
+  difficulty: String!
+  instrument: String
+  question: String!
+  options: JSON
+}
+
+type AssessmentAnswer {
+  id: ID!
+  assessmentId: ID!
+  questionId: ID!
+  selectedOption: String
+  openAnswer: String
+  isCorrect: Boolean
+}
+
+# ── Bookings ────────────────────────────────────────────────────────
+
+type Booking {
+  id: ID!
+  studentId: ID!
+  teacherId: ID!
+  teacherProfileId: ID!
+  startsAt: DateTime!
+  endsAt: DateTime!
+  durationMin: Int!
+  format: BookingFormat!
+  instrument: String
+  notes: String
+  status: BookingStatus!
+  paymentId: ID
+  zoomMeetingId: String
+  zoomJoinUrl: String
+  zoomStartUrl: String
+  student: User
+  teacher: TeacherProfile
+  payment: Payment
+  review: Review
+}
+
+type BookingConnection {
+  nodes: [Booking!]!
+  pageInfo: PageInfo!
+}
+
+# ── Events ─────────────────────────────────────────────────────────
+
+type Event {
+  id: ID!
+  slug: String!
+  title: String!
+  description: String
+  type: EventType!
+  format: EventFormat!
+  instruments: [String!]!
+  musicStyles: [String!]!
+  skillLevels: [String!]!
+  thumbnailUrl: String
+  videoStreamUrl: String
+  startsAt: DateTime!
+  endsAt: DateTime
+  timezone: String!
+  venueName: String
+  venueAddress: String
+  city: String
+  country: String
+  latitude: Float
+  longitude: Float
+  onlineMeetingUrl: String
+  price: Float!
+  currency: String!
+  maxCapacity: Int
+  currentCapacity: Int!
+  isPublished: Boolean!
+  publisherId: ID!
+  publisher: User
+  reviews(page: Int, limit: Int): ReviewConnection!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type EventBooking {
+  id: ID!
+  userId: ID!
+  eventId: ID!
+  status: EventBookingStatus!
+  paymentId: ID
+  bookedAt: DateTime!
+  event: Event
+  user: User
+}
+
+type EventConnection {
+  nodes: [Event!]!
+  pageInfo: PageInfo!
+}
+
+# ── Payments ──────────────────────────────────────────────────────
+
+type Payment {
+  id: ID!
+  userId: ID!
+  amount: Float!
+  currency: String!
+  status: PaymentStatus!
+  provider: PaymentProvider!
+  providerRef: String
+  description: String
+  createdAt: DateTime!
+}
+
+type CheckoutSession {
+  sessionId: String!
+  checkoutUrl: String!
+}
+
+# ── Social Feed ───────────────────────────────────────────────────
+
+type FeedPost {
+  id: ID!
+  authorId: ID!
+  content: String!
+  mediaUrls: [String!]!
+  likesCount: Int!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  author: User
+  isLikedByMe: Boolean!
+  comments: [FeedComment!]
+}
+
+type FeedComment {
+  id: ID!
+  postId: ID!
+  authorId: ID!
+  body: String!
+  createdAt: DateTime!
+  author: User
+}
+
+type FeedPostConnection {
+  nodes: [FeedPost!]!
+  pageInfo: PageInfo!
+}
+
+# ── Reviews ───────────────────────────────────────────────────────
+
+type Review {
+  id: ID!
+  authorId: ID!
+  rating: Int!
+  comment: String
+  courseId: ID
+  eventId: ID
+  bookingId: ID
+  isPublic: Boolean!
+  createdAt: DateTime!
+  author: User
+}
+
+type ReviewConnection {
+  nodes: [Review!]!
+  pageInfo: PageInfo!
+}
+
+# ── Admin ─────────────────────────────────────────────────────────
+
+type AdminSetting {
+  id: ID!
+  key: String!
+  value: String!
+}
+
+type AdminStats {
+  totalUsers: Int!
+  totalTeachers: Int!
+  totalCourses: Int!
+  totalEvents: Int!
+  totalBookings: Int!
+  totalRevenue: Float!
+}
+
+# ── Input Types ───────────────────────────────────────────────────
+
+input RegisterInput {
+  email: String!
+  username: String!
+  displayName: String!
+  password: String!
+}
+
+input UpdateProfileInput {
+  displayName: String
+  bio: String
+  city: String
+  country: String
+  timezone: String
+  instruments: [String!]
+  musicStyles: [String!]
+}
+
+input ApplyAsTeacherInput {
+  headline: String
+  teachingBio: String
+}
+
+input AvailabilitySlotInput {
+  isRecurring: Boolean
+  dayOfWeek: Int
+  startTime: String
+  endTime: String
+  startDate: DateTime
+  endDate: DateTime
+}
+
+input CreateCourseInput {
+  title: String!
+  description: String
+  level: SkillLevel!
+  instruments: [String!]!
+  musicStyles: [String!]
+  price: Float!
+  currency: String
+  isFreeTier: Boolean
+  language: String
+  thumbnailUrl: String
+  categoryId: ID
+}
+
+input UpdateCourseInput {
+  title: String
+  description: String
+  level: SkillLevel
+  instruments: [String!]
+  musicStyles: [String!]
+  price: Float
+  currency: String
+  isFreeTier: Boolean
+  language: String
+  thumbnailUrl: String
+  categoryId: ID
+}
+
+input CreateSectionInput {
+  courseId: ID!
+  title: String!
+  order: Int
+}
+
+input CreateLessonInput {
+  sectionId: ID!
+  title: String!
+  content: String
+  order: Int
+  xpReward: Int
+}
+
+input BookSessionInput {
+  teacherProfileId: ID!
+  startsAt: DateTime!
+  durationMin: Int!
+  format: BookingFormat!
+  instrument: String
+  notes: String
+}
+
+input CreateEventInput {
+  title: String!
+  description: String
+  type: EventType!
+  format: EventFormat!
+  instruments: [String!]
+  musicStyles: [String!]
+  skillLevels: [String!]
+  thumbnailUrl: String
+  startsAt: DateTime!
+  endsAt: DateTime
+  timezone: String
+  venueName: String
+  venueAddress: String
+  city: String
+  country: String
+  latitude: Float
+  longitude: Float
+  onlineMeetingUrl: String
+  price: Float
+  currency: String
+  maxCapacity: Int
+}
+
+input UpdateEventInput {
+  title: String
+  description: String
+  thumbnailUrl: String
+  startsAt: DateTime
+  endsAt: DateTime
+  timezone: String
+  venueName: String
+  venueAddress: String
+  city: String
+  country: String
+  latitude: Float
+  longitude: Float
+  onlineMeetingUrl: String
+  price: Float
+  currency: String
+  maxCapacity: Int
+}
+
+input SubmitAssessmentAnswerInput {
+  assessmentId: ID!
+  questionId: ID!
+  selectedOption: String
+  openAnswer: String
+  recordingId: ID
+}
+
+input TeacherFilterInput {
+  instrument: String
+  specialization: String
+  city: String
+  country: String
+  format: String
+  maxHourlyRate: Float
+  minRating: Float
+  isAvailable: Boolean
+  minExperience: Int
+  search: String
+}
+
+input CourseFilterInput {
+  level: SkillLevel
+  instrument: String
+  musicStyle: String
+  categoryId: ID
+  teacherProfileId: ID
+  isFreeTier: Boolean
+  language: String
+  minPrice: Float
+  maxPrice: Float
+  search: String
+}
+
+input EventFilterInput {
+  type: EventType
+  format: EventFormat
+  city: String
+  country: String
+  instrument: String
+  musicStyle: String
+  skillLevel: String
+  minDate: DateTime
+  maxDate: DateTime
+  maxPrice: Float
+  search: String
+}
+
+input CreateFeedPostInput {
+  content: String!
+  mediaUrls: [String!]
+}
+
+input CreateReviewInput {
+  rating: Int!
+  comment: String
+  courseId: ID
+  eventId: ID
+  bookingId: ID
+  isPublic: Boolean
+}
+
+# ── Queries ───────────────────────────────────────────────────────
+
+type Query {
+  # Auth
+  me: User
+
+  # Users
+  user(id: ID, username: String): User
+  searchUsers(query: String!, role: Role, page: Int, limit: Int): UserConnection!
+  teachers(filter: TeacherFilterInput, page: Int, limit: Int): TeacherConnection!
+  teacher(id: ID!): TeacherProfile
+
+  # Courses
+  courses(filter: CourseFilterInput, page: Int, limit: Int): CourseConnection!
+  course(id: ID, slug: String): Course
+  myCourses(page: Int, limit: Int): CourseConnection!
+  myEnrollments(page: Int, limit: Int): EnrollmentConnection!
+  categories: [Category!]!
+
+  # Bookings
+  myBookings(status: BookingStatus, page: Int, limit: Int): [Booking!]!
+  booking(id: ID!): Booking
+  teacherAvailability(teacherProfileId: ID!, date: DateTime): [TeacherAvailability!]!
+
+  # Events
+  events(filter: EventFilterInput, page: Int, limit: Int): EventConnection!
+  event(id: ID, slug: String): Event
+  nearbyEvents(latitude: Float!, longitude: Float!, radiusKm: Float!, page: Int, limit: Int): EventConnection!
+  myEventBookings(page: Int, limit: Int): [EventBooking!]!
+
+  # Assessments
+  assessmentQuestions(category: String, difficulty: String, instrument: String, limit: Int): [AssessmentQuestion!]!
+  myAssessments: [Assessment!]!
+
+  # Feed
+  feed(page: Int, limit: Int): FeedPostConnection!
+  feedPost(id: ID!): FeedPost
+
+  # Reviews
+  reviews(courseId: ID, eventId: ID, bookingId: ID, page: Int, limit: Int): ReviewConnection!
+
+  # Admin
+  adminStats: AdminStats!
+  adminSettings: [AdminSetting!]!
+  adminUsers(role: Role, search: String, page: Int, limit: Int): [User!]!
+}
+
+# ── Mutations ─────────────────────────────────────────────────────
+
+type Mutation {
+  # Auth
+  register(input: RegisterInput!): AuthPayload!
+  login(email: String!, password: String!): AuthPayload!
+  logout: Boolean!
+  refreshToken(token: String!): AuthPayload!
+  requestPasswordReset(email: String!): Boolean!
+  resetPassword(token: String!, newPassword: String!): Boolean!
+  verifyEmail(token: String!): Boolean!
+
+  # Users
+  updateProfile(input: UpdateProfileInput!): User!
+  applyAsTeacher(input: ApplyAsTeacherInput): TeacherProfile!
+  updateTeacherProfile(
+    headline: String
+    teachingBio: String
+    hourlyRate: Float
+    instruments: [String!]
+    specializations: [String!]
+    teachingFormats: [String!]
+    isAvailable: Boolean
+    calendlyUsername: String
+  ): TeacherProfile!
+  addCertification(title: String!, issuingBody: String, issuedYear: Int, documentUrl: String): TeacherCertification!
+  setAvailability(slots: [AvailabilitySlotInput!]!): [TeacherAvailability!]!
+  completeOnboarding: User!
+  followUser(userId: ID!): User!
+  unfollowUser(userId: ID!): User!
+
+  # Courses
+  createCourse(input: CreateCourseInput!): Course!
+  updateCourse(id: ID!, input: UpdateCourseInput!): Course!
+  publishCourse(id: ID!): Course!
+  archiveCourse(id: ID!): Course!
+  createSection(input: CreateSectionInput!): CourseSection!
+  createLesson(input: CreateLessonInput!): Lesson!
+  enrollInCourse(courseId: ID!): Enrollment!
+  markLessonComplete(lessonId: ID!): LessonProgress!
+
+  # Bookings
+  bookSession(input: BookSessionInput!): Booking!
+  confirmBooking(bookingId: ID!): Booking!
+  cancelBooking(bookingId: ID!): Booking!
+  createZoomMeeting(bookingId: ID!): ZoomMeetingInfo!
+
+  # Events
+  createEvent(input: CreateEventInput!): Event!
+  updateEvent(id: ID!, input: UpdateEventInput!): Event!
+  publishEvent(id: ID!): Event!
+  bookEvent(eventId: ID!): EventBooking!
+  cancelEventBooking(bookingId: ID!): EventBooking!
+
+  # Assessments
+  startAssessment: Assessment!
+  submitAssessmentAnswer(input: SubmitAssessmentAnswerInput!): AssessmentAnswer!
+  completeAssessment(assessmentId: ID!): Assessment!
+
+  # Feed
+  createFeedPost(input: CreateFeedPostInput!): FeedPost!
+  likeFeedPost(postId: ID!): FeedPost!
+  unlikeFeedPost(postId: ID!): FeedPost!
+  commentOnPost(postId: ID!, body: String!): FeedComment!
+
+  # Reviews
+  createReview(input: CreateReviewInput!): Review!
+
+  # Payments
+  createCheckoutSession(type: String!, refId: ID!, provider: PaymentProvider): CheckoutSession!
+
+  # Admin
+  updateAdminSetting(key: String!, value: String!): AdminSetting!
+  adminBanUser(userId: ID!): User!
+  adminSetRole(userId: ID!, role: Role!): User!
+}
