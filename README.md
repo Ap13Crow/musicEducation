@@ -1,4 +1,4 @@
-# 🎵 My Music Coach — Classical My Music Coach
+# 🎵 My Music Coach — Classical Music Education
 
 A modern, fully open-source, AI-powered education platform for classical music built around **three pillars**:
 
@@ -105,6 +105,46 @@ make migrate     # Run DB migrations
 npm install
 npm run dev
 ```
+
+---
+
+## Production on `mymusic.coach` (Cloudflare tunnel)
+
+The live deployment runs on a Linux (Ubuntu) host. TLS terminates at
+Cloudflare, and a [`cloudflared`](docker-compose.prod.yml) tunnel connects
+**outbound only** to the internal Caddy gateway — nothing is exposed on the
+host's public IP. All services are reachable on the real domain:
+
+| Service | URL |
+|---------|-----|
+| 🌐 Web App | https://app.mymusic.coach |
+| 🔌 GraphQL API | https://api.mymusic.coach/graphql |
+| 🔑 Keycloak | https://auth.mymusic.coach |
+| 📚 Moodle LMS | https://learn.mymusic.coach |
+| 📅 LibreBooking | https://booking.mymusic.coach |
+| 🎫 pretix Ticketing | https://tickets.mymusic.coach |
+
+```bash
+# 1. Generate a production .env with fresh, URL-safe secrets
+bash scripts/gen-prod-env.sh
+# then add CLOUDFLARE_TUNNEL_TOKEN=... (from the Cloudflare Zero Trust dashboard)
+
+# 2. Bring up the stack with the production overrides + tunnel
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+make migrate
+```
+
+The override file ([`docker-compose.prod.yml`](docker-compose.prod.yml)) flips
+the services that bake a hostname into their own config (Keycloak, Moodle,
+LibreBooking, pretix) to the `https://*.mymusic.coach` hosts and adds the
+`cloudflared` tunnel. The base `docker-compose.yml` stays the dev source of
+truth (`*.mymusic-coach.test`).
+
+Configure your Cloudflare tunnel **ingress** so every public hostname routes to
+the gateway service (`http://gateway:80`), and point each `*.mymusic.coach`
+hostname's DNS at the tunnel. See
+[`docs/production-runbook.md`](docs/production-runbook.md) for the full
+deployment checklist and a diagnostic runbook for the external containers.
 
 ---
 

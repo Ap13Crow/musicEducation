@@ -86,6 +86,13 @@ export default function Navbar() {
                         <p className="text-xs text-gray-500">{session.user.email}</p>
                       </div>
                       <Link
+                        href="/dashboard"
+                        className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                        onClick={() => setProfileOpen(false)}
+                      >
+                        <BookOpen className="h-4 w-4" /> Dashboard
+                      </Link>
+                      <Link
                         href="/profile"
                         className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                         onClick={() => setProfileOpen(false)}
@@ -158,6 +165,13 @@ export default function Navbar() {
             ) : status === 'authenticated' ? (
               <div className="flex flex-col gap-1">
                 <p className="px-3 py-1 text-xs text-gray-500">{session?.user?.email}</p>
+                <Link
+                  href="/dashboard"
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <BookOpen className="h-4 w-4" /> Dashboard
+                </Link>
                 <Link
                   href="/profile"
                   className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"

@@ -61,6 +61,11 @@ CORS_ORIGIN=https://app.$DOMAIN
 NEXT_PUBLIC_GRAPHQL_URL=https://api.$DOMAIN/graphql
 NEXT_PUBLIC_GRAPHQL_WS_URL=wss://api.$DOMAIN/graphql
 NEXT_PUBLIC_PRETIX_WIDGET_URL=https://tickets.$DOMAIN
+NEXT_PUBLIC_LEARN_URL=https://learn.$DOMAIN
+NEXT_PUBLIC_BOOKING_URL=https://booking.$DOMAIN
+NEXT_PUBLIC_TICKETS_URL=https://tickets.$DOMAIN
+NEXT_PUBLIC_ENABLE_LIVE_API=true
+
 
 # ── MinIO ──
 MINIO_ROOT_USER=mymusic-coach-minio
