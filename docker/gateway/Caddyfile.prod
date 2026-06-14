@@ -1,0 +1,56 @@
+# ── Caddy Reverse Proxy (production) ─────────────────────────
+# TLS terminates at Cloudflare. cloudflared connects to Caddy
+# over the internal Docker network using plain HTTP on port 80.
+
+{
+	auto_https off
+
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+:80 {
+	# Docker health check
+	@health path /health
+	respond @health 200
+
+	# Main platform
+	@app host app.mymusic.coach
+	handle @app {
+		reverse_proxy web:3000
+	}
+
+	# GraphQL API
+	@api host api.mymusic.coach
+	handle @api {
+		reverse_proxy api:4000
+	}
+
+	# Keycloak
+	@auth host auth.mymusic.coach
+	handle @auth {
+		reverse_proxy keycloak:8080
+	}
+
+	# Moodle
+	@learn host learn.mymusic.coach
+	handle @learn {
+		reverse_proxy moodle:8080
+	}
+
+	# LibreBooking
+	@booking host booking.mymusic.coach
+	handle @booking {
+		reverse_proxy librebooking:8080
+	}
+
+	# Pretix
+	@tickets host tickets.mymusic.coach
+	handle @tickets {
+		reverse_proxy pretix:80
+	}
+
+	# Reject unknown hostnames
+	respond 404
+}

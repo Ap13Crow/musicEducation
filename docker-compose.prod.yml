@@ -1,0 +1,54 @@
+# ── Production overrides ─────────────────────────────────────
+# Layered on top of docker-compose.yml. The base file stays the
+# dev source of truth (*.mymusic-coach.test); this file flips the few
+# services that bake a hostname/scheme into their own config, and
+# adds the Cloudflare tunnel. Bring up with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# (or: export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml)
+
+services:
+
+  gateway:
+    volumes:
+      - ./docker/gateway/Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  keycloak:
+    command: start --import-realm
+    environment:
+      KC_HOSTNAME: auth.mymusic.coach
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+    volumes:
+      # Same container target as the base mount, so this shadows the dev realm.
+      - ./docker/keycloak/realm-export.prod.json:/opt/keycloak/data/import/realm-export.json
+
+  moodle:
+    environment:
+      MOODLE_HOST: learn.mymusic.coach
+      MOODLE_WWWROOT: https://learn.mymusic.coach
+      MOODLE_SSLPROXY: "true"
+
+  librebooking:
+    environment:
+      LIBREBOOKING_SCRIPT_URL: https://booking.mymusic.coach
+
+  pretix:
+    environment:
+      PRETIX_URL: https://tickets.mymusic.coach
+
+  # ── Cloudflare Tunnel ──────────────────────────────────────
+  # Outbound-only: nothing is exposed on the public IP. Joins the
+  # default network so it can reach the gateway by service name.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: mymusic_coach_cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      gateway:
+        condition: service_started
