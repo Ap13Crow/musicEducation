@@ -110,7 +110,7 @@ services:
     container_name: mymusic_coach_api
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-mymusic_coach}:${POSTGRES_PASSWORD:-mymusic_coach_dev_pw}@postgres-main:5432/${POSTGRES_DB:-mymusic_coach}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://mymusic_coach:mymusic_coach_dev_pw@postgres-main:5432/mymusic_coach}
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev_pw}@redis-main:6379
       JWT_SECRET: ${JWT_SECRET:-CHANGE_THIS_IN_PRODUCTION_PLEASE}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
@@ -154,6 +154,14 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_GRAPHQL_URL: ${NEXT_PUBLIC_GRAPHQL_URL}
+        NEXT_PUBLIC_GRAPHQL_WS_URL: ${NEXT_PUBLIC_GRAPHQL_WS_URL}
+        NEXT_PUBLIC_PRETIX_WIDGET_URL: ${NEXT_PUBLIC_PRETIX_WIDGET_URL}
+        NEXT_PUBLIC_LEARN_URL: ${NEXT_PUBLIC_LEARN_URL}
+        NEXT_PUBLIC_BOOKING_URL: ${NEXT_PUBLIC_BOOKING_URL}
+        NEXT_PUBLIC_TICKETS_URL: ${NEXT_PUBLIC_TICKETS_URL}
+        NEXT_PUBLIC_ENABLE_LIVE_API: ${NEXT_PUBLIC_ENABLE_LIVE_API}
     container_name: mymusic_coach_web
     restart: unless-stopped
     environment:
@@ -182,7 +190,7 @@ services:
       DEEPSEEK_API_URL: ${DEEPSEEK_API_URL:-https://api.deepseek.com/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-mymusic_coach}:${POSTGRES_PASSWORD:-mymusic_coach_dev_pw}@postgres-main:5432/${POSTGRES_DB:-mymusic_coach}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://mymusic_coach:mymusic_coach_dev_pw@postgres-main:5432/mymusic_coach}
       MCP_PORT: 3100
     expose:
       - "3100"

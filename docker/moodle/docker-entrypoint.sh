@@ -59,6 +59,9 @@ if [ ! -f "$CONFIG_FILE" ]; then
     sed -i "/require_once/i \\\$CFG->sslproxy = true;" "$CONFIG_FILE"
     echo "[moodle] sslproxy enabled."
   fi
+
+  # Ensure www-data (Apache) can read the config file created by the root-run installer
+  chown www-data:www-data "$CONFIG_FILE"
 else
   echo "[moodle] config.php found — skipping installation."
 fi

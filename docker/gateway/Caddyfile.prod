@@ -1,6 +1,11 @@
 # ── Caddy Reverse Proxy (production) ─────────────────────────
 # TLS terminates at Cloudflare. cloudflared connects to Caddy
 # over the internal Docker network using plain HTTP on port 80.
+# Because Caddy itself receives HTTP (not HTTPS), it would normally
+# set X-Forwarded-Proto: http for every upstream — breaking Keycloak
+# (Strict HTTPS) and Moodle (sslproxy). All handle blocks below
+# explicitly set X-Forwarded-Proto: https since every request that
+# reaches this server came from the browser over HTTPS via Cloudflare.
 
 {
 	auto_https off
@@ -18,37 +23,49 @@
 	# Main platform
 	@app host app.mymusic.coach
 	handle @app {
-		reverse_proxy web:3000
+		reverse_proxy web:3000 {
+			header_up X-Forwarded-Proto https
+		}
 	}
 
 	# GraphQL API
 	@api host api.mymusic.coach
 	handle @api {
-		reverse_proxy api:4000
+		reverse_proxy api:4000 {
+			header_up X-Forwarded-Proto https
+		}
 	}
 
-	# Keycloak
+	# Keycloak — strict-HTTPS mode requires the proxy to declare https
 	@auth host auth.mymusic.coach
 	handle @auth {
-		reverse_proxy keycloak:8080
+		reverse_proxy keycloak:8080 {
+			header_up X-Forwarded-Proto https
+		}
 	}
 
-	# Moodle
+	# Moodle — sslproxy=true relies on X-Forwarded-Proto being https
 	@learn host learn.mymusic.coach
 	handle @learn {
-		reverse_proxy moodle:8080
+		reverse_proxy moodle:8080 {
+			header_up X-Forwarded-Proto https
+		}
 	}
 
 	# LibreBooking
 	@booking host booking.mymusic.coach
 	handle @booking {
-		reverse_proxy librebooking:8080
+		reverse_proxy librebooking:8080 {
+			header_up X-Forwarded-Proto https
+		}
 	}
 
 	# Pretix
 	@tickets host tickets.mymusic.coach
 	handle @tickets {
-		reverse_proxy pretix:80
+		reverse_proxy pretix:80 {
+			header_up X-Forwarded-Proto https
+		}
 	}
 
 	# Reject unknown hostnames
