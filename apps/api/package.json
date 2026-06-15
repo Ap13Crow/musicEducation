@@ -20,6 +20,7 @@
     "graphql-scalars": "^1.23.0",
     "graphql-upload": "^16.0.2",
     "graphql-ws": "^5.16.0",
+    "jwks-rsa": "^4.0.1",
     "ws": "^8.17.1",
     "cors": "^2.8.5",
     "helmet": "^7.1.0",
