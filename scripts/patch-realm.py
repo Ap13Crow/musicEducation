@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build docker/keycloak/realm-export.prod.json from realm-export.json + .env.
 
- - rewrites every client redirectUri/webOrigin: musicedu.test -> mymusic.coach, http -> https
- - drops localhost / musicedu.app entries (prod realm only trusts the live domain)
+ - rewrites every client redirectUri/webOrigin: mymusic-coach.test -> mymusic.coach, http -> https
+ - drops localhost entries (prod realm only trusts the live domain)
  - injects each confidential client's secret from .env so Keycloak's import matches the apps
  - disables email verification so logins work before SMTP is configured (re-enable later)
 """
@@ -11,7 +11,7 @@ import json
 SRC = "docker/keycloak/realm-export.json"
 DST = "docker/keycloak/realm-export.prod.json"
 ENV = ".env"
-OLD, NEW = "musicedu.test", "mymusic.coach"
+OLD, NEW = "mymusic-coach.test", "mymusic.coach"
 
 
 def load_env(path):
@@ -28,16 +28,27 @@ def load_env(path):
 
 env = load_env(ENV)
 
-SECRETS = {
-    "musicedu-web":      env.get("KEYCLOAK_CLIENT_SECRET", ""),
-    "musicedu-api":      env.get("KEYCLOAK_API_CLIENT_SECRET", ""),
-    "moodle-oidc":       env.get("MOODLE_OIDC_CLIENT_SECRET", ""),
-    "pretix-oidc":       env.get("PRETIX_OIDC_CLIENT_SECRET", ""),
-    "librebooking-saml": env.get("LIBREBOOKING_OIDC_CLIENT_SECRET", ""),
+# Maps each confidential Keycloak client ID to the .env variable that holds its
+# secret. Kept separate from the secret values so reporting can reference client
+# IDs (constants) without touching sensitive data.
+CLIENT_SECRET_ENV = {
+    "mymusic-coach-web": "KEYCLOAK_CLIENT_SECRET",
+    "mymusic-coach-api": "KEYCLOAK_API_CLIENT_SECRET",
+    "moodle-oidc":       "MOODLE_OIDC_CLIENT_SECRET",
+    "pretix-oidc":       "PRETIX_OIDC_CLIENT_SECRET",
+    "librebooking-saml": "LIBREBOOKING_OIDC_CLIENT_SECRET",
 }
+
+SECRETS = {client_id: env.get(var, "") for client_id, var in CLIENT_SECRET_ENV.items()}
 
 
 def fix_uris(uris):
+    """Rewrite client redirect/web-origin URIs for production.
+
+    Replaces the dev domain (``mymusic-coach.test``) with the live domain
+    (``mymusic.coach``), upgrades ``http://`` to ``https://``, and keeps only
+    live-domain entries (dropping localhost), de-duplicated and order-preserving.
+    """
     out = []
     for u in uris:
         u2 = u.replace(OLD, NEW).replace("http://", "https://")
@@ -64,7 +75,12 @@ with open(DST, "w") as f:
     json.dump(realm, f, indent=2)
     f.write("\n")
 
-missing = [k for k, v in SECRETS.items() if not v]
+# Report which clients are missing a secret. The set of clients that have a
+# secret is computed first; `missing` is then derived purely from the constant
+# CLIENT_SECRET_ENV client IDs via set membership, so no secret value flows into
+# the logged message.
+configured_clients = {cid for cid, var in CLIENT_SECRET_ENV.items() if env.get(var, "")}
+missing = sorted(cid for cid in CLIENT_SECRET_ENV if cid not in configured_clients)
 print(f"Wrote {DST}")
 if missing:
     print("WARNING: no secret found in .env for:", ", ".join(missing))

@@ -10,7 +10,7 @@ const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-playfa
 
 export const metadata: Metadata = {
   title: {
-    default: 'My Music Coach — Classical My Music Coach',
+    default: 'My Music Coach — Classical Music Education',
     template: '%s | My Music Coach',
   },
   description:

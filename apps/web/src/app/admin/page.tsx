@@ -10,6 +10,15 @@ import {
 
 type Tab = 'overview' | 'users' | 'content' | 'api-keys' | 'settings';
 
+// Identity/config defaults shown in the admin UI. Driven by NEXT_PUBLIC_* env
+// so they reflect the deployment; defaults target the production domain.
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.mymusic.coach';
+const KEYCLOAK_ISSUER_URL =
+  process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? 'https://auth.mymusic.coach/realms/mymusic-coach';
+const KEYCLOAK_CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ?? 'mymusic-coach-web';
+const KEYCLOAK_REDIRECT_URIS = `${APP_URL}/*`;
+
+
 const SAMPLE_STATS = {
   totalUsers: 1247,
   totalTeachers: 42,
@@ -177,7 +186,7 @@ function UsersTab() {
 }
 
 function ContentTab() {
-  const [heroTitle, setHeroTitle] = useState('Your Classical My Music Coach');
+  const [heroTitle, setHeroTitle] = useState('Your Classical Music Coach');
   const [heroSubtitle, setHeroSubtitle] = useState('Theory courses, live lessons, and live performances — all in one place.');
   const [statsEnabled, setStatsEnabled] = useState(true);
 
@@ -341,15 +350,15 @@ function SettingsTab() {
         </h3>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Keycloak Issuer URL</label>
-          <input type="text" className="input w-full" defaultValue="http://localhost:8080/realms/mymusic-coach" />
+          <input type="text" className="input w-full" defaultValue={KEYCLOAK_ISSUER_URL} />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Client ID</label>
-          <input type="text" className="input w-full" defaultValue="mymusic-coach-web" />
+          <input type="text" className="input w-full" defaultValue={KEYCLOAK_CLIENT_ID} />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Allowed Redirect URIs</label>
-          <textarea className="input w-full" rows={2} defaultValue={"http://localhost:3000/*\nhttps://mymusic.coach/*"} />
+          <textarea className="input w-full" rows={2} defaultValue={KEYCLOAK_REDIRECT_URIS} />
         </div>
         <button className="btn-primary flex items-center gap-2">
           <Save className="h-4 w-4" /> Save Keycloak Settings
