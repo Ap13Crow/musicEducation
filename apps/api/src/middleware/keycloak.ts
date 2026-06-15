@@ -142,7 +142,10 @@ export async function provisionKeycloakUser(
   }
 
   // 3. First time we see this person — create a fully-formed local account.
-  const email = claims.email ?? `${claims.sub}@sso.local`;
+  // Keycloak normally provides a verified email; the noreply fallback only
+  // applies to edge-case tokens minted without one (it uses a domain the
+  // platform controls and never receives mail).
+  const email = claims.email ?? `keycloak-${claims.sub}@users.noreply.mymusic.coach`;
   return prisma.user.create({
     data: {
       email,
