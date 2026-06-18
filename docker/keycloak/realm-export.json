@@ -58,24 +58,17 @@
     },
     {
       "clientId": "moodle-oidc",
-      "name": "Moodle LMS (OIDC Login)",
-      "description": "OpenID Connect client for Moodle single sign-on",
+      "name": "Moodle LMS (web-service only)",
+      "description": "Moodle is headless — no browser SSO. Client kept for web-service token use.",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
-      "redirectUris": [
-        "http://learn.mymusic-coach.test/admin/oauth2callback.php",
-        "http://learn.mymusic-coach.test/auth/oidc/*"
-      ],
-      "webOrigins": [
-        "http://learn.mymusic-coach.test"
-      ],
-      "standardFlowEnabled": true,
+      "redirectUris": [],
+      "webOrigins": [],
+      "standardFlowEnabled": false,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "protocol": "openid-connect",
-      "attributes": {
-        "pkce.code.challenge.method": "S256"
-      }
+      "attributes": {}
     },
     {
       "clientId": "pretix-oidc",
@@ -94,9 +87,7 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "protocol": "openid-connect",
-      "attributes": {
-        "pkce.code.challenge.method": "S256"
-      }
+      "attributes": {}
     },
     {
       "clientId": "librebooking-saml",

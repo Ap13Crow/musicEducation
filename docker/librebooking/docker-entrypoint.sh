@@ -43,7 +43,7 @@ mkdir -p "$CONFIG_DIR"
 
 # Pre-compute PHP booleans so they land correctly in the heredoc.
 KEYCLOAK_ENABLED="false"
-if [ -n "${LIBREBOOKING_OIDC_CLIENT_ID:-}" ]; then
+if [ -n "${LIBREBOOKING_OIDC_CLIENT_ID:-}" ] && [ -n "${LIBREBOOKING_OIDC_CLIENT_SECRET:-}" ]; then
     KEYCLOAK_ENABLED="true"
 fi
 
