@@ -75,7 +75,7 @@ User → Browser → Caddy → Next.js → NextAuth.js → Keycloak OIDC
 | `mymusic-coach-api` | API service account | OIDC | Client Credentials |
 | `moodle-oidc` | Moodle SSO | OIDC | Authorization Code + PKCE |
 | `pretix-oidc` | pretix customer SSO | OIDC | Authorization Code + PKCE |
-| `librebooking-saml` | LibreBooking SSO | OIDC (or SAML) | Authorization Code + PKCE |
+| `librebooking-saml` | LibreBooking SSO | OIDC | Authorization Code |
 
 ### JWT Configuration
 

@@ -9,7 +9,7 @@ My Music Coach uses a hub-and-spoke model where the **platform API** (`apps/api`
 | **my-music-coach** (apps/api + apps/web) | User profiles, public event discovery, orchestration | Keycloak OIDC (NextAuth.js) |
 | **Keycloak** | Central identity provider | — |
 | **Moodle** | Online learning (courses, lessons, quizzes) | Keycloak OIDC via `moodle-oidc` client |
-| **LibreBooking** | Physical lesson scheduling (rooms, resources) | Keycloak OAuth2 / SAML via `librebooking-saml` client |
+| **LibreBooking** | Physical lesson scheduling (rooms, resources) | Keycloak OIDC via `librebooking-saml` client (native Keycloak login) |
 | **pretix** | Event ticketing (orders, check-in, refunds) | Keycloak OIDC via `pretix-oidc` client |
 
 ## Service Map

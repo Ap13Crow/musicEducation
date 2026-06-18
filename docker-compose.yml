@@ -304,6 +304,10 @@ services:
       LIBREBOOKING_TIMEZONE: ${LIBREBOOKING_TIMEZONE:-Europe/Zurich}
       LIBREBOOKING_SCRIPT_URL: http://booking.mymusic-coach.test
       LIBREBOOKING_ADMIN_EMAIL: ${LIBREBOOKING_ADMIN_EMAIL:-admin@mymusic.coach}
+      # ── Keycloak OIDC single sign-on ─────────────────────
+      LIBREBOOKING_OIDC_CLIENT_ID: ${LIBREBOOKING_OIDC_CLIENT_ID:-librebooking-saml}
+      LIBREBOOKING_OIDC_CLIENT_SECRET: ${LIBREBOOKING_OIDC_CLIENT_SECRET:-}
+      LIBREBOOKING_OIDC_ISSUER: ${LIBREBOOKING_OIDC_ISSUER:-http://auth.mymusic-coach.test/realms/mymusic-coach}
     expose:
       - "8080"
     depends_on:

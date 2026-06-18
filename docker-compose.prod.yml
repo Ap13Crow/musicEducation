@@ -35,6 +35,7 @@ services:
   librebooking:
     environment:
       LIBREBOOKING_SCRIPT_URL: https://booking.mymusic.coach
+      LIBREBOOKING_OIDC_ISSUER: https://auth.mymusic.coach/realms/mymusic-coach
 
   pretix:
     environment:

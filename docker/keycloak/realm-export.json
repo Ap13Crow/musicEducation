@@ -100,8 +100,8 @@
     },
     {
       "clientId": "librebooking-saml",
-      "name": "LibreBooking (OAuth2 / SAML)",
-      "description": "OAuth2 or SAML client for LibreBooking scheduling SSO",
+      "name": "LibreBooking (OIDC)",
+      "description": "OpenID Connect client for LibreBooking scheduling SSO (native Keycloak login)",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
@@ -114,9 +114,7 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "protocol": "openid-connect",
-      "attributes": {
-        "pkce.code.challenge.method": "S256"
-      }
+      "attributes": {}
     }
   ],
   "roles": {
