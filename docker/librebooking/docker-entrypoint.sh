@@ -1,6 +1,41 @@
 #!/bin/bash
 set -e
 
+# ── Keycloak OIDC single sign-on (Keycloak) ──────────────────
+# LibreBooking >= 5.0 ships a native Keycloak login button
+# (Web/keycloak-auth.php). It is configured purely through config.php,
+# so SSO is provisioned headlessly — no admin point-and-click setup.
+#
+# All connection details come from the environment so the same image
+# works in dev (http://auth.mymusic-coach.test) and prod
+# (https://auth.mymusic.coach) without rebuilds. The issuer is split
+# into the Keycloak base URL and realm, which LibreBooking recombines
+# into the OIDC endpoints (<base>/realms/<realm>/protocol/openid-connect/*).
+LIBREBOOKING_OIDC_CLIENT_ID="${LIBREBOOKING_OIDC_CLIENT_ID:-librebooking-saml}"
+LIBREBOOKING_OIDC_ISSUER="${LIBREBOOKING_OIDC_ISSUER:-http://auth.mymusic-coach.test/realms/mymusic-coach}"
+KEYCLOAK_BASE_URL="${LIBREBOOKING_OIDC_ISSUER%/realms/*}"
+KEYCLOAK_REALM="${LIBREBOOKING_OIDC_ISSUER##*/realms/}"
+
+# Build the Keycloak SSO config block only when a client secret is set.
+# Idempotent: regenerated on every boot so config self-heals and tracks
+# any updated client secret / issuer from the environment.
+KEYCLOAK_CONFIG=""
+if [ -n "${LIBREBOOKING_OIDC_CLIENT_SECRET}" ]; then
+  read -r -d '' KEYCLOAK_CONFIG << EOKC || true
+
+// ── Keycloak OIDC single sign-on (provisioned headlessly) ────
+\$conf['settings']['authentication']['keycloak.login.enabled'] = true;
+\$conf['settings']['authentication']['keycloak.url'] = '${KEYCLOAK_BASE_URL}';
+\$conf['settings']['authentication']['keycloak.realm'] = '${KEYCLOAK_REALM}';
+\$conf['settings']['authentication']['keycloak.client.id'] = '${LIBREBOOKING_OIDC_CLIENT_ID}';
+\$conf['settings']['authentication']['keycloak.client.secret'] = '${LIBREBOOKING_OIDC_CLIENT_SECRET}';
+\$conf['settings']['authentication']['keycloak.client.uri'] = '/Web/keycloak-auth.php';
+EOKC
+  echo "[librebooking] Keycloak OIDC SSO enabled (realm '${KEYCLOAK_REALM}')."
+else
+  echo "[librebooking] LIBREBOOKING_OIDC_CLIENT_SECRET not set — skipping Keycloak SSO configuration."
+fi
+
 # ── Generate LibreBooking config.php from environment ────────
 # LibreBooking 3.x uses a PHP return-array format (new format).
 CONFIG_DIR="/var/www/html/config"

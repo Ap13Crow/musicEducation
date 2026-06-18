@@ -5,6 +5,7 @@ import { setContext } from '@apollo/client/link/context';
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { getMainDefinition } from '@apollo/client/utilities';
 import { createClient } from 'graphql-ws';
+import { getSession } from 'next-auth/react';
 
 const graphQlHttpUrl = process.env.NEXT_PUBLIC_GRAPHQL_URL ?? '/api/graphql';
 const graphQlWsUrl = process.env.NEXT_PUBLIC_GRAPHQL_WS_URL;
@@ -13,12 +14,27 @@ const httpLink = createHttpLink({
   uri: graphQlHttpUrl,
 });
 
-// NOTE: Tokens are read from localStorage for simplicity in this scaffold.
-// In production, prefer httpOnly cookies set by the API (Keycloak OIDC session)
+// Resolve the bearer token used for API calls. Authenticated users sign in
+// through Keycloak (NextAuth), so the Keycloak access token on the session is
+// the source of truth; the API verifies it against the realm JWKS. A locally
+// issued token in localStorage (email/password login flow) is used as a
+// fallback. See apps/api/src/middleware/keycloak.ts for the verification side.
+async function resolveAuthToken(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  try {
+    const session = (await getSession()) as { accessToken?: string } | null;
+    if (session?.accessToken) return session.accessToken;
+  } catch {
+    /* fall through to localStorage */
+  }
+  return localStorage.getItem('accessToken');
+}
+
+// NOTE: Prefer httpOnly cookies / the Keycloak OIDC session over localStorage
 // to prevent XSS-based token theft. If localStorage must be used, ensure the
 // application has strict Content-Security-Policy headers in place.
-const authLink = setContext((_, { headers }) => {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+const authLink = setContext(async (_, { headers }) => {
+  const token = await resolveAuthToken();
   return {
     headers: {
       ...headers,
@@ -32,8 +48,8 @@ const wsLink =
     ? new GraphQLWsLink(
         createClient({
           url: graphQlWsUrl,
-          connectionParams: () => {
-            const token = localStorage.getItem('accessToken');
+          connectionParams: async () => {
+            const token = await resolveAuthToken();
             return token ? { authorization: 'Bearer ' + token } : {};
           },
         }),
