@@ -146,6 +146,48 @@ exchange and `iss` validation match the browser-facing auth endpoint.
 Claim mapping (Keycloak → Moodle, refreshed on every login): `preferred_username`
 → username, `email` → email, `given_name` → first name, `family_name` → last name.
 
+## pretix OIDC SSO (headless)
+
+pretix offers **customer-account** SSO against the Keycloak `pretix-oidc` client
+(defined in `docker/keycloak/realm-export.json`). Unlike Moodle, pretix stores
+SSO providers in the database per **organiser** rather than in a config file, so
+the headless provisioning runs a Django script instead of writing settings.
+
+How it is wired:
+
+1. **Provisioning script baked into the image.** `docker/pretix/Dockerfile`
+   copies `configure-sso.py`, executed via `pretix shell`.
+2. **Run on boot.** `docker/pretix/docker-entrypoint.sh` applies migrations
+   (`pretix migrate`), then — in the **background**, so it never blocks
+   `pretix all` — waits for Keycloak's discovery document and runs the script.
+   The script idempotently ensures the organiser exists, enables
+   `customer_accounts`, and upserts an OIDC `CustomerSSOProvider` keyed on
+   `(organiser, method, name)`. Re-running on later boots refreshes an updated
+   secret/endpoints without duplicating.
+3. **Driven by the environment.** The same image works in dev and prod; only
+   the issuer changes.
+
+| Variable | Default (dev) | Purpose |
+|----------|---------------|---------|
+| `PRETIX_ORGANISER_SLUG` | `mymusic-coach` | Organiser that owns the shop + SSO provider |
+| `PRETIX_OIDC_CLIENT_ID` | `pretix-oidc` | Keycloak client ID |
+| `PRETIX_OIDC_CLIENT_SECRET` | _(unset)_ | Client secret; provisioning is skipped when empty |
+| `PRETIX_OIDC_ISSUER` | `http://auth.mymusic-coach.test/realms/mymusic-coach` | OIDC **Base URL**; pretix appends `/.well-known/openid-configuration` |
+
+Unlike Moodle, pretix validates the provider against Keycloak's discovery
+document **at configuration time** (`oidc_validate_and_complete_config`). The
+entrypoint therefore waits for Keycloak before provisioning and retries, so the
+discovery endpoint must be reachable from the pretix container (via the Caddy
+gateway). Because the validator checks every requested scope and `*_field` claim
+against the discovery document, the realm's default Keycloak scopes/claims
+(`openid email profile`; `sub`, `email`, `given_name`, `family_name`) are used.
+
+The OIDC return URL pretix generates is
+`/<organiser-slug>/account/login/<provider-id>/return` (presale is served under
+the organiser slug). The `pretix-oidc` client's redirect URIs are set
+accordingly to `…/mymusic-coach/account/*` (plus a bare `/account/*` fallback for
+custom-domain deployments).
+
 ## Startup Order
 
 1. **Databases** — `postgres-main`, `moodle-db`, `librebooking-db`, `pretix-db`

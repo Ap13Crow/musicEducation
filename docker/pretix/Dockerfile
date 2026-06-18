@@ -12,6 +12,9 @@ LABEL description="pretix for My Music Coach – event ticketing core"
 # a separate RUN chmod which fails when the image user is non-root.
 COPY --chmod=755 docker-entrypoint.sh /docker-entrypoint.sh
 
+# Headless customer-account SSO provisioning, run via `pretix shell`.
+COPY --chmod=644 configure-sso.py /configure-sso.py
+
 # Pre-create config dir owned by pretixuser so the entrypoint can write pretix.cfg
 USER root
 RUN install -d -o 15371 -g 15371 -m 755 /etc/pretix

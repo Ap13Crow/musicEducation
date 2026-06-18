@@ -360,6 +360,11 @@ services:
       PRETIX_MAIL_PORT: ${PRETIX_MAIL_PORT:-587}
       PRETIX_MAIL_USER: ${PRETIX_MAIL_USER:-}
       PRETIX_MAIL_PASSWORD: ${PRETIX_MAIL_PASSWORD:-}
+      # ── Keycloak customer-account OIDC single sign-on ────
+      PRETIX_ORGANISER_SLUG: ${PRETIX_ORGANISER_SLUG:-mymusic-coach}
+      PRETIX_OIDC_CLIENT_ID: ${PRETIX_OIDC_CLIENT_ID:-pretix-oidc}
+      PRETIX_OIDC_CLIENT_SECRET: ${PRETIX_OIDC_CLIENT_SECRET:-}
+      PRETIX_OIDC_ISSUER: ${PRETIX_OIDC_ISSUER:-http://auth.mymusic-coach.test/realms/mymusic-coach}
     volumes:
       - pretix_data:/data
     expose:

@@ -39,6 +39,7 @@ services:
   pretix:
     environment:
       PRETIX_URL: https://tickets.mymusic.coach
+      PRETIX_OIDC_ISSUER: https://auth.mymusic.coach/realms/mymusic-coach
 
   # ── Cloudflare Tunnel ──────────────────────────────────────
   # Outbound-only: nothing is exposed on the public IP. Joins the

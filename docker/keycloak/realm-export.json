@@ -84,7 +84,7 @@
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
-        "http://tickets.mymusic-coach.test/oidc/callback/",
+        "http://tickets.mymusic-coach.test/mymusic-coach/account/*",
         "http://tickets.mymusic-coach.test/account/*"
       ],
       "webOrigins": [
