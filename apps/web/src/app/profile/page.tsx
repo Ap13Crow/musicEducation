@@ -345,10 +345,12 @@ export default function ProfilePage() {
                 <h2 className="flex items-center gap-2 font-semibold text-gray-900">
                   <BookOpen className="h-4 w-4 text-primary-600" /> My teachers
                 </h2>
-                <a href={externalLinks.booking} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline">
-                  Book a lesson <ExternalLink className="h-3 w-3" />
-                </a>
+                {externalLinks.booking && (
+                  <a href={externalLinks.booking} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline">
+                    Book a lesson <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
               </div>
               {myTeachers.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center">
@@ -490,7 +492,8 @@ function StatRow({ icon, label, value }: { icon: React.ReactNode; label: string;
   );
 }
 
-function PillarLink({ href, label, color }: { href: string; label: string; color: string }) {
+function PillarLink({ href, label, color }: { href?: string; label: string; color: string }) {
+  if (!href) return null;
   return (
     <a href={href} target="_blank" rel="noopener noreferrer"
       className={`flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-sm ${color} transition-colors hover:bg-gray-50`}>

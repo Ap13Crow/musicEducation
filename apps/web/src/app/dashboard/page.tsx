@@ -418,7 +418,7 @@ function PillarCard({
   icon, title, subtitle, accent, href, hrefLabel, children,
 }: {
   icon: React.ReactNode; title: string; subtitle: string; accent: string;
-  href: string; hrefLabel: string; children: React.ReactNode;
+  href?: string; hrefLabel: string; children: React.ReactNode;
 }) {
   return (
     <section className="card flex flex-col p-5">
@@ -432,14 +432,16 @@ function PillarCard({
         </div>
       </div>
       <div className="flex-1">{children}</div>
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary-600 hover:underline"
-      >
-        {hrefLabel} <ExternalLink className="h-3.5 w-3.5" />
-      </a>
+      {href && (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary-600 hover:underline"
+        >
+          {hrefLabel} <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      )}
     </section>
   );
 }

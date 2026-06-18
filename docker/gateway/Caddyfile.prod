@@ -3,9 +3,13 @@
 # over the internal Docker network using plain HTTP on port 80.
 # Because Caddy itself receives HTTP (not HTTPS), it would normally
 # set X-Forwarded-Proto: http for every upstream — breaking Keycloak
-# (Strict HTTPS) and Moodle (sslproxy). All handle blocks below
-# explicitly set X-Forwarded-Proto: https since every request that
-# reaches this server came from the browser over HTTPS via Cloudflare.
+# (Strict HTTPS). All handle blocks below explicitly set
+# X-Forwarded-Proto: https since every request that reaches this
+# server came from the browser over HTTPS via Cloudflare.
+#
+# Headless services (Moodle, LibreBooking): no public Caddy route.
+# The GraphQL API reaches them on the Docker network directly.
+# Pretix keeps a public route because its JS widget loads in the browser.
 
 {
 	auto_https off
@@ -44,23 +48,7 @@
 		}
 	}
 
-	# Moodle — sslproxy=true relies on X-Forwarded-Proto being https
-	@learn host learn.mymusic.coach
-	handle @learn {
-		reverse_proxy moodle:8080 {
-			header_up X-Forwarded-Proto https
-		}
-	}
-
-	# LibreBooking
-	@booking host booking.mymusic.coach
-	handle @booking {
-		reverse_proxy librebooking:8080 {
-			header_up X-Forwarded-Proto https
-		}
-	}
-
-	# Pretix
+	# Pretix — public so the JS widget loads in the browser
 	@tickets host tickets.mymusic.coach
 	handle @tickets {
 		reverse_proxy pretix:80 {

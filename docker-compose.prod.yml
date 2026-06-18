@@ -25,16 +25,33 @@ services:
       # Same container target as the base mount, so this shadows the dev realm.
       - ./docker/keycloak/realm-export.prod.json:/opt/keycloak/data/import/realm-export.json
 
+  # ── Next.js Web App ────────────────────────────────────────
+  # SSO: KEYCLOAK_ISSUER must be the public URL (auth.mymusic.coach) because
+  # the browser follows the OIDC redirect — the internal keycloak:8080 address
+  # is unreachable from outside the Docker network.
+  web:
+    environment:
+      NEXTAUTH_URL: https://app.mymusic.coach
+      KEYCLOAK_ISSUER: https://auth.mymusic.coach/realms/mymusic-coach
+
+  # ── Headless services ──────────────────────────────────────
+  # Moodle and LibreBooking are API-only in production: no public Caddy route,
+  # no browser access. The GraphQL API reaches them on the Docker network via
+  # http://moodle:8080 and http://librebooking:80.  SSLPROXY is off because
+  # traffic never crosses a TLS boundary inside the container network.
   moodle:
     environment:
-      MOODLE_HOST: learn.mymusic.coach
-      MOODLE_WWWROOT: https://learn.mymusic.coach
-      MOODLE_SSLPROXY: "true"
+      MOODLE_HOST: moodle
+      MOODLE_WWWROOT: http://moodle:8080
+      MOODLE_SSLPROXY: "false"
 
   librebooking:
     environment:
-      LIBREBOOKING_SCRIPT_URL: https://booking.mymusic.coach
+      LIBREBOOKING_SCRIPT_URL: http://librebooking:80
 
+  # Pretix keeps a public route (tickets.mymusic.coach) because the JS widget
+  # must be loaded by the browser.  PRETIX_URL is used by Pretix itself for
+  # self-referencing links (e.g. order confirmation e-mails).
   pretix:
     environment:
       PRETIX_URL: https://tickets.mymusic.coach
@@ -51,4 +68,6 @@ services:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
     depends_on:
       gateway:
+        condition: service_started
+      web:
         condition: service_started
