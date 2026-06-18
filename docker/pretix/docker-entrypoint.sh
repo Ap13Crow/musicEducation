@@ -57,6 +57,10 @@ export HOME=/pretix
 echo "Running pretix database migrations..."
 python3 -m pretix migrate --noinput
 
+# Provision Keycloak SSO (idempotent upsert — safe on every start).
+echo "[pretix] Configuring Keycloak SSO..."
+python3 /configure-sso.py
+
 # Create the staff/admin user on first run. pretix's User model lives in
 # pretixbase (not django.contrib.auth), so standard createsuperuser doesn't work.
 ADMIN_EMAIL="${PRETIX_ADMIN_EMAIL:-admin@mymusic.coach}"

@@ -366,6 +366,9 @@ services:
       PRETIX_MAIL_PASSWORD: ${PRETIX_MAIL_PASSWORD:-}
       PRETIX_ADMIN_EMAIL: ${PRETIX_ADMIN_EMAIL:-admin@mymusic.coach}
       PRETIX_ADMIN_PASSWORD: ${PRETIX_ADMIN_PASSWORD:-}
+      PRETIX_OIDC_ISSUER: ${PRETIX_OIDC_ISSUER:-http://keycloak:8080/realms/mymusic-coach}
+      PRETIX_OIDC_CLIENT_ID: ${PRETIX_OIDC_CLIENT_ID:-pretix-oidc}
+      PRETIX_OIDC_CLIENT_SECRET: ${PRETIX_OIDC_CLIENT_SECRET:-}
     volumes:
       - pretix_data:/data
     expose:

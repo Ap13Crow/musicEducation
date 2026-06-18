@@ -41,7 +41,7 @@ services:
         NEXT_PUBLIC_PRETIX_WIDGET_URL: https://tickets.mymusic.coach
         NEXT_PUBLIC_TICKETS_URL: https://tickets.mymusic.coach
         NEXT_PUBLIC_ENABLE_LIVE_API: "true"
-        NEXT_PUBLIC_LEARN_URL: "https://learn.mymusic.coach"
+        NEXT_PUBLIC_LEARN_URL: ""
         NEXT_PUBLIC_BOOKING_URL: "https://booking.mymusic.coach"
         NEXT_PUBLIC_KEYCLOAK_ISSUER: "https://auth.mymusic.coach/realms/mymusic-coach"
         NEXT_PUBLIC_APP_URL: "https://app.mymusic.coach"
@@ -49,18 +49,16 @@ services:
       NEXTAUTH_URL: https://app.mymusic.coach
       KEYCLOAK_ISSUER: https://auth.mymusic.coach/realms/mymusic-coach
 
-  # ── Pillar services (publicly accessible in production) ────
-  # Moodle: learn.mymusic.coach — admins manage courses, users, grades.
-  # LibreBooking: booking.mymusic.coach — admins manage resources, schedules.
-  # SSLPROXY=true: Cloudflare terminates TLS; Moodle sees X-Forwarded-Proto: https.
+  # ── Moodle (headless — API only) ──────────────────────────
+  # No public Caddy route; the GraphQL API reaches Moodle on the Docker
+  # network via http://moodle:8080 using a pre-shared web-service token.
+  # SSLPROXY=false because traffic never crosses a TLS boundary inside
+  # the container network.
   moodle:
     environment:
-      MOODLE_HOST: learn.mymusic.coach
-      MOODLE_WWWROOT: https://learn.mymusic.coach
-      MOODLE_SSLPROXY: "true"
-      MOODLE_OIDC_CLIENT_ID: ${MOODLE_OIDC_CLIENT_ID:-moodle-oidc}
-      MOODLE_OIDC_CLIENT_SECRET: ${MOODLE_OIDC_CLIENT_SECRET}
-      KEYCLOAK_ISSUER: https://auth.mymusic.coach/realms/mymusic-coach
+      MOODLE_HOST: moodle
+      MOODLE_WWWROOT: http://moodle:8080
+      MOODLE_SSLPROXY: "false"
 
   librebooking:
     environment:
@@ -78,6 +76,9 @@ services:
       PRETIX_URL: https://tickets.mymusic.coach
       PRETIX_ADMIN_EMAIL: ${PRETIX_ADMIN_EMAIL:-admin@mymusic.coach}
       PRETIX_ADMIN_PASSWORD: ${PRETIX_ADMIN_PASSWORD}
+      PRETIX_OIDC_ISSUER: https://auth.mymusic.coach/realms/mymusic-coach
+      PRETIX_OIDC_CLIENT_ID: ${PRETIX_OIDC_CLIENT_ID:-pretix-oidc}
+      PRETIX_OIDC_CLIENT_SECRET: ${PRETIX_OIDC_CLIENT_SECRET}
 
   # ── Cloudflare Tunnel ──────────────────────────────────────
   # Outbound-only: nothing is exposed on the public IP. Joins the

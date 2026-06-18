@@ -7,8 +7,7 @@
 # X-Forwarded-Proto: https since every request that reaches this
 # server came from the browser over HTTPS via Cloudflare.
 #
-# All three pillar services have public routes so users and admins
-# can navigate directly into each system from the dashboard.
+# Moodle is headless (API only); no public route is registered here.
 
 {
 	auto_https off
@@ -47,15 +46,7 @@
 		}
 	}
 
-	# Moodle — accessible so admins can manage courses and users
-	@learn host learn.mymusic.coach
-	handle @learn {
-		reverse_proxy moodle:8080 {
-			header_up X-Forwarded-Proto https
-		}
-	}
-
-	# LibreBooking — accessible so admins can manage resources and bookings
+	# LibreBooking — users book physical lessons here
 	@booking host booking.mymusic.coach
 	handle @booking {
 		reverse_proxy librebooking:8080 {

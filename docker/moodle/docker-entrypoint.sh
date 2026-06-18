@@ -20,16 +20,6 @@ set -e
 : "${MOODLE_DATA_DIR:=/var/moodledata}"
 : "${MOODLE_WWWROOT:=http://${MOODLE_HOST}}"
 
-# ── OIDC SSO (Keycloak) ───────────────────────────────────────
-: "${MOODLE_OIDC_CLIENT_ID:=moodle-oidc}"
-: "${MOODLE_OIDC_CLIENT_SECRET:=}"
-: "${MOODLE_OIDC_OPNAME:=My Music Coach}"
-: "${MOODLE_OIDC_ISSUER:=http://auth.mymusic-coach.test/realms/mymusic-coach}"
-: "${MOODLE_OIDC_AUTH_ENDPOINT:=${MOODLE_OIDC_ISSUER}/protocol/openid-connect/auth}"
-: "${MOODLE_OIDC_TOKEN_ENDPOINT:=${MOODLE_OIDC_ISSUER}/protocol/openid-connect/token}"
-export MOODLE_OIDC_CLIENT_ID MOODLE_OIDC_CLIENT_SECRET MOODLE_OIDC_OPNAME \
-       MOODLE_OIDC_AUTH_ENDPOINT MOODLE_OIDC_TOKEN_ENDPOINT
-
 CONFIG_FILE="/var/www/html/config.php"
 
 # ── Wait for the database ──────────────────────────────────────
@@ -109,9 +99,6 @@ if [ "$DB_READY" = "fresh" ]; then
   echo "[moodle] Installation complete."
   # installer (re)creates config.php as root; restore ownership
   chown www-data:www-data "$CONFIG_FILE"
-
-  # Provision OIDC SSO immediately after a fresh install.
-  configure_oidc
 else
   echo "[moodle] Database already installed — skipping CLI installer."
 fi
