@@ -24,7 +24,7 @@ if [ -n "${LIBREBOOKING_OIDC_CLIENT_SECRET}" ]; then
   read -r -d '' KEYCLOAK_CONFIG << EOKC || true
 
 // ── Keycloak OIDC single sign-on (provisioned headlessly) ────
-\$conf['settings']['authentication']['keycloak.login.enabled'] = 'true';
+\$conf['settings']['authentication']['keycloak.login.enabled'] = true;
 \$conf['settings']['authentication']['keycloak.url'] = '${KEYCLOAK_BASE_URL}';
 \$conf['settings']['authentication']['keycloak.realm'] = '${KEYCLOAK_REALM}';
 \$conf['settings']['authentication']['keycloak.client.id'] = '${LIBREBOOKING_OIDC_CLIENT_ID}';
