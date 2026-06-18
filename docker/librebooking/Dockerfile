@@ -13,7 +13,7 @@ COPY --chmod=755 docker-entrypoint.sh /docker-entrypoint.sh
 
 # Patch LoginPresenter to auto-redirect to Keycloak (no login page shown).
 COPY --chmod=644 patch-login.php /tmp/patch-login.php
-RUN php /tmp/patch-login.php && rm /tmp/patch-login.php
+RUN php /tmp/patch-login.php
 
 EXPOSE 8080
 

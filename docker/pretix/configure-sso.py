@@ -3,13 +3,20 @@
 # and creates/updates a customer-facing OpenID Connect SSO provider
 # pointing at the central Keycloak `pretix-oidc` client.
 #
-# Run via `pretix shell < /configure-sso.py` from the entrypoint so
-# the platform never needs the point-and-click organiser SSO wizard.
-# All connection details come from the environment, so the same image
-# works in dev (http://auth.mymusic-coach.test) and prod
-# (https://auth.mymusic.coach) without rebuilds.
+# Designed to be run standalone (python3 /configure-sso.py) from the
+# entrypoint after pretix migrate. Initialises Django itself so it
+# does not require `pretix shell`.
 import os
 import sys
+
+# Bootstrap Django before any pretix model imports.
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'production_settings')
+os.environ.setdefault('DATA_DIR', '/data/')
+os.environ.setdefault('HOME', '/pretix')
+sys.path.insert(0, '/pretix/src')
+
+import django
+django.setup()
 
 from pretix.base.customersso.oidc import oidc_validate_and_complete_config
 from pretix.base.models import Organizer

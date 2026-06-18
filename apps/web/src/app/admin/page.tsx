@@ -78,12 +78,10 @@ function OverviewTab() {
       <div className="card p-4">
         <h3 className="mb-3 font-semibold">Quick Links</h3>
         <div className="grid gap-2 sm:grid-cols-2">
-          <a href="https://learn.mymusic.coach/admin/" target="_blank" rel="noopener noreferrer"
-             className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm text-left hover:bg-gray-50 transition-colors">
-            <BookOpen className="h-4 w-4 text-primary-600" />
-            <span>Moodle — courses &amp; users</span>
-            <ChevronRight className="ml-auto h-4 w-4 text-gray-400" />
-          </a>
+          <div className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm text-left bg-gray-50 text-gray-400 cursor-default">
+            <BookOpen className="h-4 w-4" />
+            <span>Moodle — API-only (no admin UI)</span>
+          </div>
           <a href="https://booking.mymusic.coach/Web/" target="_blank" rel="noopener noreferrer"
              className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm text-left hover:bg-gray-50 transition-colors">
             <UserCog className="h-4 w-4 text-primary-600" />
@@ -196,15 +194,13 @@ function ContentTab() {
         <p className="mt-1">Courses and learning materials → Moodle. Booking resources and schedules → LibreBooking. Events and tickets → pretix. Use the Quick Links above to navigate directly.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <a href="https://learn.mymusic.coach/course/management.php" target="_blank" rel="noopener noreferrer"
-           className="card flex items-center gap-3 p-4 transition-colors hover:border-primary-300">
-          <BookOpen className="h-5 w-5 text-blue-600 shrink-0" />
+        <div className="card flex items-center gap-3 p-4 bg-gray-50">
+          <BookOpen className="h-5 w-5 text-gray-400 shrink-0" />
           <div>
-            <p className="text-sm font-medium">Manage Courses</p>
-            <p className="text-xs text-gray-500">Create and edit courses in Moodle</p>
+            <p className="text-sm font-medium text-gray-500">Manage Courses</p>
+            <p className="text-xs text-gray-400">Moodle is API-only — use the GraphQL web-service token</p>
           </div>
-          <ChevronRight className="ml-auto h-4 w-4 text-gray-400 shrink-0" />
-        </a>
+        </div>
         <a href="https://tickets.mymusic.coach/control/" target="_blank" rel="noopener noreferrer"
            className="card flex items-center gap-3 p-4 transition-colors hover:border-primary-300">
           <Calendar className="h-5 w-5 text-amber-600 shrink-0" />

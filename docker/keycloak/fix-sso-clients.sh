@@ -25,12 +25,9 @@ $KCADM config credentials \
 get_client_uuid() {
   local clientId="$1"
   $KCADM get clients -r "$REALM" --fields id,clientId 2>/dev/null \
-    | python3 -c "
-import sys, json
-clients = json.load(sys.stdin)
-match = [c['id'] for c in clients if c.get('clientId') == '$clientId']
-print(match[0] if match else '')
-"
+    | grep -A1 "\"clientId\" : \"${clientId}\"" \
+    | grep '"id"' \
+    | sed 's/.*"id" : "\([^"]*\)".*/\1/'
 }
 
 # ── pretix-oidc: remove PKCE (pretix social auth does not send code_challenge) ─

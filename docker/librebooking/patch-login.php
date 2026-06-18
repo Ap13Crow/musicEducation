@@ -14,11 +14,14 @@ if (strpos($content, $needle) === false) {
 $patch = <<<'PHP'
 
         // Seamless SSO: auto-redirect to Keycloak when it is the sole auth provider.
-        // hide.login.prompt=true signals that local credentials are disabled;
-        // there is no point showing the login page at all.
+        // Uses a raw header() so LibreBooking's URL sanitizer (which strips external
+        // hostnames as an open-redirect guard) cannot intercept the Keycloak URL.
         if ($keycloakEnabled && $hideLogin) {
-            $this->_page->Redirect($this->GetKeycloakUrl());
-            return;
+            $keycloakUrl = $this->GetKeycloakUrl();
+            if (!empty($keycloakUrl)) {
+                header('Location: ' . $keycloakUrl);
+                die();
+            }
         }
 PHP;
 
