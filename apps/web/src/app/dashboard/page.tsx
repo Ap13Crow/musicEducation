@@ -7,8 +7,9 @@ import { gql, useQuery } from '@apollo/client';
 import {
   BookOpen, Music, Calendar, GraduationCap, Clock, Video, MapPin,
   Ticket, MessageSquare, AlertCircle, ArrowRight, Trophy, Flame, ExternalLink,
+  Shield,
 } from 'lucide-react';
-import { externalLinks, liveApiEnabled } from '@/lib/external-links';
+import { externalLinks, keycloakAdminUrl, liveApiEnabled } from '@/lib/external-links';
 
 // NextAuth's session is augmented with Keycloak realm roles in the JWT/session
 // callbacks (see app/api/auth/[...nextauth]/route.ts). Type it locally so we can
@@ -407,6 +408,46 @@ export default function DashboardPage() {
             </div>
           )}
         </section>
+
+        {/* Admin quick-links — only shown to ADMIN role users */}
+        {role === 'ADMIN' && (
+          <section className="mt-6">
+            <div className="mb-3 flex items-center gap-2">
+              <Shield className="h-4 w-4 text-red-600" />
+              <h2 className="font-semibold text-gray-900">Administration</h2>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <AdminLink
+                href={externalLinks.learn ? `${externalLinks.learn}/admin/` : undefined}
+                label="Moodle Admin"
+                description="Users, courses & grades"
+                accent="bg-blue-50 text-blue-600"
+                icon={<BookOpen className="h-4 w-4" />}
+              />
+              <AdminLink
+                href={externalLinks.booking ? `${externalLinks.booking}/Web/` : undefined}
+                label="LibreBooking Admin"
+                description="Resources, schedules & users"
+                accent="bg-purple-50 text-purple-600"
+                icon={<Music className="h-4 w-4" />}
+              />
+              <AdminLink
+                href={externalLinks.tickets ? `${externalLinks.tickets}/control/` : undefined}
+                label="pretix Admin"
+                description="Events, tickets & orders"
+                accent="bg-amber-50 text-amber-600"
+                icon={<Ticket className="h-4 w-4" />}
+              />
+              <AdminLink
+                href={keycloakAdminUrl}
+                label="Keycloak Admin"
+                description="Identity, roles & SSO"
+                accent="bg-red-50 text-red-600"
+                icon={<Shield className="h-4 w-4" />}
+              />
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );
@@ -487,6 +528,37 @@ function DashboardSkeleton() {
         </div>
       </div>
     </div>
+  );
+}
+
+function AdminLink({
+  href, label, description, accent, icon,
+}: {
+  href?: string; label: string; description: string; accent: string; icon: React.ReactNode;
+}) {
+  const inner = (
+    <div className="card flex items-center gap-3 p-4 transition-colors hover:border-primary-300">
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${accent}`}>{icon}</span>
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-gray-900">{label}</p>
+        <p className="truncate text-xs text-gray-500">{description}</p>
+      </div>
+      <ExternalLink className="ml-auto h-3.5 w-3.5 shrink-0 text-gray-400" />
+    </div>
+  );
+
+  if (!href) {
+    return (
+      <div className="opacity-50 cursor-not-allowed" title="URL not configured">
+        {inner}
+      </div>
+    );
+  }
+
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {inner}
+    </a>
   );
 }
 

@@ -11,7 +11,7 @@ LABEL description="LibreBooking for My Music Coach – physical lesson schedulin
 # --chmod=755 sets the bit at COPY time, avoiding a separate RUN as non-root.
 COPY --chmod=755 docker-entrypoint.sh /docker-entrypoint.sh
 
-EXPOSE 80
+EXPOSE 8080
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["apache2-foreground"]

@@ -37,7 +37,6 @@ const SAMPLE_USERS = [
 ];
 
 const API_KEY_FIELDS = [
-  { key: 'CALENDLY_ACCESS_TOKEN', label: 'Calendly Access Token', icon: Calendar, description: 'For booking scheduling integration' },
   { key: 'OPENAI_API_KEY', label: 'OpenAI API Key', icon: Brain, description: 'For AI-powered assessment reports' },
   { key: 'CLAUDE_API_KEY', label: 'Claude/Anthropic API Key', icon: Brain, description: 'Alternative AI provider for analysis' },
   { key: 'DEEPSEEK_API_KEY', label: 'DeepSeek API Key', icon: Brain, description: 'AI model for music analysis' },

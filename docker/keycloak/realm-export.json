@@ -100,12 +100,13 @@
     },
     {
       "clientId": "librebooking-saml",
-      "name": "LibreBooking (OAuth2 / SAML)",
-      "description": "OAuth2 or SAML client for LibreBooking scheduling SSO",
+      "name": "LibreBooking (Keycloak OIDC)",
+      "description": "OpenID Connect client for LibreBooking scheduling SSO via keycloak-auth.php",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
-        "http://booking.mymusic-coach.test/*"
+        "http://booking.mymusic-coach.test/Web/keycloak-auth.php",
+        "https://booking.mymusic.coach/Web/keycloak-auth.php"
       ],
       "webOrigins": [
         "http://booking.mymusic-coach.test"

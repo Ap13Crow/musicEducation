@@ -7,9 +7,8 @@
 # X-Forwarded-Proto: https since every request that reaches this
 # server came from the browser over HTTPS via Cloudflare.
 #
-# Headless services (Moodle, LibreBooking): no public Caddy route.
-# The GraphQL API reaches them on the Docker network directly.
-# Pretix keeps a public route because its JS widget loads in the browser.
+# All three pillar services have public routes so users and admins
+# can navigate directly into each system from the dashboard.
 
 {
 	auto_https off
@@ -44,6 +43,22 @@
 	@auth host auth.mymusic.coach
 	handle @auth {
 		reverse_proxy keycloak:8080 {
+			header_up X-Forwarded-Proto https
+		}
+	}
+
+	# Moodle — accessible so admins can manage courses and users
+	@learn host learn.mymusic.coach
+	handle @learn {
+		reverse_proxy moodle:8080 {
+			header_up X-Forwarded-Proto https
+		}
+	}
+
+	# LibreBooking — accessible so admins can manage resources and bookings
+	@booking host booking.mymusic.coach
+	handle @booking {
+		reverse_proxy librebooking:8080 {
 			header_up X-Forwarded-Proto https
 		}
 	}

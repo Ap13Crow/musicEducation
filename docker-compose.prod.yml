@@ -32,7 +32,7 @@ services:
   #
   # Build args: NEXT_PUBLIC_* are inlined into the bundle at build time.
   # Explicitly set here so the image is correct regardless of .env state at
-  # build time; learn/booking are intentionally blank (headless services).
+  # build time. All three pillar URLs are public so the dashboard can link to them.
   web:
     build:
       args:
@@ -41,26 +41,31 @@ services:
         NEXT_PUBLIC_PRETIX_WIDGET_URL: https://tickets.mymusic.coach
         NEXT_PUBLIC_TICKETS_URL: https://tickets.mymusic.coach
         NEXT_PUBLIC_ENABLE_LIVE_API: "true"
-        NEXT_PUBLIC_LEARN_URL: ""
-        NEXT_PUBLIC_BOOKING_URL: ""
+        NEXT_PUBLIC_LEARN_URL: "https://learn.mymusic.coach"
+        NEXT_PUBLIC_BOOKING_URL: "https://booking.mymusic.coach"
+        NEXT_PUBLIC_KEYCLOAK_ISSUER: "https://auth.mymusic.coach/realms/mymusic-coach"
+        NEXT_PUBLIC_APP_URL: "https://app.mymusic.coach"
     environment:
       NEXTAUTH_URL: https://app.mymusic.coach
       KEYCLOAK_ISSUER: https://auth.mymusic.coach/realms/mymusic-coach
 
-  # ── Headless services ──────────────────────────────────────
-  # Moodle and LibreBooking are API-only in production: no public Caddy route,
-  # no browser access. The GraphQL API reaches them on the Docker network via
-  # http://moodle:8080 and http://librebooking:80.  SSLPROXY is off because
-  # traffic never crosses a TLS boundary inside the container network.
+  # ── Pillar services (publicly accessible in production) ────
+  # Moodle: learn.mymusic.coach — admins manage courses, users, grades.
+  # LibreBooking: booking.mymusic.coach — admins manage resources, schedules.
+  # SSLPROXY=true: Cloudflare terminates TLS; Moodle sees X-Forwarded-Proto: https.
   moodle:
     environment:
-      MOODLE_HOST: moodle
-      MOODLE_WWWROOT: http://moodle:8080
-      MOODLE_SSLPROXY: "false"
+      MOODLE_HOST: learn.mymusic.coach
+      MOODLE_WWWROOT: https://learn.mymusic.coach
+      MOODLE_SSLPROXY: "true"
 
   librebooking:
     environment:
-      LIBREBOOKING_SCRIPT_URL: http://librebooking:80
+      LIBREBOOKING_SCRIPT_URL: https://booking.mymusic.coach
+      LIBREBOOKING_OIDC_CLIENT_ID: ${LIBREBOOKING_OIDC_CLIENT_ID:-librebooking-saml}
+      LIBREBOOKING_OIDC_CLIENT_SECRET: ${LIBREBOOKING_OIDC_CLIENT_SECRET}
+      LIBREBOOKING_KEYCLOAK_URL: https://auth.mymusic.coach
+      LIBREBOOKING_KEYCLOAK_REALM: mymusic-coach
 
   # Pretix keeps a public route (tickets.mymusic.coach) because the JS widget
   # must be loaded by the browser.  PRETIX_URL is used by Pretix itself for

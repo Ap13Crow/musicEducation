@@ -17,7 +17,7 @@ USER root
 RUN install -d -o 15371 -g 15371 -m 755 /etc/pretix
 USER 15371
 
-EXPOSE 8345
+EXPOSE 80
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["all"]
