@@ -250,6 +250,9 @@ services:
       MOODLE_SSLPROXY: "true"
       MOODLE_HOST: learn.mymusic-coach.test
       MOODLE_WS_TOKEN: ${MOODLE_WS_TOKEN:-}
+      MOODLE_OIDC_CLIENT_ID: ${MOODLE_OIDC_CLIENT_ID:-}
+      MOODLE_OIDC_CLIENT_SECRET: ${MOODLE_OIDC_CLIENT_SECRET:-}
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-https://auth.mymusic.coach/realms/mymusic-coach}
     volumes:
       - moodle_data:/var/moodledata
     expose:
@@ -361,6 +364,8 @@ services:
       PRETIX_MAIL_PORT: ${PRETIX_MAIL_PORT:-587}
       PRETIX_MAIL_USER: ${PRETIX_MAIL_USER:-}
       PRETIX_MAIL_PASSWORD: ${PRETIX_MAIL_PASSWORD:-}
+      PRETIX_ADMIN_EMAIL: ${PRETIX_ADMIN_EMAIL:-admin@mymusic.coach}
+      PRETIX_ADMIN_PASSWORD: ${PRETIX_ADMIN_PASSWORD:-}
     volumes:
       - pretix_data:/data
     expose:

@@ -224,8 +224,8 @@ export default function DashboardPage() {
             title="Theory"
             subtitle="Courses & progress"
             accent="bg-blue-50 text-blue-600"
-            href={externalLinks.learn}
-            hrefLabel="Open Moodle"
+            href="/courses"
+            hrefLabel="Browse all courses"
           >
             {enrollments.length === 0 ? (
               <EmptyState text="You're not enrolled in any courses yet." cta={{ href: '/courses', label: 'Browse courses' }} />
@@ -256,8 +256,8 @@ export default function DashboardPage() {
             title="Practice"
             subtitle="Lessons & bookings"
             accent="bg-purple-50 text-purple-600"
-            href={externalLinks.booking}
-            hrefLabel="Open LibreBooking"
+            href="/teachers"
+            hrefLabel="Find a teacher"
           >
             {bookings.length === 0 ? (
               <EmptyState text="No lessons booked yet." cta={{ href: '/teachers', label: 'Find a teacher' }} />
@@ -297,8 +297,8 @@ export default function DashboardPage() {
             title="Performance"
             subtitle="Events & tickets"
             accent="bg-amber-50 text-amber-600"
-            href={externalLinks.tickets}
-            hrefLabel="Open pretix"
+            href="/events"
+            hrefLabel="Discover events"
           >
             {eventBookings.length === 0 ? (
               <EmptyState text="No tickets booked yet." cta={{ href: '/events', label: 'Discover events' }} />
@@ -474,14 +474,12 @@ function PillarCard({
       </div>
       <div className="flex-1">{children}</div>
       {href && (
-        <a
+        <Link
           href={href}
-          target="_blank"
-          rel="noopener noreferrer"
           className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary-600 hover:underline"
         >
-          {hrefLabel} <ExternalLink className="h-3.5 w-3.5" />
-        </a>
+          {hrefLabel} <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
       )}
     </section>
   );

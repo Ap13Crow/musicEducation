@@ -5,7 +5,7 @@ import { useSession, signIn } from 'next-auth/react';
 import {
   Users, BookOpen, Calendar, DollarSign, Settings, Shield,
   Key, Brain, Video, CreditCard, BarChart3, UserCog, ChevronRight,
-  Save, Eye, EyeOff, AlertTriangle,
+  Eye, EyeOff, AlertTriangle,
 } from 'lucide-react';
 
 type Tab = 'overview' | 'users' | 'content' | 'api-keys' | 'settings';
@@ -76,28 +76,32 @@ function OverviewTab() {
       </div>
 
       <div className="card p-4">
-        <h3 className="mb-3 font-semibold">Quick Actions</h3>
+        <h3 className="mb-3 font-semibold">Quick Links</h3>
         <div className="grid gap-2 sm:grid-cols-2">
-          <button className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm text-left hover:bg-gray-50 transition-colors">
+          <a href="https://learn.mymusic.coach/admin/" target="_blank" rel="noopener noreferrer"
+             className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm text-left hover:bg-gray-50 transition-colors">
             <BookOpen className="h-4 w-4 text-primary-600" />
-            <span>Review pending courses</span>
+            <span>Moodle — courses &amp; users</span>
             <ChevronRight className="ml-auto h-4 w-4 text-gray-400" />
-          </button>
-          <button className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm text-left hover:bg-gray-50 transition-colors">
+          </a>
+          <a href="https://booking.mymusic.coach/Web/" target="_blank" rel="noopener noreferrer"
+             className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm text-left hover:bg-gray-50 transition-colors">
             <UserCog className="h-4 w-4 text-primary-600" />
-            <span>Review teacher applications</span>
+            <span>LibreBooking — resources &amp; schedules</span>
             <ChevronRight className="ml-auto h-4 w-4 text-gray-400" />
-          </button>
-          <button className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm text-left hover:bg-gray-50 transition-colors">
-            <AlertTriangle className="h-4 w-4 text-amber-600" />
-            <span>Review flagged content</span>
-            <ChevronRight className="ml-auto h-4 w-4 text-gray-400" />
-          </button>
-          <button className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm text-left hover:bg-gray-50 transition-colors">
+          </a>
+          <a href="https://tickets.mymusic.coach/control/" target="_blank" rel="noopener noreferrer"
+             className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm text-left hover:bg-gray-50 transition-colors">
             <BarChart3 className="h-4 w-4 text-primary-600" />
-            <span>View analytics</span>
+            <span>pretix — events &amp; tickets</span>
             <ChevronRight className="ml-auto h-4 w-4 text-gray-400" />
-          </button>
+          </a>
+          <a href="https://auth.mymusic.coach/admin/mymusic-coach/console" target="_blank" rel="noopener noreferrer"
+             className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm text-left hover:bg-gray-50 transition-colors">
+            <Shield className="h-4 w-4 text-red-600" />
+            <span>Keycloak — identity &amp; roles</span>
+            <ChevronRight className="ml-auto h-4 w-4 text-gray-400" />
+          </a>
         </div>
       </div>
     </div>
@@ -166,14 +170,14 @@ function UsersTab() {
                 </td>
                 <td className="px-4 py-3 text-gray-500">{user.createdAt}</td>
                 <td className="px-4 py-3">
-                  <select
-                    defaultValue={user.role}
-                    className="rounded border border-gray-200 px-2 py-1 text-xs"
+                  <a
+                    href="https://auth.mymusic.coach/admin/mymusic-coach/console/#/mymusic-coach/users"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-medium text-primary-600 hover:underline"
                   >
-                    <option value="STUDENT">Student</option>
-                    <option value="TEACHER">Teacher</option>
-                    <option value="ADMIN">Admin</option>
-                  </select>
+                    Edit in Keycloak
+                  </a>
                 </td>
               </tr>
             ))}
@@ -185,63 +189,49 @@ function UsersTab() {
 }
 
 function ContentTab() {
-  const [heroTitle, setHeroTitle] = useState('Your Classical Music Coach');
-  const [heroSubtitle, setHeroSubtitle] = useState('Theory courses, live lessons, and live performances — all in one place.');
-  const [statsEnabled, setStatsEnabled] = useState(true);
-
   return (
-    <div className="space-y-6">
-      <div className="card p-5 space-y-4">
-        <h3 className="font-semibold flex items-center gap-2">
-          <Settings className="h-4 w-4" /> Homepage Content
-        </h3>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Hero Title</label>
-          <input
-            type="text"
-            value={heroTitle}
-            onChange={(e) => setHeroTitle(e.target.value)}
-            className="input w-full"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Hero Subtitle</label>
-          <textarea
-            value={heroSubtitle}
-            onChange={(e) => setHeroSubtitle(e.target.value)}
-            className="input w-full"
-            rows={2}
-          />
-        </div>
-        <div>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={statsEnabled}
-              onChange={(e) => setStatsEnabled(e.target.checked)}
-              className="rounded border-gray-300 text-primary-600"
-            />
-            Show statistics section
-          </label>
-        </div>
-        <button className="btn-primary flex items-center gap-2">
-          <Save className="h-4 w-4" /> Save Changes
-        </button>
+    <div className="space-y-4">
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+        <p className="font-medium">Content is managed in the native admin interfaces</p>
+        <p className="mt-1">Courses and learning materials → Moodle. Booking resources and schedules → LibreBooking. Events and tickets → pretix. Use the Quick Links above to navigate directly.</p>
       </div>
-
-      <div className="card p-5 space-y-4">
-        <h3 className="font-semibold">SEO Settings</h3>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Meta Description</label>
-          <textarea className="input w-full" rows={2} defaultValue="Learn classical music through theory courses, live lessons with certified teachers, and discover performances near you." />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Keywords</label>
-          <input type="text" className="input w-full" defaultValue="classical music, music education, online lessons, music theory" />
-        </div>
-        <button className="btn-primary flex items-center gap-2">
-          <Save className="h-4 w-4" /> Save SEO Settings
-        </button>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <a href="https://learn.mymusic.coach/course/management.php" target="_blank" rel="noopener noreferrer"
+           className="card flex items-center gap-3 p-4 transition-colors hover:border-primary-300">
+          <BookOpen className="h-5 w-5 text-blue-600 shrink-0" />
+          <div>
+            <p className="text-sm font-medium">Manage Courses</p>
+            <p className="text-xs text-gray-500">Create and edit courses in Moodle</p>
+          </div>
+          <ChevronRight className="ml-auto h-4 w-4 text-gray-400 shrink-0" />
+        </a>
+        <a href="https://tickets.mymusic.coach/control/" target="_blank" rel="noopener noreferrer"
+           className="card flex items-center gap-3 p-4 transition-colors hover:border-primary-300">
+          <Calendar className="h-5 w-5 text-amber-600 shrink-0" />
+          <div>
+            <p className="text-sm font-medium">Manage Events</p>
+            <p className="text-xs text-gray-500">Create events and ticket categories in pretix</p>
+          </div>
+          <ChevronRight className="ml-auto h-4 w-4 text-gray-400 shrink-0" />
+        </a>
+        <a href="https://booking.mymusic.coach/Web/admin/manage_resources.php" target="_blank" rel="noopener noreferrer"
+           className="card flex items-center gap-3 p-4 transition-colors hover:border-primary-300">
+          <UserCog className="h-5 w-5 text-purple-600 shrink-0" />
+          <div>
+            <p className="text-sm font-medium">Manage Resources</p>
+            <p className="text-xs text-gray-500">Rooms and instruments in LibreBooking</p>
+          </div>
+          <ChevronRight className="ml-auto h-4 w-4 text-gray-400 shrink-0" />
+        </a>
+        <a href="https://booking.mymusic.coach/Web/admin/manage_schedules.php" target="_blank" rel="noopener noreferrer"
+           className="card flex items-center gap-3 p-4 transition-colors hover:border-primary-300">
+          <BarChart3 className="h-5 w-5 text-purple-600 shrink-0" />
+          <div>
+            <p className="text-sm font-medium">Manage Schedules</p>
+            <p className="text-xs text-gray-500">Timetables and availability in LibreBooking</p>
+          </div>
+          <ChevronRight className="ml-auto h-4 w-4 text-gray-400 shrink-0" />
+        </a>
       </div>
     </div>
   );
@@ -296,9 +286,6 @@ function ApiKeysTab() {
                       {visibleKeys[key] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
-                  <button className="btn-primary text-sm px-3">
-                    <Save className="h-4 w-4" />
-                  </button>
                 </div>
               </div>
             </div>
@@ -312,93 +299,56 @@ function ApiKeysTab() {
 function SettingsTab() {
   return (
     <div className="space-y-6">
-      <div className="card p-5 space-y-4">
-        <h3 className="font-semibold flex items-center gap-2">
-          <Shield className="h-4 w-4" /> Security Settings
-        </h3>
-        <div>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" defaultChecked className="rounded border-gray-300 text-primary-600" />
-            Require email verification for new accounts
-          </label>
-        </div>
-        <div>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" defaultChecked className="rounded border-gray-300 text-primary-600" />
-            Enable rate limiting on API endpoints
-          </label>
-        </div>
-        <div>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" defaultChecked className="rounded border-gray-300 text-primary-600" />
-            Force HTTPS in production
-          </label>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Session timeout (minutes)</label>
-          <input type="number" className="input w-40" defaultValue={30} min={5} max={1440} />
-        </div>
-        <button className="btn-primary flex items-center gap-2">
-          <Save className="h-4 w-4" /> Save Security Settings
-        </button>
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+        <p className="font-medium">Platform configuration</p>
+        <p className="mt-1">Security, identity and platform settings are managed via environment variables and the Keycloak admin console. Changes take effect on the next container restart.</p>
       </div>
 
-      <div className="card p-5 space-y-4">
+      <div className="card p-5 space-y-3">
         <h3 className="font-semibold flex items-center gap-2">
-          <Key className="h-4 w-4" /> Keycloak Configuration
+          <Key className="h-4 w-4" /> Identity Provider
         </h3>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Keycloak Issuer URL</label>
-          <input type="text" className="input w-full" defaultValue={KEYCLOAK_ISSUER_URL} />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Client ID</label>
-          <input type="text" className="input w-full" defaultValue={KEYCLOAK_CLIENT_ID} />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Allowed Redirect URIs</label>
-          <textarea className="input w-full" rows={2} defaultValue={KEYCLOAK_REDIRECT_URIS} />
-        </div>
-        <button className="btn-primary flex items-center gap-2">
-          <Save className="h-4 w-4" /> Save Keycloak Settings
-        </button>
+        <dl className="space-y-2 text-sm">
+          <div className="flex gap-2">
+            <dt className="w-40 shrink-0 font-medium text-gray-600">Issuer URL</dt>
+            <dd className="font-mono text-gray-800 break-all">{KEYCLOAK_ISSUER_URL}</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="w-40 shrink-0 font-medium text-gray-600">Client ID</dt>
+            <dd className="font-mono text-gray-800">{KEYCLOAK_CLIENT_ID}</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="w-40 shrink-0 font-medium text-gray-600">Redirect URIs</dt>
+            <dd className="font-mono text-gray-800 break-all">{KEYCLOAK_REDIRECT_URIS}</dd>
+          </div>
+        </dl>
+        <a
+          href="https://auth.mymusic.coach/admin/mymusic-coach/console"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:underline"
+        >
+          <Shield className="h-3.5 w-3.5" /> Open Keycloak Admin Console
+        </a>
       </div>
 
-      <div className="card p-5 space-y-4">
-        <h3 className="font-semibold">Platform Settings</h3>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Default Currency</label>
-          <select className="input w-40">
-            <option value="CHF">CHF</option>
-            <option value="EUR">EUR</option>
-            <option value="USD">USD</option>
-            <option value="GBP">GBP</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Default Language</label>
-          <select className="input w-40">
-            <option value="en">English</option>
-            <option value="de">Deutsch</option>
-            <option value="fr">Français</option>
-            <option value="it">Italiano</option>
-          </select>
-        </div>
-        <div>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" defaultChecked className="rounded border-gray-300 text-primary-600" />
-            Allow teacher self-registration
-          </label>
-        </div>
-        <div>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" defaultChecked className="rounded border-gray-300 text-primary-600" />
-            Enable AI-powered assessments
-          </label>
-        </div>
-        <button className="btn-primary flex items-center gap-2">
-          <Save className="h-4 w-4" /> Save Platform Settings
-        </button>
+      <div className="card p-5 space-y-3">
+        <h3 className="font-semibold">Platform Defaults</h3>
+        <dl className="space-y-2 text-sm">
+          <div className="flex gap-2">
+            <dt className="w-40 shrink-0 font-medium text-gray-600">Currency</dt>
+            <dd className="text-gray-800">CHF (Swiss Franc)</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="w-40 shrink-0 font-medium text-gray-600">Timezone</dt>
+            <dd className="text-gray-800">Europe/Zurich</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="w-40 shrink-0 font-medium text-gray-600">Languages</dt>
+            <dd className="text-gray-800">English, Deutsch, Français, Italiano</dd>
+          </div>
+        </dl>
+        <p className="text-xs text-gray-500">Edit <code>.env</code> and restart containers to change platform defaults.</p>
       </div>
     </div>
   );

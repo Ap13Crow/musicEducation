@@ -32,6 +32,7 @@ COPY apache-moodle.conf /etc/apache2/sites-enabled/000-default.conf
 # ── Entrypoint: first-run CLI install + web-service setup ─────
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY setup-webservice.php /usr/local/bin/moodle-setup-webservice.php
+COPY setup-oauth2.php /usr/local/bin/moodle-setup-oauth2.php
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 8080

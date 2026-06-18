@@ -58,6 +58,9 @@ services:
       MOODLE_HOST: learn.mymusic.coach
       MOODLE_WWWROOT: https://learn.mymusic.coach
       MOODLE_SSLPROXY: "true"
+      MOODLE_OIDC_CLIENT_ID: ${MOODLE_OIDC_CLIENT_ID:-moodle-oidc}
+      MOODLE_OIDC_CLIENT_SECRET: ${MOODLE_OIDC_CLIENT_SECRET}
+      KEYCLOAK_ISSUER: https://auth.mymusic.coach/realms/mymusic-coach
 
   librebooking:
     environment:
@@ -73,6 +76,8 @@ services:
   pretix:
     environment:
       PRETIX_URL: https://tickets.mymusic.coach
+      PRETIX_ADMIN_EMAIL: ${PRETIX_ADMIN_EMAIL:-admin@mymusic.coach}
+      PRETIX_ADMIN_PASSWORD: ${PRETIX_ADMIN_PASSWORD}
 
   # ── Cloudflare Tunnel ──────────────────────────────────────
   # Outbound-only: nothing is exposed on the public IP. Joins the

@@ -44,5 +44,38 @@ EOCFG
 
 echo "pretix.cfg generated from environment."
 
-# Run the upstream pretix entrypoint
+# ── Database migration + admin user bootstrap ─────────────────
+# Run migrations explicitly so we can create the admin user before
+# the full daemon starts. pretix all also runs migrate internally
+# (idempotent), so running it here first is safe.
+# pretix runs from /pretix/src with production_settings.
+cd /pretix/src
+export DJANGO_SETTINGS_MODULE=production_settings
+export DATA_DIR=/data/
+export HOME=/pretix
+
+echo "Running pretix database migrations..."
+python3 -m pretix migrate --noinput
+
+# Create the staff/admin user on first run. pretix's User model lives in
+# pretixbase (not django.contrib.auth), so standard createsuperuser doesn't work.
+ADMIN_EMAIL="${PRETIX_ADMIN_EMAIL:-admin@mymusic.coach}"
+ADMIN_PASSWORD="${PRETIX_ADMIN_PASSWORD:-}"
+
+if [ -n "$ADMIN_PASSWORD" ]; then
+  python3 -m pretix shell << PYEOF
+from pretix.base.models import User
+if not User.objects.filter(email='${ADMIN_EMAIL}').exists():
+    u = User(email='${ADMIN_EMAIL}', is_staff=True)
+    u.set_password('${ADMIN_PASSWORD}')
+    u.save()
+    print('[pretix] Admin user created: ${ADMIN_EMAIL}')
+else:
+    print('[pretix] Admin user already exists: ${ADMIN_EMAIL}')
+PYEOF
+else
+  echo "[pretix] PRETIX_ADMIN_PASSWORD not set — skipping admin user creation."
+fi
+
+# Run the upstream pretix supervisor
 exec pretix "$@"

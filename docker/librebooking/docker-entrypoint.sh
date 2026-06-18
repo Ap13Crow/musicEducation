@@ -32,7 +32,9 @@ return [
         ],
 
         'authentication' => [
-            'hide.login.prompt' => false,
+            // Hide the local login form and auto-redirect to Keycloak when SSO is configured.
+            // Users are silently authenticated via their existing Keycloak browser session.
+            'hide.login.prompt' => $KEYCLOAK_ENABLED,
 
             // Keycloak SSO — enabled when LIBREBOOKING_OIDC_CLIENT_ID is set.
             'keycloak.login.enabled' => $KEYCLOAK_ENABLED,

@@ -108,4 +108,9 @@ fi
 echo "[moodle] Configuring web services..."
 php /usr/local/bin/moodle-setup-webservice.php
 
+# ── Configure Keycloak OAuth2 / auto-login ────────────────────
+# Script is idempotent; skipped if MOODLE_OIDC_CLIENT_ID is unset.
+echo "[moodle] Configuring Keycloak OAuth2 SSO..."
+php /usr/local/bin/moodle-setup-oauth2.php
+
 exec "$@"
