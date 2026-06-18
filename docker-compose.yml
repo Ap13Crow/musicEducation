@@ -247,9 +247,9 @@ services:
       MOODLE_SITE_NAME: "My Music Coach"
       MOODLE_SSLPROXY: "true"
       MOODLE_HOST: learn.mymusic-coach.test
+      MOODLE_WS_TOKEN: ${MOODLE_WS_TOKEN:-}
     volumes:
-      - moodle_data:/bitnami/moodle
-      - moodle_moodledata:/bitnami/moodledata
+      - moodle_data:/var/moodledata
     expose:
       - "8080"
     depends_on:
