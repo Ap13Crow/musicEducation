@@ -110,6 +110,42 @@ Platform Event → provisionEventToPretix() → pretix API
 | `POST /webhooks/pretix` | pretix | Order placed/paid/cancelled/refunded, check-in |
 | `POST /webhooks/librebooking` | LibreBooking | Reservation created/updated/deleted |
 
+## Moodle OIDC SSO (headless)
+
+Moodle authenticates against Keycloak through the `moodle-oidc` confidential
+client (defined in `docker/keycloak/realm-export.json`). The integration is
+provisioned **headlessly** — no point-and-click admin wizard — so a clean
+`docker compose up` yields a working SSO login.
+
+How it is wired:
+
+1. **Plugin baked into the image.** `docker/moodle/Dockerfile` downloads the
+   `auth_oidc` plugin (the `auth/oidc` subtree of `microsoft/o365-moodle`,
+   `MOODLE_404_STABLE`, matching Moodle `4.4.4`) into `auth/oidc`.
+2. **Configured on boot.** `docker/moodle/docker-entrypoint.sh` runs
+   `admin/cli/upgrade.php` (installs the plugin tables) and then
+   `configure-oidc.php`, which idempotently applies the connection settings via
+   `set_config(...)` and enables `oidc` as a login method. It runs on both the
+   first install and subsequent boots, so config self-heals and tracks an
+   updated secret or endpoints.
+3. **Driven by the environment.** The same image works in dev and prod; only
+   the issuer changes.
+
+| Variable | Default (dev) | Purpose |
+|----------|---------------|---------|
+| `MOODLE_OIDC_CLIENT_ID` | `moodle-oidc` | Keycloak client ID |
+| `MOODLE_OIDC_CLIENT_SECRET` | _(unset)_ | Client secret; OIDC config is skipped when empty |
+| `MOODLE_OIDC_ISSUER` | `http://auth.mymusic-coach.test/realms/mymusic-coach` | Realm base URL; auth/token endpoints are derived from it |
+| `MOODLE_OIDC_OPNAME` | `My Music Coach` | Label shown on the Moodle login button |
+
+`docker-compose.prod.yml` overrides `MOODLE_OIDC_ISSUER` to
+`https://auth.mymusic.coach/realms/mymusic-coach`. The Moodle container must be
+able to resolve the issuer hostname (via the Caddy gateway) so server-side token
+exchange and `iss` validation match the browser-facing auth endpoint.
+
+Claim mapping (Keycloak → Moodle, refreshed on every login): `preferred_username`
+→ username, `email` → email, `given_name` → first name, `family_name` → last name.
+
 ## Startup Order
 
 1. **Databases** — `postgres-main`, `moodle-db`, `librebooking-db`, `pretix-db`

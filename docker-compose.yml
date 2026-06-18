@@ -247,6 +247,11 @@ services:
       MOODLE_SITE_NAME: "My Music Coach"
       MOODLE_SSLPROXY: "true"
       MOODLE_HOST: learn.mymusic-coach.test
+      # ── Keycloak OIDC single sign-on ─────────────────────
+      MOODLE_OIDC_CLIENT_ID: ${MOODLE_OIDC_CLIENT_ID:-moodle-oidc}
+      MOODLE_OIDC_CLIENT_SECRET: ${MOODLE_OIDC_CLIENT_SECRET:-}
+      MOODLE_OIDC_ISSUER: ${MOODLE_OIDC_ISSUER:-http://auth.mymusic-coach.test/realms/mymusic-coach}
+      MOODLE_OIDC_OPNAME: ${MOODLE_OIDC_OPNAME:-My Music Coach}
     volumes:
       - moodle_data:/bitnami/moodle
       - moodle_moodledata:/bitnami/moodledata

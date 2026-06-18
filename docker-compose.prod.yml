@@ -30,6 +30,7 @@ services:
       MOODLE_HOST: learn.mymusic.coach
       MOODLE_WWWROOT: https://learn.mymusic.coach
       MOODLE_SSLPROXY: "true"
+      MOODLE_OIDC_ISSUER: https://auth.mymusic.coach/realms/mymusic-coach
 
   librebooking:
     environment:

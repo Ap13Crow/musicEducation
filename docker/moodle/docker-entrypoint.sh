@@ -18,7 +18,35 @@ set -e
 : "${MOODLE_SSLPROXY:=false}"
 : "${MOODLE_DATA_DIR:=/var/moodledata}"
 
+# ── OIDC SSO (Keycloak) ───────────────────────────────────────
+: "${MOODLE_OIDC_CLIENT_ID:=moodle-oidc}"
+: "${MOODLE_OIDC_CLIENT_SECRET:=}"
+: "${MOODLE_OIDC_OPNAME:=My Music Coach}"
+: "${MOODLE_OIDC_ISSUER:=http://auth.mymusic-coach.test/realms/mymusic-coach}"
+: "${MOODLE_OIDC_AUTH_ENDPOINT:=${MOODLE_OIDC_ISSUER}/protocol/openid-connect/auth}"
+: "${MOODLE_OIDC_TOKEN_ENDPOINT:=${MOODLE_OIDC_ISSUER}/protocol/openid-connect/token}"
+export MOODLE_OIDC_CLIENT_ID MOODLE_OIDC_CLIENT_SECRET MOODLE_OIDC_OPNAME \
+       MOODLE_OIDC_AUTH_ENDPOINT MOODLE_OIDC_TOKEN_ENDPOINT
+
 CONFIG_FILE="/var/www/html/config.php"
+
+# Install the auth_oidc plugin tables and apply the headless SSO config.
+# Idempotent: safe to run on every boot so config self-heals and tracks
+# any updated client secret / endpoints from the environment.
+configure_oidc() {
+  echo "[moodle] Upgrading plugins (installs auth_oidc tables if new)..."
+  php /var/www/html/admin/cli/upgrade.php --non-interactive
+
+  if [ -n "${MOODLE_OIDC_CLIENT_SECRET}" ]; then
+    echo "[moodle] Applying headless OIDC SSO configuration..."
+    php /usr/local/bin/configure-oidc.php
+  else
+    echo "[moodle] MOODLE_OIDC_CLIENT_SECRET not set — skipping OIDC configuration."
+  fi
+
+  # Fix ownership of any cache files created while running the CLI as root.
+  chown -R www-data:www-data "${MOODLE_DATA_DIR}"
+}
 
 if [ ! -f "$CONFIG_FILE" ]; then
   echo "[moodle] config.php not found — running first-run installer."
@@ -62,8 +90,14 @@ if [ ! -f "$CONFIG_FILE" ]; then
 
   # Ensure www-data (Apache) can read the config file created by the root-run installer
   chown www-data:www-data "$CONFIG_FILE"
+
+  # Provision OIDC SSO immediately after a fresh install.
+  configure_oidc
 else
   echo "[moodle] config.php found — skipping installation."
+
+  # Re-apply OIDC config (and install the plugin on an existing site).
+  configure_oidc
 fi
 
 exec "$@"
