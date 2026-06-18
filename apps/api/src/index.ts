@@ -10,7 +10,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import pino from 'pino';
 import { PrismaClient } from '@my-music-coach/database';
-import { authMiddleware } from './middleware/auth.js';
+import { authMiddleware, resolveRequestUser } from './middleware/auth.js';
 import { authResolvers } from './resolvers/auth.js';
 import { userResolvers } from './resolvers/users.js';
 import { bookingResolvers } from './resolvers/bookings.js';
@@ -62,7 +62,7 @@ async function main() {
     expressMiddleware(server, {
       context: async ({ req }) => ({
         prisma,
-        user: req.user ?? null,
+        user: await resolveRequestUser(req, prisma),
         req,
       }),
     }),
