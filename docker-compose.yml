@@ -247,6 +247,11 @@ services:
       MOODLE_SITE_NAME: "My Music Coach"
       MOODLE_SSLPROXY: "true"
       MOODLE_HOST: learn.mymusic-coach.test
+      # ── Keycloak OIDC single sign-on ─────────────────────
+      MOODLE_OIDC_CLIENT_ID: ${MOODLE_OIDC_CLIENT_ID:-moodle-oidc}
+      MOODLE_OIDC_CLIENT_SECRET: ${MOODLE_OIDC_CLIENT_SECRET:-}
+      MOODLE_OIDC_ISSUER: ${MOODLE_OIDC_ISSUER:-http://auth.mymusic-coach.test/realms/mymusic-coach}
+      MOODLE_OIDC_OPNAME: ${MOODLE_OIDC_OPNAME:-My Music Coach}
     volumes:
       - moodle_data:/bitnami/moodle
       - moodle_moodledata:/bitnami/moodledata
@@ -299,6 +304,10 @@ services:
       LIBREBOOKING_TIMEZONE: ${LIBREBOOKING_TIMEZONE:-Europe/Zurich}
       LIBREBOOKING_SCRIPT_URL: http://booking.mymusic-coach.test
       LIBREBOOKING_ADMIN_EMAIL: ${LIBREBOOKING_ADMIN_EMAIL:-admin@mymusic.coach}
+      # ── Keycloak OIDC single sign-on ─────────────────────
+      LIBREBOOKING_OIDC_CLIENT_ID: ${LIBREBOOKING_OIDC_CLIENT_ID:-librebooking-saml}
+      LIBREBOOKING_OIDC_CLIENT_SECRET: ${LIBREBOOKING_OIDC_CLIENT_SECRET:-}
+      LIBREBOOKING_OIDC_ISSUER: ${LIBREBOOKING_OIDC_ISSUER:-http://auth.mymusic-coach.test/realms/mymusic-coach}
     expose:
       - "8080"
     depends_on:
@@ -355,6 +364,11 @@ services:
       PRETIX_MAIL_PORT: ${PRETIX_MAIL_PORT:-587}
       PRETIX_MAIL_USER: ${PRETIX_MAIL_USER:-}
       PRETIX_MAIL_PASSWORD: ${PRETIX_MAIL_PASSWORD:-}
+      # ── Keycloak customer-account OIDC single sign-on ────
+      PRETIX_ORGANISER_SLUG: ${PRETIX_ORGANISER_SLUG:-mymusic-coach}
+      PRETIX_OIDC_CLIENT_ID: ${PRETIX_OIDC_CLIENT_ID:-pretix-oidc}
+      PRETIX_OIDC_CLIENT_SECRET: ${PRETIX_OIDC_CLIENT_SECRET:-}
+      PRETIX_OIDC_ISSUER: ${PRETIX_OIDC_ISSUER:-http://auth.mymusic-coach.test/realms/mymusic-coach}
     volumes:
       - pretix_data:/data
     expose:
