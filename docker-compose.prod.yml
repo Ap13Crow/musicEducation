@@ -29,7 +29,20 @@ services:
   # SSO: KEYCLOAK_ISSUER must be the public URL (auth.mymusic.coach) because
   # the browser follows the OIDC redirect — the internal keycloak:8080 address
   # is unreachable from outside the Docker network.
+  #
+  # Build args: NEXT_PUBLIC_* are inlined into the bundle at build time.
+  # Explicitly set here so the image is correct regardless of .env state at
+  # build time; learn/booking are intentionally blank (headless services).
   web:
+    build:
+      args:
+        NEXT_PUBLIC_GRAPHQL_URL: https://api.mymusic.coach/graphql
+        NEXT_PUBLIC_GRAPHQL_WS_URL: wss://api.mymusic.coach/graphql
+        NEXT_PUBLIC_PRETIX_WIDGET_URL: https://tickets.mymusic.coach
+        NEXT_PUBLIC_TICKETS_URL: https://tickets.mymusic.coach
+        NEXT_PUBLIC_ENABLE_LIVE_API: "true"
+        NEXT_PUBLIC_LEARN_URL: ""
+        NEXT_PUBLIC_BOOKING_URL: ""
     environment:
       NEXTAUTH_URL: https://app.mymusic.coach
       KEYCLOAK_ISSUER: https://auth.mymusic.coach/realms/mymusic-coach

@@ -62,6 +62,12 @@ if [ ! -f "$CONFIG_FILE" ]; then
 
   # Ensure www-data (Apache) can read the config file created by the root-run installer
   chown www-data:www-data "$CONFIG_FILE"
+
+  # Enable web services, register the REST protocol, create the external service,
+  # and inject the pre-shared API token so the GraphQL layer can authenticate
+  # without a manual admin step.
+  echo "[moodle] Configuring web services..."
+  php /usr/local/bin/moodle-setup-webservice.php
 else
   echo "[moodle] config.php found — skipping installation."
 fi

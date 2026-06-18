@@ -43,14 +43,18 @@ connector), map **every** public hostname to the Caddy gateway service. Caddy
 then fans out to each upstream by `Host` header (see
 [`docker/gateway/Caddyfile.prod`](../docker/gateway/Caddyfile.prod)).
 
-| Public hostname | Tunnel service (origin) |
-|-----------------|-------------------------|
-| `app.mymusic.coach` | `http://gateway:80` |
-| `api.mymusic.coach` | `http://gateway:80` |
-| `auth.mymusic.coach` | `http://gateway:80` |
-| `learn.mymusic.coach` | `http://gateway:80` |
-| `booking.mymusic.coach` | `http://gateway:80` |
-| `tickets.mymusic.coach` | `http://gateway:80` |
+| Public hostname | Tunnel service (origin) | Notes |
+|-----------------|-------------------------|-------|
+| `app.mymusic.coach` | `http://gateway:80` | main frontend |
+| `api.mymusic.coach` | `http://gateway:80` | GraphQL API |
+| `auth.mymusic.coach` | `http://gateway:80` | Keycloak SSO |
+| `tickets.mymusic.coach` | `http://gateway:80` | Pretix widget + API |
+
+**Removed from public DNS** (headless — no Caddy route):
+`learn.mymusic.coach`, `booking.mymusic.coach` — Moodle and LibreBooking are
+API-only; the GraphQL API reaches them on the internal Docker network
+(`http://moodle:8080`, `http://librebooking:80`). Remove or do not create these
+DNS/tunnel records.
 
 Notes:
 - Point each hostname's **DNS** (CNAME) at the tunnel.
@@ -121,17 +125,15 @@ needed.
 
 ## 4. External containers: "buttons don't work / backend not accessible"
 
-When a service generates links/redirects from the **wrong** base URL or scheme,
-forms post to `http://` behind an `https://` page and silently fail
-(mixed-content) — this is the usual cause of dead buttons behind a tunnel. Each
-service must know its real public URL **and** trust the proxy's
-`X-Forwarded-Proto` header. The production compose already sets these:
+Moodle and LibreBooking are **headless** in production: they have no public Caddy
+route and are only accessed by the GraphQL API over the Docker network. Only
+Pretix retains a public hostname because its JS widget must load in the browser.
 
-| Service | Public-URL env | Proxy-trust setting | Mounted/handled in |
-|---------|----------------|---------------------|--------------------|
-| **Moodle** | `MOODLE_WWWROOT=https://learn.mymusic.coach`, `MOODLE_HOST=learn.mymusic.coach` | `MOODLE_SSLPROXY=true` → sets `$CFG->sslproxy` | `docker/moodle/docker-entrypoint.sh` |
-| **LibreBooking** | `LIBREBOOKING_SCRIPT_URL=https://booking.mymusic.coach` | trusts gateway `X-Forwarded-*` | `docker/librebooking/docker-entrypoint.sh` |
-| **pretix** | `PRETIX_URL=https://tickets.mymusic.coach` | `trust_x_forwarded_for=on`, `trust_x_forwarded_proto=on` (in `pretix.cfg`) | `docker/pretix/docker-entrypoint.sh` |
+| Service | URL / config env | Access mode | Handled in |
+|---------|-----------------|-------------|-----------|
+| **Moodle** | `MOODLE_WWWROOT=http://moodle:8080` (internal) | API-only — GraphQL uses `MOODLE_URL` + `MOODLE_WS_TOKEN` | `docker/moodle/docker-entrypoint.sh` + `setup-webservice.php` |
+| **LibreBooking** | `LIBREBOOKING_SCRIPT_URL=http://librebooking:80` (internal) | API-only — GraphQL uses `LIBREBOOKING_URL` + `LIBREBOOKING_API_PASSWORD` | `docker/librebooking/docker-entrypoint.sh` |
+| **Pretix** | `PRETIX_URL=https://tickets.mymusic.coach` | Public — widget + API; `trust_x_forwarded_proto=on` | `docker/pretix/docker-entrypoint.sh` |
 
 If you changed any of these, the config is only regenerated on container
 (re)start — recreate the affected service:
@@ -153,15 +155,14 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
 
 # 2. Gateway is up and routing (Host header selects the upstream)
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:80/health
-curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: app.mymusic.coach'    http://localhost:80/
-curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: api.mymusic.coach'    http://localhost:80/health
-curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: learn.mymusic.coach'  http://localhost:80/login/index.php
-curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: booking.mymusic.coach' http://localhost:80/
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: app.mymusic.coach'     http://localhost:80/
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: api.mymusic.coach'     http://localhost:80/health
 curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: tickets.mymusic.coach' http://localhost:80/
 
-# 3. Each container answers directly (bypass the gateway)
-docker compose exec moodle       curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/login/index.php
-docker compose exec librebooking curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/
+# 3. Each container answers directly on Docker network (bypass the gateway)
+# Moodle and LibreBooking are headless — no public route, check directly:
+docker compose exec moodle       curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/webservice/rest/server.php
+docker compose exec librebooking curl -s -o /dev/null -w '%{http_code}\n' http://localhost:80/
 docker compose exec pretix       curl -s -o /dev/null -w '%{http_code}\n' http://localhost:80/
 
 # 4. Public round-trip through Cloudflare (from anywhere)

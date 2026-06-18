@@ -29,8 +29,9 @@ RUN sed -i 's/Listen 80$/Listen 8080/' /etc/apache2/ports.conf \
 
 COPY apache-moodle.conf /etc/apache2/sites-enabled/000-default.conf
 
-# ── Entrypoint: first-run CLI install + sslproxy config ───────
+# ── Entrypoint: first-run CLI install + web-service setup ─────
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY setup-webservice.php /usr/local/bin/moodle-setup-webservice.php
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 8080

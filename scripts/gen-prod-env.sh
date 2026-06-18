@@ -61,11 +61,14 @@ CORS_ORIGIN=https://app.$DOMAIN
 NEXT_PUBLIC_GRAPHQL_URL=https://api.$DOMAIN/graphql
 NEXT_PUBLIC_GRAPHQL_WS_URL=wss://api.$DOMAIN/graphql
 NEXT_PUBLIC_PRETIX_WIDGET_URL=https://tickets.$DOMAIN
-NEXT_PUBLIC_LEARN_URL=https://learn.$DOMAIN
-NEXT_PUBLIC_BOOKING_URL=https://booking.$DOMAIN
+# Moodle (learn) and LibreBooking (booking) are headless — leave unset.
+NEXT_PUBLIC_LEARN_URL=
+NEXT_PUBLIC_BOOKING_URL=
 NEXT_PUBLIC_TICKETS_URL=https://tickets.$DOMAIN
 NEXT_PUBLIC_ENABLE_LIVE_API=true
 
+# ── Keycloak SMTP (fill in after setting up Infomaniak mail) ──
+KC_SMTP_PASSWORD=
 
 # ── MinIO ──
 MINIO_ROOT_USER=mymusic-coach-minio
@@ -110,9 +113,9 @@ PRETIX_ORGANISER_SLUG=mymusic-coach
 PRETIX_CURRENCY=CHF
 PRETIX_WEBHOOK_SECRET=$PX_HOOK
 PRETIX_MAIL_FROM=tickets@$DOMAIN
-PRETIX_MAIL_HOST=localhost
+PRETIX_MAIL_HOST=mail.infomaniak.com
 PRETIX_MAIL_PORT=587
-PRETIX_MAIL_USER=
+PRETIX_MAIL_USER=tickets@$DOMAIN
 PRETIX_MAIL_PASSWORD=
 PRETIX_OIDC_CLIENT_ID=pretix-oidc
 PRETIX_OIDC_CLIENT_SECRET=$CS_PX
@@ -135,4 +138,7 @@ EOF
 
 chmod 600 "$OUT"
 echo "Wrote $OUT (0600) with fresh secrets for $DOMAIN."
-echo "Next: paste CLOUDFLARE_TUNNEL_TOKEN into .env, then run: python3 scripts/patch-realm.py"
+echo "Next steps:"
+echo "  1. Paste CLOUDFLARE_TUNNEL_TOKEN into .env"
+echo "  2. Set KC_SMTP_PASSWORD in .env (Infomaniak mail password)"
+echo "  3. Run: python3 scripts/patch-realm.py"

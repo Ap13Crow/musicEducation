@@ -4,6 +4,7 @@
  - rewrites every client redirectUri/webOrigin: mymusic-coach.test -> mymusic.coach, http -> https
  - drops localhost entries (prod realm only trusts the live domain)
  - injects each confidential client's secret from .env so Keycloak's import matches the apps
+ - injects KC_SMTP_PASSWORD from .env into smtpServer.password
  - disables email verification so logins work before SMTP is configured (re-enable later)
 """
 import json
@@ -61,6 +62,11 @@ with open(SRC) as f:
     realm = json.load(f)
 
 realm["verifyEmail"] = False  # re-enable once SMTP is wired
+
+# Inject SMTP password so Keycloak can send registration / verification emails.
+smtp_password = env.get("KC_SMTP_PASSWORD", "")
+if smtp_password and "smtpServer" in realm:
+    realm["smtpServer"]["password"] = smtp_password
 
 for c in realm.get("clients", []):
     cid = c.get("clientId")
