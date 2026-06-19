@@ -58,13 +58,19 @@
     },
     {
       "clientId": "moodle-oidc",
-      "name": "Moodle LMS (web-service only)",
-      "description": "Moodle is headless — no browser SSO. Client kept for web-service token use.",
+      "name": "Moodle LMS",
+      "description": "OIDC client for Moodle SSO (admins/teachers) and web-service token.",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
-      "redirectUris": [],
-      "webOrigins": [],
-      "standardFlowEnabled": false,
+      "redirectUris": [
+        "http://learn.mymusic-coach.test/*",
+        "https://learn.mymusic.coach/*"
+      ],
+      "webOrigins": [
+        "http://learn.mymusic-coach.test",
+        "https://learn.mymusic.coach"
+      ],
+      "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "protocol": "openid-connect",
@@ -78,10 +84,11 @@
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
         "http://tickets.mymusic-coach.test/mymusic-coach/account/*",
-        "http://tickets.mymusic-coach.test/account/*"
+        "https://tickets.mymusic.coach/mymusic-coach/account/*"
       ],
       "webOrigins": [
-        "http://tickets.mymusic-coach.test"
+        "http://tickets.mymusic-coach.test",
+        "https://tickets.mymusic.coach"
       ],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
