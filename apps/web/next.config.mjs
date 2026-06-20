@@ -10,7 +10,6 @@ const nextConfig = {
       allowedOrigins: ['localhost:3000'],
     },
   },
-  optimizeFonts: false,
 };
 
 export default nextConfig;
