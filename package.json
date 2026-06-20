@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Classical music education platform — theory, practice and performance",
+  "packageManager": "npm@9.8.1",
   "workspaces": [
     "apps/*",
     "packages/*"

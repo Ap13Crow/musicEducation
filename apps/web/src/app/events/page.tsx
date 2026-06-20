@@ -1,3 +1,6 @@
+'use client';
+
+import { useState } from 'react';
 import Link from 'next/link';
 
 const events = [
@@ -22,8 +25,28 @@ const events = [
 ];
 
 export default function EventsPage() {
+  const [selectedEvent, setSelectedEvent] = useState<string | null>(null);
+
   return (
     <main className="px-6 py-16">
+      {/* Checkout Modal Placeholder */}
+      {selectedEvent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white p-8 rounded-lg shadow-xl max-w-md w-full">
+            <h2 className="text-2xl font-bold mb-4">Checkout</h2>
+            <p className="text-gray-600 mb-6">
+              Reserving seat for <span className="font-semibold">{selectedEvent}</span>.
+              <br />
+              <span className="text-sm mt-2 block">(This process calls Pretix API in the background instead of redirecting)</span>
+            </p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setSelectedEvent(null)} className="px-4 py-2 border rounded text-gray-600">Cancel</button>
+              <button onClick={() => setSelectedEvent(null)} className="btn-primary px-4 py-2">Confirm Purchase</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <section className="mx-auto max-w-5xl">
         <p className="mb-3 inline-block rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
           Performance Pillar
@@ -45,7 +68,7 @@ export default function EventsPage() {
                   {eventItem.type}
                 </p>
               </div>
-              <button className="btn-primary mt-4 sm:mt-0">Reserve Seat</button>
+              <button onClick={() => setSelectedEvent(eventItem.title)} className="btn-primary mt-4 sm:mt-0">Buy Ticket</button>
             </article>
           ))}
         </div>

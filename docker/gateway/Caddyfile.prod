@@ -48,44 +48,6 @@
 		}
 	}
 
-	# LibreBooking — users book physical lessons here
-	@booking host booking.mymusic.coach
-	handle @booking {
-		reverse_proxy librebooking:8080 {
-			header_up X-Forwarded-Proto https
-		}
-	}
-
-	# Moodle — course management for admins and teachers
-	@learn host learn.mymusic.coach
-	handle @learn {
-		reverse_proxy moodle:8080 {
-			header_up X-Forwarded-Proto https
-		}
-	}
-
-	# Pretix — ticket shop
-	@tickets host tickets.mymusic.coach
-	handle @tickets {
-		# Redirect bare root to the organizer shop
-		@tickets-root path /
-		redir @tickets-root /mymusic-coach/ 302
-
-		# Seamless SSO: skip the customer login form and jump directly
-		# to SSO provider 1 (Keycloak). Works because the user already
-		# has a Keycloak session from app.mymusic.coach — Keycloak
-		# silently approves and redirects back, so no login screen appears.
-		@tickets-login {
-			path /mymusic-coach/account/login
-			path /mymusic-coach/account/login/
-		}
-		redir @tickets-login /mymusic-coach/account/login/1/ 302
-
-		reverse_proxy pretix:80 {
-			header_up X-Forwarded-Proto https
-		}
-	}
-
 	# Reject unknown hostnames
 	respond 404
 }

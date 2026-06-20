@@ -418,31 +418,10 @@ export default function DashboardPage() {
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <AdminLink
-                href={externalLinks.learn ? `${externalLinks.learn}/admin/` : undefined}
-                label="Moodle Admin"
-                description="Users, courses & grades"
-                accent="bg-blue-50 text-blue-600"
-                icon={<BookOpen className="h-4 w-4" />}
-              />
-              <AdminLink
-                href={externalLinks.booking ? `${externalLinks.booking}/Web/` : undefined}
-                label="LibreBooking Admin"
-                description="Resources, schedules & users"
-                accent="bg-purple-50 text-purple-600"
-                icon={<Music className="h-4 w-4" />}
-              />
-              <AdminLink
-                href={externalLinks.tickets ? `${externalLinks.tickets}/control/` : undefined}
-                label="pretix Admin"
-                description="Events, tickets & orders"
-                accent="bg-amber-50 text-amber-600"
-                icon={<Ticket className="h-4 w-4" />}
-              />
-              <AdminLink
-                href={keycloakAdminUrl}
-                label="Keycloak Admin"
-                description="Identity, roles & SSO"
-                accent="bg-red-50 text-red-600"
+                href="/admin"
+                label="Admin Portal"
+                description="Users, content & integrations"
+                accent="bg-primary-50 text-primary-600"
                 icon={<Shield className="h-4 w-4" />}
               />
             </div>
@@ -541,7 +520,7 @@ function AdminLink({
         <p className="text-sm font-medium text-gray-900">{label}</p>
         <p className="truncate text-xs text-gray-500">{description}</p>
       </div>
-      <ExternalLink className="ml-auto h-3.5 w-3.5 shrink-0 text-gray-400" />
+      <ArrowRight className="ml-auto h-3.5 w-3.5 shrink-0 text-gray-400" />
     </div>
   );
 
@@ -553,10 +532,18 @@ function AdminLink({
     );
   }
 
+  if (href.startsWith('http')) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer">
+        {inner}
+      </a>
+    );
+  }
+
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer">
+    <Link href={href}>
       {inner}
-    </a>
+    </Link>
   );
 }
 
