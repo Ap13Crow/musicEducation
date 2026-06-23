@@ -113,4 +113,15 @@ php /usr/local/bin/moodle-setup-webservice.php
 echo "[moodle] Configuring Keycloak OAuth2 SSO..."
 php /usr/local/bin/moodle-setup-oauth2.php
 
+# ── Configure Visual Homogeneity (Theme) ────────────────────
+echo "[moodle] Injecting custom theme and dashboard link..."
+php -r "
+define('CLI_SCRIPT', true);
+require('/var/www/html/config.php');
+set_config('scss', 'body { background-color: #0f172a; color: #f8fafc; } .navbar { background-color: #1e293b !important; } .navbar a { color: #f8fafc !important; }', 'theme_boost');
+\$dashboard_link = '<div style=\"background-color: #1e293b; padding: 10px; text-align: center;\"><a href=\"'.getenv('FRONTEND_URL').'/dashboard\" style=\"color: #3b82f6; font-weight: bold;\">&larr; Back to My Music Coach Dashboard</a></div>';
+set_config('additionalhtmltopofbody', \$dashboard_link);
+set_config('noemailever', 1); // Disable Moodle native emails to let the central platform handle them
+"
+
 exec "$@"

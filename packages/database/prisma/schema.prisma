@@ -365,6 +365,7 @@ model Booking {
   zoomMeetingId    String?
   zoomJoinUrl      String?
   zoomStartUrl     String?
+  externalBookingId String?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
@@ -407,6 +408,20 @@ model Event {
   publisher User           @relation(fields: [publisherId], references: [id])
   bookings  EventBooking[]
   reviews   Review[]
+  externalMapping ExternalEventMapping?
+}
+
+model ExternalEventMapping {
+  id                  String   @id @default(cuid())
+  eventId             String   @unique
+  pretixOrganiserSlug String
+  pretixEventSlug     String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id])
+
+  @@unique([pretixOrganiserSlug, pretixEventSlug])
 }
 
 model EventBooking {

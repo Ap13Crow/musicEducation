@@ -8,7 +8,7 @@ import {
   Eye, EyeOff, AlertTriangle,
 } from 'lucide-react';
 
-type Tab = 'overview' | 'users' | 'content' | 'api-keys' | 'settings';
+type Tab = 'overview' | 'users' | 'content' | 'integrations' | 'api-keys' | 'settings';
 
 // Identity/config defaults shown in the admin UI. Driven by NEXT_PUBLIC_* env
 // so they reflect the deployment; defaults target the production domain.
@@ -188,6 +188,38 @@ function UsersTab() {
   );
 }
 
+function IntegrationsTab() {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+        <p className="font-medium">Deep Integrations</p>
+        <p className="mt-1">
+          Complex configurations like setting up a complex quiz structure or detailed event parameters.
+          These use secure, SSO-authenticated iframe integrations with custom CSS to strip away native headers and sidebars.
+        </p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="card p-6">
+          <h3 className="mb-2 font-semibold">Moodle Course Management</h3>
+          <p className="mb-4 text-sm text-gray-600">Advanced quiz and assignment configuration.</p>
+          <div className="h-64 border rounded bg-gray-100 flex items-center justify-center text-sm text-gray-500">
+            [Moodle iframe injected here]
+          </div>
+        </div>
+
+        <div className="card p-6">
+          <h3 className="mb-2 font-semibold">Pretix Event Management</h3>
+          <p className="mb-4 text-sm text-gray-600">Detailed ticketing and quota configuration.</p>
+          <div className="h-64 border rounded bg-gray-100 flex items-center justify-center text-sm text-gray-500">
+            [Pretix iframe injected here]
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ContentTab() {
   return (
     <div className="space-y-4">
@@ -358,6 +390,7 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
   { id: 'users', label: 'Users', icon: Users },
   { id: 'content', label: 'Content', icon: BookOpen },
+  { id: 'integrations', label: 'Deep Integrations', icon: Brain },
   { id: 'api-keys', label: 'API Keys', icon: Key },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -430,6 +463,7 @@ export default function AdminPage() {
             {activeTab === 'overview' && <OverviewTab />}
             {activeTab === 'users' && <UsersTab />}
             {activeTab === 'content' && <ContentTab />}
+            {activeTab === 'integrations' && <IntegrationsTab />}
             {activeTab === 'api-keys' && <ApiKeysTab />}
             {activeTab === 'settings' && <SettingsTab />}
           </div>

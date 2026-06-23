@@ -1,5 +1,6 @@
 {
   "realm": "mymusic-coach",
+  "loginTheme": "mymusiccoach",
   "enabled": true,
   "displayName": "My Music Coach",
   "displayNameHtml": "<b>🎵 My Music Coach</b>",

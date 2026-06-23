@@ -90,6 +90,7 @@ services:
       KC_PROXY_HEADERS: xforwarded
     volumes:
       - ./docker/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
+      - ./docker/keycloak/theme/mymusiccoach:/opt/keycloak/themes/mymusiccoach
     expose:
       - "8080"
     depends_on:
@@ -251,6 +252,7 @@ services:
       MOODLE_HOST: learn.mymusic-coach.test
       MOODLE_WS_TOKEN: ${MOODLE_WS_TOKEN:-}
       MOODLE_OIDC_CLIENT_ID: ${MOODLE_OIDC_CLIENT_ID:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://app.mymusic-coach.test}
       MOODLE_OIDC_CLIENT_SECRET: ${MOODLE_OIDC_CLIENT_SECRET:-}
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-https://auth.mymusic.coach/realms/mymusic-coach}
     volumes:
@@ -354,6 +356,7 @@ services:
       PRETIX_URL: http://tickets.mymusic-coach.test
       PRETIX_CURRENCY: ${PRETIX_CURRENCY:-CHF}
       PRETIX_DB_HOST: pretix-db
+      PRETIX_MAIL_BACKEND: django.core.mail.backends.dummy.EmailBackend
       PRETIX_DB_USER: ${PRETIX_DB_USER:-pretix}
       PRETIX_DB_PASSWORD: ${PRETIX_DB_PASSWORD:-pretix_dev_pw}
       PRETIX_DB_NAME: ${PRETIX_DB_NAME:-pretix}

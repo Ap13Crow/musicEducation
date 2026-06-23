@@ -57,6 +57,7 @@ return [
 
         'admin.email' => '${LIBREBOOKING_ADMIN_EMAIL:-admin@mymusic.coach}',
         'admin.email.name' => '${LIBREBOOKING_APP_TITLE:-My Music Coach Booking}',
+        'phpmailer.mailer' => 'dummy', // Disable native emails to let the central platform handle them
 
         'database' => [
             'type'     => 'mysql',

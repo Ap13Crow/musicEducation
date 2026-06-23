@@ -49,6 +49,9 @@ $functions = [
     'core_completion_get_activities_completion_status',
     'gradereport_user_get_grade_items',
     'mod_quiz_get_quizzes_by_courses',
+    'mod_quiz_get_attempt_data',
+    'mod_quiz_get_attempt_review',
+    'mod_assign_save_submission',
 ];
 
 foreach ($functions as $fname) {

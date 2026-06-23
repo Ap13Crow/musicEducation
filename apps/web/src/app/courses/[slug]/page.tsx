@@ -205,7 +205,7 @@ export default function CourseDetailPage() {
                     </div>
                     <ul className="divide-y divide-gray-100">
                       {section.lessons?.map((lesson: any) => (
-                        <li key={lesson.id} className="flex items-center gap-3 px-4 py-3 text-sm">
+                        <li key={lesson.id} className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-gray-50 cursor-pointer" onClick={() => alert('Next.js course player/quiz form opens here (submits to Moodle REST API)')}>
                           {lesson.isFreePreview ? (
                             <Play className="h-4 w-4 shrink-0 text-primary-600" />
                           ) : (

@@ -39,6 +39,7 @@ const GET_DASHBOARD = gql`
         id
         progress
         completedAt
+        createdAt
         course { id slug title thumbnailUrl level instruments }
       }
     }
@@ -84,8 +85,8 @@ const fallback = {
   },
   myEnrollments: {
     nodes: [
-      { id: 'f-e1', progress: 0.62, completedAt: null, course: { id: 'c1', slug: 'piano-fundamentals', title: 'Piano Fundamentals for Classical Beginners', thumbnailUrl: null, level: 'BEGINNER', instruments: ['Piano'] } },
-      { id: 'f-e2', progress: 0.18, completedAt: null, course: { id: 'c2', slug: 'ear-training-core', title: 'Ear Training Core: Intervals, Chords & Dictation', thumbnailUrl: null, level: 'INTERMEDIATE', instruments: ['Theory'] } },
+      { id: 'f-e1', progress: 0.62, completedAt: null, createdAt: daysFromNowISO(-30), course: { id: 'c1', slug: 'piano-fundamentals', title: 'Piano Fundamentals for Classical Beginners', thumbnailUrl: null, level: 'BEGINNER', instruments: ['Piano'] } },
+      { id: 'f-e2', progress: 0.18, completedAt: null, createdAt: daysFromNowISO(-15), course: { id: 'c2', slug: 'ear-training-core', title: 'Ear Training Core: Intervals, Chords & Dictation', thumbnailUrl: null, level: 'INTERMEDIATE', instruments: ['Theory'] } },
     ],
   },
   myBookings: [
@@ -159,7 +160,7 @@ export default function DashboardPage() {
   const role = pickRole(sessionRoles) ?? me.role ?? 'STUDENT';
   const displayName = me.displayName ?? session?.user?.name ?? 'Musician';
 
-  // Agenda = lessons + booked events, merged and sorted by start time.
+  // Agenda = lessons + booked events + enrollments, merged and sorted by start time or created time.
   const agenda = [
     ...bookings.map((b: any) => ({
       id: b.id, kind: 'lesson' as const, startsAt: b.startsAt, status: b.status,
@@ -169,6 +170,10 @@ export default function DashboardPage() {
     ...eventBookings.map((eb: any) => ({
       id: eb.id, kind: 'event' as const, startsAt: eb.event?.startsAt, status: eb.status,
       title: eb.event?.title ?? 'Event', format: eb.event?.format, joinUrl: null,
+    })),
+    ...enrollments.map((e: any) => ({
+      id: e.id, kind: 'course' as const, startsAt: e.createdAt, status: e.completedAt ? 'COMPLETED' : 'IN_PROGRESS',
+      title: `Enrolled: ${e.course?.title ?? 'Course'}`, format: 'ONLINE', joinUrl: `/courses/${e.course?.slug}`,
     })),
   ]
     .filter((a) => a.startsAt)
@@ -342,8 +347,8 @@ export default function DashboardPage() {
                 {agenda.map((a) => (
                   <li key={`${a.kind}-${a.id}`} className="flex items-center justify-between gap-3 py-3">
                     <div className="flex items-center gap-3">
-                      <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${a.kind === 'lesson' ? 'bg-purple-50 text-purple-600' : 'bg-amber-50 text-amber-600'}`}>
-                        {a.kind === 'lesson' ? <Music className="h-4 w-4" /> : <Ticket className="h-4 w-4" />}
+                      <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${a.kind === 'lesson' ? 'bg-purple-50 text-purple-600' : a.kind === 'event' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
+                        {a.kind === 'lesson' ? <Music className="h-4 w-4" /> : a.kind === 'event' ? <Ticket className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
                       </span>
                       <div>
                         <p className="text-sm font-medium text-gray-800">{a.title}</p>
@@ -418,31 +423,10 @@ export default function DashboardPage() {
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <AdminLink
-                href={externalLinks.learn ? `${externalLinks.learn}/admin/` : undefined}
-                label="Moodle Admin"
-                description="Users, courses & grades"
-                accent="bg-blue-50 text-blue-600"
-                icon={<BookOpen className="h-4 w-4" />}
-              />
-              <AdminLink
-                href={externalLinks.booking ? `${externalLinks.booking}/Web/` : undefined}
-                label="LibreBooking Admin"
-                description="Resources, schedules & users"
-                accent="bg-purple-50 text-purple-600"
-                icon={<Music className="h-4 w-4" />}
-              />
-              <AdminLink
-                href={externalLinks.tickets ? `${externalLinks.tickets}/control/` : undefined}
-                label="pretix Admin"
-                description="Events, tickets & orders"
-                accent="bg-amber-50 text-amber-600"
-                icon={<Ticket className="h-4 w-4" />}
-              />
-              <AdminLink
-                href={keycloakAdminUrl}
-                label="Keycloak Admin"
-                description="Identity, roles & SSO"
-                accent="bg-red-50 text-red-600"
+                href="/admin"
+                label="Admin Portal"
+                description="Users, content & integrations"
+                accent="bg-primary-50 text-primary-600"
                 icon={<Shield className="h-4 w-4" />}
               />
             </div>
@@ -541,7 +525,7 @@ function AdminLink({
         <p className="text-sm font-medium text-gray-900">{label}</p>
         <p className="truncate text-xs text-gray-500">{description}</p>
       </div>
-      <ExternalLink className="ml-auto h-3.5 w-3.5 shrink-0 text-gray-400" />
+      <ArrowRight className="ml-auto h-3.5 w-3.5 shrink-0 text-gray-400" />
     </div>
   );
 
@@ -553,10 +537,18 @@ function AdminLink({
     );
   }
 
+  if (href.startsWith('http')) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer">
+        {inner}
+      </a>
+    );
+  }
+
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer">
+    <Link href={href}>
       {inner}
-    </a>
+    </Link>
   );
 }
 

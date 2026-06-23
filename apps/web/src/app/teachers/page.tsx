@@ -196,7 +196,7 @@ function TeacherCard({ teacher }: { teacher: any }) {
         </div>
         {teacher.isAvailable ? (
           session ? (
-            <button className="btn-primary">Book Intro Lesson</button>
+            <button onClick={(e) => { e.preventDefault(); alert('Next.js Calendar component opens here (API to LibreBooking)'); }} className="btn-primary">Book Intro Lesson</button>
           ) : (
             <button onClick={() => signIn('keycloak')} className="btn-primary">
               Sign in to Book

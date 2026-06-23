@@ -15,6 +15,10 @@ COPY --chmod=755 docker-entrypoint.sh /docker-entrypoint.sh
 COPY --chmod=644 patch-login.php /tmp/patch-login.php
 RUN php /tmp/patch-login.php
 
+# Patch Theme to match My Music Coach dashboard
+COPY --chmod=644 patch-theme.php /tmp/patch-theme.php
+RUN php /tmp/patch-theme.php
+
 EXPOSE 8080
 
 ENTRYPOINT ["/docker-entrypoint.sh"]

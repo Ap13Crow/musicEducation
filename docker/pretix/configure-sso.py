@@ -40,6 +40,8 @@ print('[pretix-sso] Organiser %s (%s).' % (slug, 'created' if created else 'exis
 
 # Customer accounts are a prerequisite for customer-facing SSO logins.
 org.settings.customer_accounts = True
+org.settings.primary_color = '#3b82f6'
+org.settings.primary_font = 'Roboto'
 
 # Build the provider configuration. Keys mirror the `config_oidc_<suffix>`
 # fields of pretix's SSOProviderForm; oidc_validate_and_complete_config()
