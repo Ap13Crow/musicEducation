@@ -85,8 +85,8 @@ const fallback = {
   },
   myEnrollments: {
     nodes: [
-      { id: 'f-e1', progress: 0.62, completedAt: null, createdAt: new Date().toISOString(), course: { id: 'c1', slug: 'piano-fundamentals', title: 'Piano Fundamentals for Classical Beginners', thumbnailUrl: null, level: 'BEGINNER', instruments: ['Piano'] } },
-      { id: 'f-e2', progress: 0.18, completedAt: null, createdAt: new Date().toISOString(), course: { id: 'c2', slug: 'ear-training-core', title: 'Ear Training Core: Intervals, Chords & Dictation', thumbnailUrl: null, level: 'INTERMEDIATE', instruments: ['Theory'] } },
+      { id: 'f-e1', progress: 0.62, completedAt: null, createdAt: daysFromNowISO(-30), course: { id: 'c1', slug: 'piano-fundamentals', title: 'Piano Fundamentals for Classical Beginners', thumbnailUrl: null, level: 'BEGINNER', instruments: ['Piano'] } },
+      { id: 'f-e2', progress: 0.18, completedAt: null, createdAt: daysFromNowISO(-15), course: { id: 'c2', slug: 'ear-training-core', title: 'Ear Training Core: Intervals, Chords & Dictation', thumbnailUrl: null, level: 'INTERMEDIATE', instruments: ['Theory'] } },
     ],
   },
   myBookings: [

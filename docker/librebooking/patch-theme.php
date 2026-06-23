@@ -10,8 +10,11 @@ if (file_exists($header_tpl)) {
     .btn-primary { background-color: #3b82f6 !important; border-color: #3b82f6 !important; }
     .calendar-container { background-color: #1e293b !important; border: 1px solid #334155 !important; }
 </style>
-<div style="background-color: #1e293b; padding: 10px; text-align: center;"><a href="http://app.mymusic-coach.test/dashboard" style="color: #3b82f6; font-weight: bold;">&larr; Back to My Music Coach Dashboard</a></div>
-';
+<?php
+$dashboard_url = getenv("FRONTEND_URL") ?: "http://app.mymusic-coach.test";
+echo \'<div style="background-color: #1e293b; padding: 10px; text-align: center;"><a href="\' . $dashboard_url . \'/dashboard" style="color: #3b82f6; font-weight: bold;">&larr; Back to My Music Coach Dashboard</a></div>\';
+?>
+\';
     // Append just before </head>
     $content = str_replace('</head>', $custom_css . "\n</head>", $content);
     file_put_contents($header_tpl, $content);

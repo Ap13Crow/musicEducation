@@ -9,10 +9,7 @@ export async function syncLibreBookingReservations(
   prisma: PrismaClient,
   libreBooking: LibreBookingAdapter,
 ): Promise<void> {
-  logger.info('LibreBooking sync not fully implemented yet.');
-  // Currently LibreBooking adapter only has getAvailability, createBooking, cancelBooking, getBooking.
-  // Ideally, we'd list reservations that have been modified recently.
-  // As a fallback, we could query the database for all upcoming LibreBooking bookings and verify their status.
+  // As a fallback to native webhooks, we query the database for all upcoming LibreBooking bookings and verify their status.
   const upcomingBookings = await prisma.booking.findMany({
     where: {
       startsAt: { gte: new Date() },

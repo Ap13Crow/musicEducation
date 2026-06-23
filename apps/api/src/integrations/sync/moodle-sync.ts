@@ -9,6 +9,7 @@ export async function syncMoodleProgress(
   prisma: PrismaClient,
   moodle: MoodleAdapter,
 ): Promise<void> {
+  logger.info('Moodle progress sync is not fully implemented yet.');
   // Ideally Moodle would send webhooks for lesson completions.
   // We can poll active enrollments.
   const activeEnrollments = await prisma.enrollment.findMany({

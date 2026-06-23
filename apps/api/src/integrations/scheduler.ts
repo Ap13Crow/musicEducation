@@ -19,11 +19,14 @@ export function startScheduler(
 ) {
   logger.info('Starting integrations scheduler');
 
+const PRETIX_ORGANISER_SLUG = config.pretixOrganiserSlug;
+
   // Pretix Order Sync: Every 5 minutes
-  if (adapters.pretix && config.pretixOrganiserSlug) {
+  if (adapters.pretix && PRETIX_ORGANISER_SLUG) {
+    const pretixAdapter = adapters.pretix;
     cron.schedule('*/5 * * * *', async () => {
       try {
-        await syncPretixOrders(prisma, adapters.pretix!, config.pretixOrganiserSlug!);
+        await syncPretixOrders(prisma, pretixAdapter, PRETIX_ORGANISER_SLUG);
       } catch (err) {
         logger.error({ err }, 'Pretix sync job failed');
       }
@@ -32,9 +35,10 @@ export function startScheduler(
 
   // LibreBooking Reservation Sync: Every 15 minutes
   if (adapters.libreBooking) {
+    const libreBookingAdapter = adapters.libreBooking;
     cron.schedule('*/15 * * * *', async () => {
       try {
-        await syncLibreBookingReservations(prisma, adapters.libreBooking!);
+        await syncLibreBookingReservations(prisma, libreBookingAdapter);
       } catch (err) {
         logger.error({ err }, 'LibreBooking sync job failed');
       }
@@ -43,9 +47,10 @@ export function startScheduler(
 
   // Moodle Progress Sync: Every hour
   if (adapters.moodle) {
+    const moodleAdapter = adapters.moodle;
     cron.schedule('0 * * * *', async () => {
       try {
-        await syncMoodleProgress(prisma, adapters.moodle!);
+        await syncMoodleProgress(prisma, moodleAdapter);
       } catch (err) {
         logger.error({ err }, 'Moodle progress sync job failed');
       }

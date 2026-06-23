@@ -8,7 +8,7 @@ export function createStripeWebhookHandler(
   stripeSecretKey: string,
   stripeWebhookSecret: string,
 ) {
-  const stripe = new Stripe(stripeSecretKey, { apiVersion: '2024-04-10' });
+  const stripe = new Stripe(stripeSecretKey, { apiVersion: '2024-06-20' });
 
   return async (req: Request, res: Response): Promise<void> => {
     const signature = req.headers['stripe-signature'];
