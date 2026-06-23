@@ -255,6 +255,8 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://app.mymusic-coach.test}
       MOODLE_OIDC_CLIENT_SECRET: ${MOODLE_OIDC_CLIENT_SECRET:-}
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-https://auth.mymusic.coach/realms/mymusic-coach}
+      MOODLE_SITE_ADMIN_EMAIL: ${MOODLE_SITE_ADMIN_EMAIL:-}
+      MOODLE_SITE_KC_USERNAME: ${MOODLE_SITE_KC_USERNAME:-}
     volumes:
       - moodle_data:/var/moodledata
     expose:

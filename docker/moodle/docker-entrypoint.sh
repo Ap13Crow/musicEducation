@@ -118,10 +118,38 @@ echo "[moodle] Injecting custom theme and dashboard link..."
 php -r "
 define('CLI_SCRIPT', true);
 require('/var/www/html/config.php');
-set_config('scss', 'body { background-color: #0f172a; color: #f8fafc; } .navbar { background-color: #1e293b !important; } .navbar a { color: #f8fafc !important; }', 'theme_boost');
-\$dashboard_link = '<div style=\"background-color: #1e293b; padding: 10px; text-align: center;\"><a href=\"'.getenv('FRONTEND_URL').'/dashboard\" style=\"color: #3b82f6; font-weight: bold;\">&larr; Back to My Music Coach Dashboard</a></div>';
+
+// Clear any old SCSS override that was setting near-white text colour — this caused
+// body text to appear invisible on the default light Boost backgrounds.
+set_config('scss', '', 'theme_boost');
+
+// Brand the chrome (navbar/header) dark and use the platform blue for links.
+// Content areas keep Boost default dark-text-on-white for readability.
+\$brand_css = '<style>
+.navbar, nav.navbar, .primary-navigation, #usernavigation, header.navbar {
+  background-color: #1e293b !important;
+}
+.navbar a, .navbar .nav-link, .navbar .dropdown-item,
+.primary-navigation a, .navbar-brand, header.navbar a,
+.navbar-dark .navbar-nav .nav-link { color: #e2e8f0 !important; }
+.navbar-dark .navbar-nav .active>.nav-link,
+.navbar-dark .navbar-nav .nav-link.active,
+.navbar-dark .navbar-nav .nav-link:focus,
+.navbar-dark .navbar-nav .nav-link:hover { color: #93c5fd !important; }
+a:not(.nav-link):not(.btn):not(.navbar-brand) { color: #2563eb; }
+a:not(.nav-link):not(.btn):not(.navbar-brand):hover { color: #1d4ed8; }
+.btn-primary { background-color: #3b82f6 !important; border-color: #2563eb !important; }
+</style>';
+
+\$dashboard_link = '<div style=\"background-color: #1e293b; padding: 10px; text-align: center; border-bottom: 1px solid #334155;\"><a href=\"'.getenv('FRONTEND_URL').'/dashboard\" style=\"color: #3b82f6; font-weight: bold; text-decoration: none;\">&larr; Back to My Music Coach Dashboard</a></div>';
+
+set_config('additionalhtmlafterhead', \$brand_css);
 set_config('additionalhtmltopofbody', \$dashboard_link);
-set_config('noemailever', 1); // Disable Moodle native emails to let the central platform handle them
+set_config('noemailever', 1);
+
+// Purge so SCSS is recompiled clean (no more colour overrides) and injected CSS takes effect.
+purge_all_caches();
+echo '[moodle] Theme reset to readable defaults with branded navbar — caches purged.' . PHP_EOL;
 "
 
 exec "$@"

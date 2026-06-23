@@ -67,6 +67,10 @@ return [
             'password' => '${LIBREBOOKING_DB_PASSWORD}',
         ],
 
+        'api' => [
+            'enabled' => true,
+        ],
+
         'authentication' => [
             // Hide the local login form and auto-redirect to Keycloak when SSO is configured.
             // Users are silently authenticated via their existing Keycloak browser session.

@@ -1,10 +1,22 @@
 'use client';
 
-import { gql, useQuery } from '@apollo/client';
+import { gql, useQuery, useMutation } from '@apollo/client';
 import { useParams } from 'next/navigation';
 import { useSession, signIn } from 'next-auth/react';
 import Link from 'next/link';
 import { BookOpen, Clock, Star, Users, Play, Lock, ChevronRight, ArrowLeft } from 'lucide-react';
+
+const ENROLL_IN_COURSE = gql`
+  mutation EnrollInCourse($courseId: ID!) {
+    enrollInCourse(courseId: $courseId) { id courseId progress }
+  }
+`;
+
+const CREATE_CHECKOUT_SESSION = gql`
+  mutation CreateCheckoutSession($type: String!, $refId: ID!) {
+    createCheckoutSession(type: $type, refId: $refId) { checkoutUrl }
+  }
+`;
 
 const GET_COURSE = gql`
   query GetCourse($slug: String) {
@@ -112,6 +124,24 @@ export default function CourseDetailPage() {
     variables: { slug },
     skip: !liveApiEnabled,
   });
+
+  const [enrollFree, { loading: enrolling, data: enrollData }] = useMutation(ENROLL_IN_COURSE);
+  const [createCheckout, { loading: checkingOut }] = useMutation(CREATE_CHECKOUT_SESSION);
+  const enrolled = !!enrollData?.enrollInCourse;
+
+  async function handleEnroll() {
+    if (!course?.id || !liveApiEnabled) return;
+    if (Number(course.price) === 0) {
+      await enrollFree({ variables: { courseId: course.id } });
+    } else {
+      const { data: checkoutData } = await createCheckout({
+        variables: { type: 'course', refId: course.id },
+      });
+      if (checkoutData?.createCheckoutSession?.checkoutUrl) {
+        window.location.href = checkoutData.createCheckoutSession.checkoutUrl;
+      }
+    }
+  }
 
   function getFallbackCourse(courseSlug: string) {
     if (courseSlug === fallbackCourse.slug) return fallbackCourse;
@@ -261,9 +291,21 @@ export default function CourseDetailPage() {
               </div>
 
               {session ? (
-                <button className="btn-primary w-full py-3 text-base">
-                  {Number(course.price) === 0 ? 'Enroll — Free' : 'Enroll Now'}
-                </button>
+                enrolled ? (
+                  <p className="text-center text-sm font-medium text-green-600">You are enrolled!</p>
+                ) : (
+                  <button
+                    className="btn-primary w-full py-3 text-base disabled:opacity-60"
+                    onClick={handleEnroll}
+                    disabled={enrolling || checkingOut || !liveApiEnabled}
+                  >
+                    {enrolling || checkingOut
+                      ? 'Processing…'
+                      : Number(course.price) === 0
+                      ? 'Enroll — Free'
+                      : 'Enroll Now'}
+                  </button>
+                )
               ) : (
                 <button
                   onClick={() => signIn('keycloak')}

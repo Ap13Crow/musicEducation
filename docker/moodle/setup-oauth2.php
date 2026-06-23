@@ -61,13 +61,21 @@ $record->showonloginpage    = 1;
 $record->enabled            = 1;
 $record->image              = '';
 $record->basicauth          = 0;
+// Disable email confirmation so SSO auto-links to an existing account by email
+// rather than sending a confirmation link — required for seamless admin login.
+$record->requireconfirmation = 0;
 
 if ($existingIssuer) {
     $record->id = $existingIssuer->get('id');
     \core\oauth2\api::update_issuer($record);
+    // update_issuer does not persist all fields; set requireconfirmation directly.
+    $existingIssuer->set('requireconfirmation', 0);
+    $existingIssuer->save();
     cli_writeln('[moodle-oauth2] Keycloak issuer updated (id=' . $record->id . ').');
 } else {
     $created = \core\oauth2\api::create_issuer($record);
+    $created->set('requireconfirmation', 0);
+    $created->save();
     cli_writeln('[moodle-oauth2] Keycloak issuer created (id=' . $created->get('id') . ').');
 }
 cli_writeln('[moodle-oauth2] Keycloak issuer configured (baseurl=' . $discoveryBase . ').');
@@ -85,10 +93,57 @@ if (!in_array('oauth2', $activeAuths)) {
 }
 
 // ── 3. Auto-redirect to Keycloak: skip the Moodle login form ──────────────
-// When exactly one OAuth2 provider is configured and this flag is set,
-// Moodle skips its own login page and sends the user directly to Keycloak.
-// The Keycloak browser session then authenticates silently.
-set_config('auth_oauth2_autoredirect', 1);
-cli_writeln('[moodle-oauth2] Auto-redirect to OAuth2 provider enabled.');
+// The plugin reads get_config('auth_oauth2', 'autoredirect'), not a global key.
+set_config('autoredirect', 1, 'auth_oauth2');
+// Allow SSO to link to an existing local account with matching email so that
+// the platform admin (whose email is in MOODLE_SITE_ADMIN_EMAIL) is recognised
+// as Moodle site admin after their first Keycloak login.
+set_config('matchaccountbysso', 1, 'auth_oauth2');
+cli_writeln('[moodle-oauth2] Auto-redirect + account-matching enabled.');
+
+// ── 4. Promote site admin by email ────────────────────────────────────────
+// Update the admin user's email to match the Keycloak admin's email so that
+// SSO auth_oauth2 links the Keycloak identity to the existing admin account.
+$siteAdminEmail = getenv('MOODLE_SITE_ADMIN_EMAIL');
+if ($siteAdminEmail) {
+    $adminUser = get_admin();
+    if ($adminUser->email !== $siteAdminEmail) {
+        $DB->set_field('user', 'email', $siteAdminEmail, ['id' => $adminUser->id]);
+        cli_writeln('[moodle-oauth2] Admin email updated to ' . $siteAdminEmail . ' for SSO linking.');
+    } else {
+        cli_writeln('[moodle-oauth2] Admin email already matches MOODLE_SITE_ADMIN_EMAIL.');
+    }
+
+    // ── 5. Pre-link admin to Keycloak identity ─────────────────────────────
+    // auth_oauth2 links by (issuerid, username) where username = Keycloak preferred_username.
+    // We pre-create this link so admin is recognised immediately on first SSO login without
+    // needing a confirmation email. The Keycloak username comes from MOODLE_SITE_KC_USERNAME;
+    // it defaults to the admin email if not set.
+    $adminUser = get_admin(); // re-fetch in case email was just updated
+    $issuer = \core\oauth2\api::get_all_issuers()[0] ?? null;
+    $kcUsername = getenv('MOODLE_SITE_KC_USERNAME') ?: $siteAdminEmail;
+    if ($issuer && $kcUsername) {
+        $existing = $DB->get_record('auth_oauth2_linked_login', [
+            'userid'   => $adminUser->id,
+            'issuerid' => $issuer->get('id'),
+        ]);
+        if (!$existing) {
+            $DB->insert_record('auth_oauth2_linked_login', (object)[
+                'issuerid'            => $issuer->get('id'),
+                'userid'              => $adminUser->id,
+                'username'            => $kcUsername,
+                'email'               => $siteAdminEmail,
+                'confirmtoken'        => '',
+                'confirmtokenexpires' => 0,
+                'timecreated'         => time(),
+                'timemodified'        => time(),
+                'usermodified'        => $adminUser->id,
+            ]);
+            cli_writeln('[moodle-oauth2] Admin pre-linked to Keycloak username ' . $kcUsername . '.');
+        } else {
+            cli_writeln('[moodle-oauth2] Admin already linked to Keycloak issuer.');
+        }
+    }
+}
 
 cli_writeln('[moodle-oauth2] Done — users will be sent to Keycloak automatically on login.');

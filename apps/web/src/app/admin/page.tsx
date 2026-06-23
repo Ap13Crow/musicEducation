@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { gql, useMutation } from '@apollo/client';
 import { useSession, signIn } from 'next-auth/react';
 import {
   Users, BookOpen, Calendar, DollarSign, Settings, Shield,
@@ -171,7 +172,7 @@ function UsersTab() {
                 <td className="px-4 py-3 text-gray-500">{user.createdAt}</td>
                 <td className="px-4 py-3">
                   <a
-                    href="https://auth.mymusic.coach/admin/mymusic-coach/console/#/mymusic-coach/users"
+                    href="https://auth.mymusic.coach/admin/master/console/#/mymusic-coach/users"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs font-medium text-primary-600 hover:underline"
@@ -220,12 +221,56 @@ function IntegrationsTab() {
   );
 }
 
+const SYNC_MOODLE_COURSES = gql`
+  mutation SyncCoursesFromMoodle {
+    syncCoursesFromMoodle { created skipped total }
+  }
+`;
+
 function ContentTab() {
+  const [syncMoodle, { loading: syncing }] = useMutation(SYNC_MOODLE_COURSES);
+  const [syncResult, setSyncResult] = useState<{ created: number; skipped: number; total: number } | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  async function handleSyncMoodle() {
+    setSyncResult(null);
+    setSyncError(null);
+    try {
+      const { data } = await syncMoodle();
+      setSyncResult(data?.syncCoursesFromMoodle ?? null);
+    } catch (e: any) {
+      setSyncError(e.message ?? 'Sync failed');
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
         <p className="font-medium">Content is managed in the native admin interfaces</p>
         <p className="mt-1">Courses and learning materials → Moodle. Booking resources and schedules → LibreBooking. Events and tickets → pretix. Use the Quick Links above to navigate directly.</p>
+      </div>
+
+      {/* Moodle course sync */}
+      <div className="card p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold">Sync Courses from Moodle</p>
+            <p className="text-xs text-gray-500 mt-0.5">Import courses created in Moodle into the platform catalog. New courses are imported as DRAFT — publish them here once ready.</p>
+            {syncResult && (
+              <p className="mt-2 text-xs text-green-700">
+                Done: {syncResult.created} imported, {syncResult.skipped} already synced (of {syncResult.total} Moodle courses).
+              </p>
+            )}
+            {syncError && <p className="mt-2 text-xs text-red-600">{syncError}</p>}
+          </div>
+          <button
+            onClick={handleSyncMoodle}
+            disabled={syncing}
+            className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+          >
+            {syncing ? 'Syncing…' : 'Sync Now'}
+          </button>
+        </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <a href="https://learn.mymusic.coach/course/management.php" target="_blank" rel="noopener noreferrer"

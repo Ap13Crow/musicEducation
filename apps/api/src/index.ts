@@ -55,19 +55,19 @@ const schema = makeExecutableSchema({ typeDefs, resolvers });
 
 async function main() {
   // Initialize Adapters if configured
-  const pretixAdapter = process.env.PRETIX_API_URL && process.env.PRETIX_API_TOKEN
-    ? new PretixAdapter(process.env.PRETIX_API_URL, process.env.PRETIX_API_TOKEN)
+  const pretixAdapter = process.env.PRETIX_URL && process.env.PRETIX_API_TOKEN
+    ? new PretixAdapter(process.env.PRETIX_URL, process.env.PRETIX_API_TOKEN)
     : undefined;
 
-  const libreBookingAdapter = process.env.LIBREBOOKING_API_URL && process.env.LIBREBOOKING_USERNAME && process.env.LIBREBOOKING_PASSWORD
-    ? new LibreBookingAdapter(process.env.LIBREBOOKING_API_URL, {
-        username: process.env.LIBREBOOKING_USERNAME,
-        password: process.env.LIBREBOOKING_PASSWORD,
+  const libreBookingAdapter = process.env.LIBREBOOKING_URL && process.env.LIBREBOOKING_API_USER && process.env.LIBREBOOKING_API_PASSWORD
+    ? new LibreBookingAdapter(process.env.LIBREBOOKING_URL, {
+        username: process.env.LIBREBOOKING_API_USER,
+        password: process.env.LIBREBOOKING_API_PASSWORD,
       })
     : undefined;
 
-  const moodleAdapter = process.env.MOODLE_API_URL && process.env.MOODLE_WS_TOKEN
-    ? new MoodleAdapter(process.env.MOODLE_API_URL, process.env.MOODLE_WS_TOKEN)
+  const moodleAdapter = process.env.MOODLE_URL && process.env.MOODLE_WS_TOKEN
+    ? new MoodleAdapter(process.env.MOODLE_URL, process.env.MOODLE_WS_TOKEN)
     : undefined;
 
   // Start the background scheduler

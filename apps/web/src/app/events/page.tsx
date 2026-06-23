@@ -1,52 +1,68 @@
 'use client';
 
-import { useState } from 'react';
+import { gql, useQuery } from '@apollo/client';
 import Link from 'next/link';
 
-const events = [
+const GET_EVENTS = gql`
+  query GetEvents {
+    events(page: 1, limit: 20) {
+      nodes {
+        id slug title description type format
+        city country startsAt endsAt price currency thumbnailUrl
+        instruments musicStyles skillLevels
+      }
+    }
+  }
+`;
+
+const fallbackEvents = [
   {
+    id: 'e1',
     title: 'Masterclass: Chopin Nocturnes',
     city: 'Zurich',
-    date: 'June 12, 2026',
-    type: 'Masterclass',
+    startsAt: '2026-06-12T18:00:00Z',
+    type: 'MASTERCLASS',
   },
   {
+    id: 'e2',
     title: 'Young Artists Chamber Night',
     city: 'Basel',
-    date: 'June 19, 2026',
-    type: 'Performance',
+    startsAt: '2026-06-19T19:30:00Z',
+    type: 'CONCERT',
   },
   {
+    id: 'e3',
     title: 'Ear Training Intensive Weekend',
     city: 'Geneva',
-    date: 'July 2, 2026',
-    type: 'Workshop',
+    startsAt: '2026-07-02T09:00:00Z',
+    type: 'WORKSHOP',
   },
 ];
 
+const TYPE_LABELS: Record<string, string> = {
+  MASTERCLASS: 'Masterclass',
+  CONCERT: 'Performance',
+  WORKSHOP: 'Workshop',
+  COMPETITION: 'Competition',
+  OPEN_MIC: 'Open Mic',
+  LECTURE: 'Lecture',
+  OTHER: 'Event',
+};
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+const ticketsUrl = process.env.NEXT_PUBLIC_TICKETS_URL ?? 'https://tickets.mymusic.coach';
+
 export default function EventsPage() {
-  const [selectedEvent, setSelectedEvent] = useState<string | null>(null);
+  const liveApiEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_API === 'true';
+  const { data, loading } = useQuery(GET_EVENTS, { skip: !liveApiEnabled });
+
+  const events: any[] = data?.events?.nodes?.length ? data.events.nodes : fallbackEvents;
 
   return (
     <main className="px-6 py-16">
-      {/* Checkout Modal Placeholder */}
-      {selectedEvent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white p-8 rounded-lg shadow-xl max-w-md w-full">
-            <h2 className="text-2xl font-bold mb-4">Checkout</h2>
-            <p className="text-gray-600 mb-6">
-              Reserving seat for <span className="font-semibold">{selectedEvent}</span>.
-              <br />
-              <span className="text-sm mt-2 block">(This process calls Pretix API in the background instead of redirecting)</span>
-            </p>
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setSelectedEvent(null)} className="px-4 py-2 border rounded text-gray-600">Cancel</button>
-              <button onClick={() => setSelectedEvent(null)} className="btn-primary px-4 py-2">Confirm Purchase</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <section className="mx-auto max-w-5xl">
         <p className="mb-3 inline-block rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
           Performance Pillar
@@ -56,22 +72,38 @@ export default function EventsPage() {
           Discover upcoming classical music events near you and reserve your place directly on My Music Coach.
         </p>
 
-        <div className="space-y-4">
-          {events.map((eventItem) => (
-            <article key={eventItem.title} className="card p-6 sm:flex sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold">{eventItem.title}</h2>
-                <p className="mt-1 text-sm text-gray-600">
-                  {eventItem.city} · {eventItem.date}
-                </p>
-                <p className="mt-2 inline-block rounded-full bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700">
-                  {eventItem.type}
-                </p>
+        {loading ? (
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="card p-6 animate-pulse">
+                <div className="h-5 w-2/3 rounded bg-gray-200 mb-2" />
+                <div className="h-4 w-1/3 rounded bg-gray-200" />
               </div>
-              <button onClick={() => setSelectedEvent(eventItem.title)} className="btn-primary mt-4 sm:mt-0">Buy Ticket</button>
-            </article>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {events.map((eventItem) => (
+              <article key={eventItem.id} className="card p-6 sm:flex sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold">{eventItem.title}</h2>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {eventItem.city} · {formatDate(eventItem.startsAt)}
+                  </p>
+                  <p className="mt-2 inline-block rounded-full bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700">
+                    {TYPE_LABELS[eventItem.type] ?? eventItem.type}
+                  </p>
+                </div>
+                <button
+                  className="btn-primary mt-4 sm:mt-0"
+                  onClick={() => window.open(`${ticketsUrl}/mymusic-coach/`, '_blank', 'noopener')}
+                >
+                  Buy Ticket
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
 
         <div className="mt-12">
           <Link href="/courses" className="btn-secondary">

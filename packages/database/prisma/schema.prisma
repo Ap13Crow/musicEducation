@@ -228,6 +228,7 @@ model Course {
   slug             String       @unique
   title            String
   description      String?
+  shortSummary     String?
   level            SkillLevel   @default(BEGINNER)
   instruments      String[]
   musicStyles      String[]
@@ -238,13 +239,14 @@ model Course {
   language         String       @default("en")
   thumbnailUrl     String?
   categoryId       String?
-  teacherProfileId String
+  teacherProfileId String?
+  moodleCourseId   Int?
   avgRating        Float        @default(0)
   totalReviews     Int          @default(0)
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
-  teacherProfile TeacherProfile  @relation(fields: [teacherProfileId], references: [id])
+  teacherProfile TeacherProfile? @relation(fields: [teacherProfileId], references: [id])
   category       Category?       @relation(fields: [categoryId], references: [id])
   sections       CourseSection[]
   enrollments    Enrollment[]

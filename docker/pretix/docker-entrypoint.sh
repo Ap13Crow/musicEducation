@@ -69,13 +69,12 @@ ADMIN_PASSWORD="${PRETIX_ADMIN_PASSWORD:-}"
 if [ -n "$ADMIN_PASSWORD" ]; then
   python3 -m pretix shell << PYEOF
 from pretix.base.models import User
-if not User.objects.filter(email='${ADMIN_EMAIL}').exists():
-    u = User(email='${ADMIN_EMAIL}', is_staff=True)
-    u.set_password('${ADMIN_PASSWORD}')
-    u.save()
-    print('[pretix] Admin user created: ${ADMIN_EMAIL}')
-else:
-    print('[pretix] Admin user already exists: ${ADMIN_EMAIL}')
+u, created = User.objects.get_or_create(email='${ADMIN_EMAIL}', defaults={'is_staff': True, 'is_active': True})
+u.is_staff = True
+u.is_active = True
+u.set_password('${ADMIN_PASSWORD}')
+u.save()
+print('[pretix] Admin user %s: ${ADMIN_EMAIL}' % ('created' if created else 'password updated'))
 PYEOF
 else
   echo "[pretix] PRETIX_ADMIN_PASSWORD not set — skipping admin user creation."

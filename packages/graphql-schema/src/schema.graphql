@@ -144,6 +144,7 @@ type TeacherProfile {
   calendlyUsername: String
   certifications: [TeacherCertification!]
   availability: [TeacherAvailability!]
+  user: User
 }
 
 type TeacherCertification {
@@ -200,6 +201,7 @@ type Course {
   slug: String!
   title: String!
   description: String
+  shortSummary: String
   level: SkillLevel!
   instruments: [String!]!
   musicStyles: [String!]!
@@ -211,14 +213,23 @@ type Course {
   thumbnailUrl: String
   categoryId: ID
   teacherProfileId: ID
+  moodleCourseId: Int
   avgRating: Float!
   totalReviews: Int!
+  totalEnrollments: Int!
+  totalDurationMin: Int!
   createdAt: DateTime!
   updatedAt: DateTime!
   teacher: TeacherProfile
   category: Category
   sections: [CourseSection!]
   reviews(page: Int, limit: Int): ReviewConnection
+}
+
+type MoodleSyncResult {
+  created: Int!
+  skipped: Int!
+  total: Int!
 }
 
 type CourseSection {
@@ -233,7 +244,9 @@ type Lesson {
   id: ID!
   sectionId: ID!
   title: String!
-  content: String
+  description: String
+  durationMin: Int!
+  isFreePreview: Boolean!
   order: Int!
   xpReward: Int!
 }
@@ -739,6 +752,7 @@ type Mutation {
   createLesson(input: CreateLessonInput!): Lesson!
   enrollInCourse(courseId: ID!): Enrollment!
   markLessonComplete(lessonId: ID!): LessonProgress!
+  syncCoursesFromMoodle: MoodleSyncResult!
 
   # Bookings
   bookSession(input: BookSessionInput!): Booking!

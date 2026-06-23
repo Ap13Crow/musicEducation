@@ -64,7 +64,7 @@ services:
 
   librebooking:
     environment:
-      LIBREBOOKING_SCRIPT_URL: https://booking.mymusic.coach
+      LIBREBOOKING_SCRIPT_URL: https://booking.mymusic.coach/Web
       LIBREBOOKING_OIDC_CLIENT_ID: ${LIBREBOOKING_OIDC_CLIENT_ID:-librebooking-saml}
       LIBREBOOKING_OIDC_CLIENT_SECRET: ${LIBREBOOKING_OIDC_CLIENT_SECRET}
       LIBREBOOKING_KEYCLOAK_URL: https://auth.mymusic.coach
