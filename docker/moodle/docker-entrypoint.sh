@@ -100,8 +100,21 @@ if [ "$DB_READY" = "fresh" ]; then
   # installer (re)creates config.php as root; restore ownership
   chown www-data:www-data "$CONFIG_FILE"
 else
-  echo "[moodle] Database already installed — skipping CLI installer."
+  echo "[moodle] Database already installed — running upgrade check..."
+  php /var/www/html/admin/cli/upgrade.php --non-interactive || true
 fi
+
+# ── Suppress hub registration nag ────────────────────────────
+# Hub registration is an optional external service (moodle.net course catalog,
+# stats). A private school has no use for it, and hub.moodle.com's verification
+# callback is blocked by Cloudflare Bot Fight Mode (AWS datacenter IPs).
+# Marking it as viewed stops Moodle from redirecting admins to the form.
+php -r "
+define('CLI_SCRIPT', true);
+require('/var/www/html/config.php');
+set_config('registrationpending', 0);
+echo '[moodle] Hub registration nag suppressed.' . PHP_EOL;
+"
 
 # ── Enable web services + inject API token ────────────────────
 # Script is idempotent; safe to run on every start.

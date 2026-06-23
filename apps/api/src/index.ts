@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
+import jwt from 'jsonwebtoken';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@apollo/server/express4';
 import { makeExecutableSchema } from '@graphql-tools/schema';
@@ -104,6 +105,26 @@ async function main() {
   app.use(authMiddleware);
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+
+  // Generate a 60-second SSO token so platform admins can enter pretix /control/
+  // via Keycloak without needing separate pretix credentials.
+  app.get('/pretix-sso-link', async (req, res) => {
+    const auth = await resolveRequestUser(req, prisma);
+    if (!auth || auth.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    const dbUser = await prisma.user.findUnique({ where: { id: auth.id }, select: { email: true } });
+    if (!dbUser?.email) {
+      return res.status(500).json({ error: 'User email not found' });
+    }
+    const secret = process.env.PRETIX_SSO_SECRET;
+    if (!secret) {
+      return res.status(503).json({ error: 'PRETIX_SSO_SECRET not configured' });
+    }
+    const token = jwt.sign({ email: dbUser.email }, secret, { expiresIn: 60, algorithm: 'HS256' } as any);
+    const pretixUrl = (process.env.PRETIX_URL ?? 'https://tickets.mymusic.coach').replace('http://pretix:80', 'https://tickets.mymusic.coach');
+    return res.json({ url: `${pretixUrl}/control/login/?sso_token=${token}` });
+  });
 
   const server = new ApolloServer<GraphQLContext>({ schema });
   await server.start();

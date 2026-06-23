@@ -124,6 +124,7 @@ services:
       # ── Integration layer ────────────────────────────────
       PRETIX_URL: ${PRETIX_URL:-http://pretix:80}
       PRETIX_API_TOKEN: ${PRETIX_API_TOKEN:-}
+      PRETIX_SSO_SECRET: ${PRETIX_SSO_SECRET:-}
       PRETIX_ORGANISER_SLUG: ${PRETIX_ORGANISER_SLUG:-mymusic-coach}
       MOODLE_URL: ${MOODLE_URL:-http://moodle:8080}
       MOODLE_WS_TOKEN: ${MOODLE_WS_TOKEN:-}
@@ -380,6 +381,7 @@ services:
       PRETIX_ADMIN_PASSWORD: ${PRETIX_ADMIN_PASSWORD:-}
       PRETIX_EXTRA_ADMIN_EMAIL: ${PRETIX_EXTRA_ADMIN_EMAIL:-}
       PRETIX_EXTRA_ADMIN_PASSWORD: ${PRETIX_EXTRA_ADMIN_PASSWORD:-}
+      PRETIX_SSO_SECRET: ${PRETIX_SSO_SECRET:-}
       PRETIX_API_TOKEN: ${PRETIX_API_TOKEN:-}
       PRETIX_OIDC_ISSUER: ${PRETIX_OIDC_ISSUER:-http://keycloak:8080/realms/mymusic-coach}
       PRETIX_OIDC_CLIENT_ID: ${PRETIX_OIDC_CLIENT_ID:-pretix-oidc}

@@ -1,15 +1,18 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSession, signIn } from 'next-auth/react';
 import { gql, useQuery } from '@apollo/client';
 import {
   BookOpen, Music, Calendar, GraduationCap, Clock, Video, MapPin,
-  Ticket, MessageSquare, AlertCircle, ArrowRight, Trophy, Flame, ExternalLink,
-  Shield,
+  Ticket, AlertCircle, ArrowRight, Trophy, Flame, ExternalLink,
+  Shield, Users, Search,
 } from 'lucide-react';
-import { externalLinks, keycloakAdminUrl, liveApiEnabled } from '@/lib/external-links';
+import { externalLinks, liveApiEnabled } from '@/lib/external-links';
+
+const LEARN_URL = process.env.NEXT_PUBLIC_LEARN_URL ?? 'https://learn.mymusic.coach';
+const API_BASE = (process.env.NEXT_PUBLIC_GRAPHQL_URL ?? '/graphql').replace(/\/graphql$/, '');
 
 // NextAuth's session is augmented with Keycloak realm roles in the JWT/session
 // callbacks (see app/api/auth/[...nextauth]/route.ts). Type it locally so we can
@@ -34,16 +37,16 @@ const GET_DASHBOARD = gql`
       gamification { level xp currentStreak skillLevel }
       profile { city country instruments }
     }
-    myEnrollments(page: 1, limit: 6) {
+    myEnrollments(page: 1, limit: 50) {
       nodes {
         id
         progress
         completedAt
         createdAt
-        course { id slug title thumbnailUrl level instruments }
+        course { id slug title moodleCourseId endDate thumbnailUrl level instruments }
       }
     }
-    myBookings(page: 1, limit: 6) {
+    myBookings(page: 1, limit: 50) {
       id
       startsAt
       endsAt
@@ -52,9 +55,9 @@ const GET_DASHBOARD = gql`
       instrument
       status
       zoomJoinUrl
-      teacher { user { displayName } }
+      teacher { id headline user { displayName avatarUrl } }
     }
-    myEventBookings(page: 1, limit: 6) {
+    myEventBookings(page: 1, limit: 20) {
       id
       status
       event { id slug title startsAt venueName city country format thumbnailUrl }
@@ -85,13 +88,13 @@ const fallback = {
   },
   myEnrollments: {
     nodes: [
-      { id: 'f-e1', progress: 0.62, completedAt: null, createdAt: daysFromNowISO(-30), course: { id: 'c1', slug: 'piano-fundamentals', title: 'Piano Fundamentals for Classical Beginners', thumbnailUrl: null, level: 'BEGINNER', instruments: ['Piano'] } },
-      { id: 'f-e2', progress: 0.18, completedAt: null, createdAt: daysFromNowISO(-15), course: { id: 'c2', slug: 'ear-training-core', title: 'Ear Training Core: Intervals, Chords & Dictation', thumbnailUrl: null, level: 'INTERMEDIATE', instruments: ['Theory'] } },
+      { id: 'f-e1', progress: 0.62, completedAt: null, createdAt: daysFromNowISO(-30), course: { id: 'c1', slug: 'piano-fundamentals', title: 'Piano Fundamentals for Classical Beginners', moodleCourseId: null, endDate: null, thumbnailUrl: null, level: 'BEGINNER', instruments: ['Piano'] } },
+      { id: 'f-e2', progress: 0.18, completedAt: null, createdAt: daysFromNowISO(-15), course: { id: 'c2', slug: 'ear-training-core', title: 'Ear Training Core: Intervals, Chords & Dictation', moodleCourseId: null, endDate: null, thumbnailUrl: null, level: 'INTERMEDIATE', instruments: ['Theory'] } },
     ],
   },
   myBookings: [
-    { id: 'f-b1', startsAt: daysFromNowISO(2), endsAt: daysFromNowISO(2), durationMin: 60, format: 'ZOOM', instrument: 'Piano', status: 'CONFIRMED', zoomJoinUrl: null, teacher: { user: { displayName: 'Anna Keller' } } },
-    { id: 'f-b2', startsAt: daysFromNowISO(6), endsAt: daysFromNowISO(6), durationMin: 45, format: 'IN_PERSON', instrument: 'Violin', status: 'PENDING', zoomJoinUrl: null, teacher: { user: { displayName: 'Marco De Luca' } } },
+    { id: 'f-b1', startsAt: daysFromNowISO(2), endsAt: daysFromNowISO(2), durationMin: 60, format: 'ZOOM', instrument: 'Piano', status: 'CONFIRMED', zoomJoinUrl: null, teacher: { id: 't1', headline: 'Piano specialist', user: { displayName: 'Anna Keller', avatarUrl: null } } },
+    { id: 'f-b2', startsAt: daysFromNowISO(6), endsAt: daysFromNowISO(6), durationMin: 45, format: 'IN_PERSON', instrument: 'Violin', status: 'PENDING', zoomJoinUrl: null, teacher: { id: 't2', headline: 'Violin & chamber music', user: { displayName: 'Marco De Luca', avatarUrl: null } } },
   ],
   myEventBookings: [
     { id: 'f-eb1', status: 'CONFIRMED', event: { id: 'ev1', slug: 'spring-masterclass', title: 'Spring Piano Masterclass', startsAt: daysFromNowISO(10), venueName: 'Conservatory Hall', city: 'Zürich', country: 'CH', format: 'IN_PERSON', thumbnailUrl: null } },
@@ -121,8 +124,11 @@ const STATUS_STYLES: Record<string, string> = {
   CANCELLED: 'bg-red-50 text-red-700',
 };
 
+type ContentTab = 'courses' | 'teachers' | 'events';
+
 export default function DashboardPage() {
   const { data: session, status } = useSession();
+  const [activeTab, setActiveTab] = useState<ContentTab>('courses');
 
   // Session guard: send unauthenticated visitors to Keycloak sign-in,
   // preserving /dashboard as the post-login return target.
@@ -220,172 +226,79 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Three-pillar grid */}
+      {/* Content Tabs */}
       <div className="mx-auto max-w-6xl px-6 py-8">
-        <div className="grid gap-6 lg:grid-cols-3">
-          {/* ── Pillar 1: Theory (Moodle) ── */}
-          <PillarCard
-            icon={<BookOpen className="h-5 w-5" />}
-            title="Theory"
-            subtitle="Courses & progress"
-            accent="bg-blue-50 text-blue-600"
-            href="/courses"
-            hrefLabel="Browse all courses"
-          >
-            {enrollments.length === 0 ? (
-              <EmptyState text="You're not enrolled in any courses yet." cta={{ href: '/courses', label: 'Browse courses' }} />
-            ) : (
-              <ul className="space-y-3">
-                {enrollments.map((e: any) => (
-                  <li key={e.id}>
-                    <Link href={`/courses/${e.course?.slug ?? ''}`} className="group block">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="line-clamp-1 text-sm font-medium text-gray-800 group-hover:text-primary-600">
-                          {e.course?.title}
-                        </span>
-                        <span className="shrink-0 text-xs text-gray-500">{Math.round((e.progress ?? 0) * 100)}%</span>
-                      </div>
-                      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-                        <div className="h-full rounded-full bg-primary-500" style={{ width: `${Math.round((e.progress ?? 0) * 100)}%` }} />
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </PillarCard>
-
-          {/* ── Pillar 2: Practice (LibreBooking / Zoom) ── */}
-          <PillarCard
-            icon={<Music className="h-5 w-5" />}
-            title="Practice"
-            subtitle="Lessons & bookings"
-            accent="bg-purple-50 text-purple-600"
-            href="/teachers"
-            hrefLabel="Find a teacher"
-          >
-            {bookings.length === 0 ? (
-              <EmptyState text="No lessons booked yet." cta={{ href: '/teachers', label: 'Find a teacher' }} />
-            ) : (
-              <ul className="space-y-3">
-                {bookings.map((b: any) => (
-                  <li key={b.id} className="rounded-lg border border-gray-100 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium text-gray-800">
-                        {b.instrument ?? 'Lesson'} · {b.teacher?.user?.displayName ?? 'Teacher'}
-                      </span>
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLES[b.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {b.status}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
-                      <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{formatDateTime(b.startsAt)}</span>
-                      <span className="flex items-center gap-1">
-                        {b.format === 'ZOOM' ? <Video className="h-3 w-3" /> : <MapPin className="h-3 w-3" />}
-                        {b.format === 'ZOOM' ? 'Online' : 'In person'}
-                      </span>
-                    </div>
-                    {b.zoomJoinUrl && (
-                      <a href={b.zoomJoinUrl} className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline">
-                        Join <ExternalLink className="h-3 w-3" />
-                      </a>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </PillarCard>
-
-          {/* ── Pillar 3: Performance (pretix) ── */}
-          <PillarCard
-            icon={<Calendar className="h-5 w-5" />}
-            title="Performance"
-            subtitle="Events & tickets"
-            accent="bg-amber-50 text-amber-600"
-            href="/events"
-            hrefLabel="Discover events"
-          >
-            {eventBookings.length === 0 ? (
-              <EmptyState text="No tickets booked yet." cta={{ href: '/events', label: 'Discover events' }} />
-            ) : (
-              <ul className="space-y-3">
-                {eventBookings.map((eb: any) => (
-                  <li key={eb.id} className="rounded-lg border border-gray-100 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <Link href={`/events/${eb.event?.slug ?? ''}`} className="line-clamp-1 text-sm font-medium text-gray-800 hover:text-primary-600">
-                        {eb.event?.title}
-                      </Link>
-                      <Ticket className="h-4 w-4 shrink-0 text-amber-500" />
-                    </div>
-                    <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
-                      <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{formatDateTime(eb.event?.startsAt)}</span>
-                      {eb.event?.venueName && (
-                        <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{eb.event.venueName}</span>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </PillarCard>
+        <div className="mb-6 flex gap-0 rounded-xl border border-gray-200 bg-white p-1 w-fit">
+          <TabButton active={activeTab === 'courses'} onClick={() => setActiveTab('courses')}>
+            <BookOpen className="h-4 w-4" /> Courses
+          </TabButton>
+          <TabButton active={activeTab === 'teachers'} onClick={() => setActiveTab('teachers')}>
+            <Users className="h-4 w-4" /> {role === 'TEACHER' ? 'Students' : 'Teachers'}
+          </TabButton>
+          <TabButton active={activeTab === 'events'} onClick={() => setActiveTab('events')}>
+            <Ticket className="h-4 w-4" /> Events
+          </TabButton>
         </div>
 
-        {/* Secondary row: Agenda · Messages */}
-        <div className="mt-6 grid gap-6 lg:grid-cols-3">
-          {/* Agenda (lessons + events + deadlines) */}
-          <section className="card p-5 lg:col-span-2">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="flex items-center gap-2 font-semibold text-gray-900">
-                <Calendar className="h-4 w-4 text-primary-600" /> Your agenda
-              </h2>
-              <span className="text-xs text-gray-400">Lessons & booked events</span>
-            </div>
-            {agenda.length === 0 ? (
-              <EmptyState text="Nothing scheduled yet." cta={{ href: '/teachers', label: 'Book a lesson' }} />
-            ) : (
-              <ul className="divide-y divide-gray-100">
-                {agenda.map((a) => (
-                  <li key={`${a.kind}-${a.id}`} className="flex items-center justify-between gap-3 py-3">
-                    <div className="flex items-center gap-3">
-                      <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${a.kind === 'lesson' ? 'bg-purple-50 text-purple-600' : a.kind === 'event' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
-                        {a.kind === 'lesson' ? <Music className="h-4 w-4" /> : a.kind === 'event' ? <Ticket className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
-                      </span>
-                      <div>
-                        <p className="text-sm font-medium text-gray-800">{a.title}</p>
-                        <p className="text-xs text-gray-500">{formatDateTime(a.startsAt)}</p>
-                      </div>
-                    </div>
-                    {a.status && (
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLES[a.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {a.status}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {/* Deadlines are not yet exposed by the API (see follow-ups in the PR). */}
-            <p className="mt-3 text-xs text-gray-400">
-              Course deadlines will appear here once the learning API exposes them.
-            </p>
-          </section>
+        {activeTab === 'courses' && (
+          <CoursesTabContent enrollments={enrollments} />
+        )}
+        {activeTab === 'teachers' && (
+          <TeachersTabContent bookings={bookings} role={role} />
+        )}
+        {activeTab === 'events' && (
+          <EventsTabContent eventBookings={eventBookings} />
+        )}
 
-          {/* My Availability + Messages */}
-          <section className="card p-5">
-            <h2 className="mb-4 flex items-center gap-2 font-semibold text-gray-900">
+        {/* Agenda */}
+        <section className="mt-8 card p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 font-semibold text-gray-900">
+              <Calendar className="h-4 w-4 text-primary-600" /> Your agenda
+            </h2>
+            <span className="text-xs text-gray-400">Lessons & booked events</span>
+          </div>
+          {agenda.length === 0 ? (
+            <EmptyState text="Nothing scheduled yet." cta={{ href: '/teachers', label: 'Book a lesson' }} />
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {agenda.map((a) => (
+                <li key={`${a.kind}-${a.id}`} className="flex items-center justify-between gap-3 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${a.kind === 'lesson' ? 'bg-purple-50 text-purple-600' : a.kind === 'event' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
+                      {a.kind === 'lesson' ? <Music className="h-4 w-4" /> : a.kind === 'event' ? <Ticket className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
+                    </span>
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{a.title}</p>
+                      <p className="text-xs text-gray-500">{formatDateTime(a.startsAt)}</p>
+                    </div>
+                  </div>
+                  {a.status && (
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLES[a.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                      {a.status}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* My Availability quick-link */}
+        <section className="mt-4 card p-5 flex items-center gap-4">
+          <div className="flex-1">
+            <h2 className="flex items-center gap-2 font-semibold text-gray-900 mb-1">
               <Clock className="h-4 w-4 text-primary-600" /> My Availability
             </h2>
-            <p className="mb-3 text-xs text-gray-500">
-              Let your teacher know when you're free. Your declared schedule helps with lesson planning.
-            </p>
-            <Link
-              href="/dashboard/availability"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm font-medium text-primary-700 hover:bg-primary-100"
-            >
-              <Calendar className="h-4 w-4" /> Set my availability <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </section>
-        </div>
+            <p className="text-xs text-gray-500">Let your teacher know when you're free.</p>
+          </div>
+          <Link
+            href="/dashboard/availability"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm font-medium text-primary-700 hover:bg-primary-100 shrink-0"
+          >
+            <Calendar className="h-4 w-4" /> Set availability <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </section>
 
         {/* Upcoming / recommended events */}
         <section className="mt-6">
@@ -431,6 +344,7 @@ export default function DashboardPage() {
                 accent="bg-primary-50 text-primary-600"
                 icon={<Shield className="h-4 w-4" />}
               />
+              <PretixAdminButton session={session} />
             </div>
           </section>
         )}
@@ -441,33 +355,226 @@ export default function DashboardPage() {
 
 // ── Presentational helpers ──────────────────────────────────────────
 
-function PillarCard({
-  icon, title, subtitle, accent, href, hrefLabel, children,
-}: {
-  icon: React.ReactNode; title: string; subtitle: string; accent: string;
-  href?: string; hrefLabel: string; children: React.ReactNode;
-}) {
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <section className="card flex flex-col p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className={`flex h-10 w-10 items-center justify-center rounded-lg ${accent}`}>{icon}</span>
-          <div>
-            <h2 className="font-semibold text-gray-900">{title}</h2>
-            <p className="text-xs text-gray-500">{subtitle}</p>
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+        active ? 'bg-primary-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function CoursesTabContent({ enrollments }: { enrollments: any[] }) {
+  if (enrollments.length === 0) {
+    return (
+      <div className="space-y-4">
+        <EmptyState text="Not enrolled in any courses yet." cta={{ href: '/courses', label: 'Browse courses' }} />
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+            <tr>
+              <th className="px-4 py-3 text-left">Course</th>
+              <th className="px-4 py-3 text-left">Enrolled</th>
+              <th className="px-4 py-3 text-left">Ends</th>
+              <th className="px-4 py-3 text-left">Progress</th>
+              <th className="px-4 py-3" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {enrollments.map((e: any) => (
+              <tr key={e.id} className="hover:bg-gray-50">
+                <td className="px-4 py-3 font-medium text-gray-900 max-w-xs">
+                  <span className="line-clamp-2">{e.course?.title}</span>
+                </td>
+                <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                  {e.createdAt ? new Date(e.createdAt).toLocaleDateString() : '—'}
+                </td>
+                <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                  {e.course?.endDate ? new Date(e.course.endDate).toLocaleDateString() : '—'}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 w-20 overflow-hidden rounded-full bg-gray-100">
+                      <div className="h-full rounded-full bg-primary-500" style={{ width: `${Math.round((e.progress ?? 0) * 100)}%` }} />
+                    </div>
+                    <span className="text-xs text-gray-500 shrink-0">{Math.round((e.progress ?? 0) * 100)}%</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  {e.course?.moodleCourseId ? (
+                    <a
+                      href={`${LEARN_URL}/course/view.php?id=${e.course.moodleCourseId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+                    >
+                      Go to Course <ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : (
+                    <Link
+                      href={`/courses/${e.course?.slug ?? ''}`}
+                      className="text-xs font-medium text-primary-600 hover:underline"
+                    >
+                      View →
+                    </Link>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-3 flex justify-end">
+        <Link href="/courses" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:underline">
+          Browse all courses <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function TeachersTabContent({ bookings, role }: { bookings: any[]; role: string }) {
+  if (role === 'TEACHER' || role === 'ADMIN') {
+    return (
+      <div className="rounded-xl border border-dashed border-gray-200 bg-white p-10 text-center">
+        <Users className="mx-auto mb-3 h-8 w-8 text-gray-300" />
+        <p className="mb-4 text-sm text-gray-500">
+          Your enrolled students are managed in the booking platform.
+        </p>
+        {externalLinks.booking && (
+          <a
+            href={externalLinks.booking}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-4 py-2 text-sm font-medium text-primary-700 hover:bg-primary-100"
+          >
+            <GraduationCap className="h-4 w-4" /> Open booking platform <ExternalLink className="h-3 w-3" />
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  // Group bookings by teacher
+  const teacherMap: Record<string, { id: string; user: { displayName: string; avatarUrl: string | null }; headline: string | null; count: number }> = {};
+  for (const b of bookings) {
+    if (!b.teacher?.id) continue;
+    if (!teacherMap[b.teacher.id]) {
+      teacherMap[b.teacher.id] = { ...b.teacher, count: 0 };
+    }
+    teacherMap[b.teacher.id].count++;
+  }
+  const teachers = Object.values(teacherMap);
+
+  if (teachers.length === 0) {
+    return <EmptyState text="No lessons booked yet." cta={{ href: '/teachers', label: 'Find a teacher' }} />;
+  }
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {teachers.map((t: any) => (
+        <div key={t.id} className="card flex items-center gap-3 p-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-lg font-bold text-primary-700">
+            {t.user?.displayName?.charAt(0) ?? '?'}
+          </div>
+          <div className="min-w-0">
+            <p className="font-medium text-gray-900 truncate">{t.user?.displayName}</p>
+            {t.headline && <p className="text-xs text-gray-500 truncate">{t.headline}</p>}
+            <p className="text-xs text-primary-600">{t.count} lesson{t.count !== 1 ? 's' : ''}</p>
           </div>
         </div>
-      </div>
-      <div className="flex-1">{children}</div>
-      {href && (
+      ))}
+    </div>
+  );
+}
+
+function EventsTabContent({ eventBookings }: { eventBookings: any[] }) {
+  if (eventBookings.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-gray-200 bg-white p-10 text-center">
+        <Search className="mx-auto mb-3 h-8 w-8 text-gray-300" />
+        <p className="mb-4 text-sm text-gray-500">No tickets booked yet.</p>
         <Link
-          href={href}
-          className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary-600 hover:underline"
+          href="/events"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700"
         >
-          {hrefLabel} <ArrowRight className="h-3.5 w-3.5" />
+          <Search className="h-4 w-4" /> Discover events <ArrowRight className="h-3.5 w-3.5" />
         </Link>
-      )}
-    </section>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      {eventBookings.map((eb: any) => (
+        <div key={eb.id} className="card flex items-center gap-4 p-4">
+          <Ticket className="h-8 w-8 shrink-0 text-amber-500" />
+          <div className="flex-1 min-w-0">
+            <Link href={`/events/${eb.event?.slug ?? ''}`} className="font-medium text-gray-900 hover:text-primary-600 line-clamp-1">
+              {eb.event?.title}
+            </Link>
+            <div className="mt-0.5 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+              <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{formatDateTime(eb.event?.startsAt)}</span>
+              {eb.event?.venueName && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{eb.event.venueName}</span>}
+            </div>
+          </div>
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLES[eb.status] ?? 'bg-gray-100 text-gray-600'}`}>
+            {eb.status}
+          </span>
+        </div>
+      ))}
+      <div className="mt-2 flex justify-end">
+        <Link href="/events" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:underline">
+          Discover more events <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function PretixAdminButton({ session }: { session: any }) {
+  const [loading, setLoading] = useState(false);
+
+  async function openPretix() {
+    setLoading(true);
+    try {
+      const token = (session as any)?.accessToken;
+      const res = await fetch(`${API_BASE}/pretix-sso-link`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error('Failed to get SSO link');
+      const { url } = await res.json();
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch {
+      window.open('https://tickets.mymusic.coach/control/', '_blank', 'noopener,noreferrer');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <button
+      onClick={openPretix}
+      disabled={loading}
+      className="card flex w-full items-center gap-3 p-4 text-left transition-colors hover:border-primary-300 disabled:opacity-60"
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+        <Ticket className="h-4 w-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-gray-900">{loading ? 'Opening…' : 'Pretix Admin'}</p>
+        <p className="truncate text-xs text-gray-500">Tickets & events (SSO)</p>
+      </div>
+      <ExternalLink className="ml-auto h-3.5 w-3.5 shrink-0 text-gray-400" />
+    </button>
   );
 }
 

@@ -4,7 +4,9 @@ import { gql, useQuery, useMutation } from '@apollo/client';
 import { useParams } from 'next/navigation';
 import { useSession, signIn } from 'next-auth/react';
 import Link from 'next/link';
-import { BookOpen, Clock, Star, Users, Play, Lock, ChevronRight, ArrowLeft } from 'lucide-react';
+import { BookOpen, Clock, Star, Users, Play, Lock, ChevronRight, ArrowLeft, CheckCircle, ExternalLink } from 'lucide-react';
+
+const LEARN_URL = process.env.NEXT_PUBLIC_LEARN_URL ?? 'https://learn.mymusic.coach';
 
 const ENROLL_IN_COURSE = gql`
   mutation EnrollInCourse($courseId: ID!) {
@@ -22,7 +24,7 @@ const GET_COURSE = gql`
   query GetCourse($slug: String) {
     course(slug: $slug) {
       id slug title description shortSummary thumbnailUrl
-      price currency level status language
+      price currency level status language moodleCourseId
       instruments musicStyles isFreeTier
       avgRating totalReviews totalEnrollments totalDurationMin
       teacher {
@@ -38,6 +40,9 @@ const GET_COURSE = gql`
         nodes { id rating comment createdAt author { displayName avatarUrl } }
         pageInfo { totalCount }
       }
+    }
+    myEnrollments(page: 1, limit: 200) {
+      nodes { id courseId progress createdAt }
     }
   }
 `;
@@ -127,7 +132,16 @@ export default function CourseDetailPage() {
 
   const [enrollFree, { loading: enrolling, data: enrollData }] = useMutation(ENROLL_IN_COURSE);
   const [createCheckout, { loading: checkingOut }] = useMutation(CREATE_CHECKOUT_SESSION);
-  const enrolled = !!enrollData?.enrollInCourse;
+
+  // Check enrollment from DB (past sessions) OR from the current-session mutation result
+  const enrolledFromDb = (data?.myEnrollments?.nodes ?? []).some(
+    (e: any) => e.courseId === data?.course?.id,
+  );
+  const enrolled = enrolledFromDb || !!enrollData?.enrollInCourse;
+
+  const moodleUrl = data?.course?.moodleCourseId
+    ? `${LEARN_URL}/course/view.php?id=${data.course.moodleCourseId}`
+    : null;
 
   async function handleEnroll() {
     if (!course?.id || !liveApiEnabled) return;
@@ -292,7 +306,21 @@ export default function CourseDetailPage() {
 
               {session ? (
                 enrolled ? (
-                  <p className="text-center text-sm font-medium text-green-600">You are enrolled!</p>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-center gap-2 text-sm font-semibold text-green-600">
+                      <CheckCircle className="h-5 w-5" /> Enrolled
+                    </div>
+                    {moodleUrl && (
+                      <a
+                        href={moodleUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-base font-semibold text-white hover:bg-green-700"
+                      >
+                        Go to Course <ExternalLink className="h-4 w-4" />
+                      </a>
+                    )}
+                  </div>
                 ) : (
                   <button
                     className="btn-primary w-full py-3 text-base disabled:opacity-60"

@@ -5,20 +5,20 @@
 # Moodle source is downloaded at build time; first-run installation
 # is handled by the entrypoint via the Moodle CLI installer.
 
-FROM moodlehq/moodle-php-apache:8.2-bullseye
+FROM moodlehq/moodle-php-apache:8.3-bookworm
 
-ARG MOODLE_VERSION=4.4.4
+ARG MOODLE_VERSION=5.2.1
 # auth_oidc ships inside the microsoft/o365-moodle bundle; the
-# MOODLE_404_STABLE branch tracks the 4.4 plugin release that matches
+# MOODLE_502_STABLE branch tracks the 5.2 plugin release that matches
 # MOODLE_VERSION above.
-ARG MOODLE_OIDC_PLUGIN_REF=MOODLE_404_STABLE
+ARG MOODLE_OIDC_PLUGIN_REF=MOODLE_502_STABLE
 
 LABEL maintainer="My Music Coach"
 LABEL description="Moodle LMS for My Music Coach – online learning core"
 
 # ── Download Moodle ───────────────────────────────────────────
 RUN curl -fsSL \
-      "https://download.moodle.org/download.php/direct/stable404/moodle-${MOODLE_VERSION}.tgz" \
+      "https://download.moodle.org/download.php/direct/stable502/moodle-${MOODLE_VERSION}.tgz" \
     | tar -xz --strip-components=1 -C /var/www/html \
  && chown -R www-data:www-data /var/www/html
 
@@ -38,7 +38,11 @@ RUN mkdir -p /var/moodledata \
  && chmod 777 /var/moodledata
 
 # ── Apache: run on port 8080 (matches Caddy upstream) ─────────
-RUN sed -i 's/Listen 80$/Listen 8080/' /etc/apache2/ports.conf \
+# bookworm image omits APACHE_DOCUMENT_ROOT from envvars; apache2.conf and
+# docker-php.conf both use ${APACHE_DOCUMENT_ROOT} in Directory grants, so
+# without it the root <Directory /> Require all denied wins → 403 everywhere.
+RUN echo 'export APACHE_DOCUMENT_ROOT=/var/www/html/public' >> /etc/apache2/envvars \
+ && sed -i 's/Listen 80$/Listen 8080/' /etc/apache2/ports.conf \
  && a2enmod rewrite
 
 COPY apache-moodle.conf /etc/apache2/sites-enabled/000-default.conf

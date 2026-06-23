@@ -15,9 +15,15 @@ require('/var/www/html/config.php');
 
 $clientid     = getenv('MOODLE_OIDC_CLIENT_ID') ?: 'moodle-oidc';
 $clientsecret = getenv('MOODLE_OIDC_CLIENT_SECRET') ?: '';
-$authendpoint = getenv('MOODLE_OIDC_AUTH_ENDPOINT') ?: '';
-$tokenendpoint = getenv('MOODLE_OIDC_TOKEN_ENDPOINT') ?: '';
 $opname       = getenv('MOODLE_OIDC_OPNAME') ?: 'My Music Coach';
+
+// Derive auth/token endpoints from the issuer if not set explicitly.
+// Keycloak follows the standard OIDC path convention.
+$issuer = rtrim(getenv('KEYCLOAK_ISSUER') ?: '', '/');
+$authendpoint  = getenv('MOODLE_OIDC_AUTH_ENDPOINT')
+    ?: ($issuer ? $issuer . '/protocol/openid-connect/auth' : '');
+$tokenendpoint = getenv('MOODLE_OIDC_TOKEN_ENDPOINT')
+    ?: ($issuer ? $issuer . '/protocol/openid-connect/token' : '');
 
 if ($clientsecret === '' || $authendpoint === '' || $tokenendpoint === '') {
     cli_writeln('[moodle-oidc] Missing client secret or endpoints — skipping OIDC configuration.');

@@ -28,6 +28,7 @@ services:
   api:
     environment:
       MOODLE_PUBLIC_HOST: learn.mymusic.coach
+      PRETIX_SSO_SECRET: ${PRETIX_SSO_SECRET}
       KEYCLOAK_ISSUER: https://auth.mymusic.coach/realms/mymusic-coach
       KEYCLOAK_ADMIN_URL: http://keycloak:8080
       KEYCLOAK_ADMIN_REALM: mymusic-coach
@@ -89,6 +90,7 @@ services:
       PRETIX_ADMIN_PASSWORD: ${PRETIX_ADMIN_PASSWORD}
       PRETIX_EXTRA_ADMIN_EMAIL: ${PRETIX_EXTRA_ADMIN_EMAIL:-}
       PRETIX_EXTRA_ADMIN_PASSWORD: ${PRETIX_EXTRA_ADMIN_PASSWORD:-}
+      PRETIX_SSO_SECRET: ${PRETIX_SSO_SECRET}
       PRETIX_OIDC_ISSUER: https://auth.mymusic.coach/realms/mymusic-coach
       PRETIX_OIDC_CLIENT_ID: ${PRETIX_OIDC_CLIENT_ID:-pretix-oidc}
       PRETIX_OIDC_CLIENT_SECRET: ${PRETIX_OIDC_CLIENT_SECRET}

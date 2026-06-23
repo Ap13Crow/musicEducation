@@ -2,7 +2,8 @@
 
 import { useState, useMemo } from 'react';
 import { gql, useQuery } from '@apollo/client';
-import { BookOpen, Clock, Star, Users, Search, SlidersHorizontal, X } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+import { BookOpen, Clock, Star, Users, Search, SlidersHorizontal, X, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
 
 const INSTRUMENTS = ['Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute', 'Clarinet', 'Oboe', 'Trumpet', 'Organ', 'Harp', 'Percussion', 'Composition', 'Theory'];
@@ -71,25 +72,41 @@ const GET_COURSES = gql`
       nodes {
         id slug title shortSummary thumbnailUrl price currency
         level avgRating totalReviews totalEnrollments totalDurationMin
-        instruments isFreeTier
+        instruments isFreeTier moodleCourseId
         teacher { id headline user { displayName avatarUrl } }
       }
       pageInfo { totalCount hasNextPage }
     }
+    myEnrollments(page: 1, limit: 200) {
+      nodes { courseId }
+    }
   }
 `;
 
-function CourseCard({ course }: { course: any }) {
+const LEARN_URL = process.env.NEXT_PUBLIC_LEARN_URL ?? 'https://learn.mymusic.coach';
+
+function CourseCard({ course, isEnrolled }: { course: any; isEnrolled: boolean }) {
+  const moodleUrl = course.moodleCourseId
+    ? `${LEARN_URL}/course/view.php?id=${course.moodleCourseId}`
+    : null;
+
   return (
-    <Link href={`/courses/${course.slug}`} className="card group hover:border-primary-300 transition-colors">
-      {course.thumbnailUrl ? (
-        <img src={course.thumbnailUrl} alt={course.title} className="h-44 w-full object-cover" />
-      ) : (
-        <div className="flex h-44 w-full items-center justify-center bg-gradient-to-br from-primary-100 to-primary-200">
-          <BookOpen className="h-12 w-12 text-primary-400" />
-        </div>
-      )}
-      <div className="p-4">
+    <div className="card group hover:border-primary-300 transition-colors flex flex-col">
+      <Link href={`/courses/${course.slug}`} className="block">
+        {course.thumbnailUrl ? (
+          <img src={course.thumbnailUrl} alt={course.title} className="h-44 w-full object-cover" />
+        ) : (
+          <div className="flex h-44 w-full items-center justify-center bg-gradient-to-br from-primary-100 to-primary-200">
+            <BookOpen className="h-12 w-12 text-primary-400" />
+          </div>
+        )}
+        {isEnrolled && (
+          <div className="absolute top-2 right-2 flex items-center gap-1 rounded-full bg-green-500 px-2 py-0.5 text-xs font-medium text-white shadow">
+            <CheckCircle className="h-3 w-3" /> Enrolled
+          </div>
+        )}
+      </Link>
+      <div className="relative flex flex-1 flex-col p-4">
         <div className="mb-1 flex flex-wrap items-center gap-1">
           <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700">{course.level}</span>
           {course.isFreeTier && <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Free</span>}
@@ -97,7 +114,9 @@ function CourseCard({ course }: { course: any }) {
             <span key={i} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{i}</span>
           ))}
         </div>
-        <h3 className="mb-1 font-semibold leading-snug group-hover:text-primary-600">{course.title}</h3>
+        <Link href={`/courses/${course.slug}`}>
+          <h3 className="mb-1 font-semibold leading-snug group-hover:text-primary-600">{course.title}</h3>
+        </Link>
         {course.shortSummary && <p className="mb-3 text-xs text-gray-500 line-clamp-2">{course.shortSummary}</p>}
         <div className="flex items-center gap-3 text-xs text-gray-500">
           {course.avgRating > 0 && (
@@ -117,8 +136,19 @@ function CourseCard({ course }: { course: any }) {
             <span className="text-xs text-gray-500 truncate ml-2">{course.teacher.user?.displayName}</span>
           )}
         </div>
+        {isEnrolled && moodleUrl && (
+          <a
+            href={moodleUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 flex items-center justify-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+            onClick={(e) => e.stopPropagation()}
+          >
+            Go to Course →
+          </a>
+        )}
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -129,6 +159,7 @@ export default function CoursesPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [freeOnly, setFreeOnly] = useState(false);
 
+  const { data: session } = useSession();
   const liveApiEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_API === 'true';
 
   const filter: any = {};
@@ -139,8 +170,12 @@ export default function CoursesPage() {
 
   const { data, loading, error } = useQuery(GET_COURSES, {
     variables: { filter: Object.keys(filter).length > 0 ? filter : undefined, page: 1, limit: 24 },
-    skip: !liveApiEnabled,
+    skip: !liveApiEnabled || !session,
   });
+
+  const enrolledCourseIds = new Set<string>(
+    (data?.myEnrollments?.nodes ?? []).map((e: any) => e.courseId)
+  );
 
   // Client-side filtering for fallback data
   const filteredCourses = useMemo(() => {
@@ -328,7 +363,7 @@ export default function CoursesPage() {
             </p>
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {filteredCourses.map((course: any) => (
-                <CourseCard key={course.id} course={course} />
+                <CourseCard key={course.id} course={course} isEnrolled={enrolledCourseIds.has(course.id)} />
               ))}
             </div>
           </>

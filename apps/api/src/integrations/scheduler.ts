@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import type { PrismaClient } from '@my-music-coach/database';
 import { syncPretixOrders } from './sync/event-sync.js';
 import { syncLibreBookingReservations } from './sync/librebooking-sync.js';
-import { syncMoodleProgress } from './sync/moodle-sync.js';
+import { syncMoodleProgress, syncMoodleCourses } from './sync/moodle-sync.js';
 import { logger } from '../utils/logger.js';
 import type { PretixAdapter } from './adapters/pretix.js';
 import type { LibreBookingAdapter } from './adapters/librebooking.js';
@@ -45,9 +45,21 @@ if (adapters.pretix && pretixSlug) {
     });
   }
 
-  // Moodle Progress Sync: Every hour
   if (adapters.moodle) {
     const moodleAdapter = adapters.moodle;
+
+    // Course list sync: every 6 hours (also runs once on startup)
+    const runCourseSync = async () => {
+      try {
+        await syncMoodleCourses(prisma, moodleAdapter);
+      } catch (err) {
+        logger.error({ err }, 'Moodle course sync job failed');
+      }
+    };
+    runCourseSync(); // immediate first run
+    cron.schedule('0 */6 * * *', runCourseSync);
+
+    // Progress sync: every hour
     cron.schedule('0 * * * *', async () => {
       try {
         await syncMoodleProgress(prisma, moodleAdapter);

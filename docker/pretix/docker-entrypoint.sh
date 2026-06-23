@@ -50,7 +50,7 @@ echo "pretix.cfg generated from environment."
 # (idempotent), so running it here first is safe.
 # pretix runs from /pretix/src with production_settings.
 cd /pretix/src
-export DJANGO_SETTINGS_MODULE=production_settings
+export DJANGO_SETTINGS_MODULE=custom_settings
 export DATA_DIR=/data/
 export HOME=/pretix
 
