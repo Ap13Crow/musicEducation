@@ -19,14 +19,14 @@ export function startScheduler(
 ) {
   logger.info('Starting integrations scheduler');
 
-const PRETIX_ORGANISER_SLUG = config.pretixOrganiserSlug;
+const pretixSlug = config.pretixOrganiserSlug;
 
   // Pretix Order Sync: Every 5 minutes
-  if (adapters.pretix && PRETIX_ORGANISER_SLUG) {
+if (adapters.pretix && pretixSlug) {
     const pretixAdapter = adapters.pretix;
     cron.schedule('*/5 * * * *', async () => {
       try {
-        await syncPretixOrders(prisma, pretixAdapter, PRETIX_ORGANISER_SLUG);
+      await syncPretixOrders(prisma, pretixAdapter, pretixSlug);
       } catch (err) {
         logger.error({ err }, 'Pretix sync job failed');
       }

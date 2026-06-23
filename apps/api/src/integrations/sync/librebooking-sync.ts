@@ -31,7 +31,7 @@ export async function syncLibreBookingReservations(
         // If times changed, sync them
         if (
           booking.startsAt.getTime() !== externalBooking.start.getTime() ||
-          booking.endsAt?.getTime() !== externalBooking.end.getTime()
+          (booking.endsAt ? booking.endsAt.getTime() : 0) !== externalBooking.end.getTime()
         ) {
           await prisma.booking.update({
             where: { id: booking.id },
