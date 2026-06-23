@@ -57,12 +57,10 @@ export HOME=/pretix
 echo "Running pretix database migrations..."
 python3 -m pretix migrate --noinput
 
-# Provision Keycloak SSO (idempotent upsert — safe on every start).
-echo "[pretix] Configuring Keycloak SSO..."
-python3 /configure-sso.py
-
-# Create the staff/admin user on first run. pretix's User model lives in
-# pretixbase (not django.contrib.auth), so standard createsuperuser doesn't work.
+# Create the staff/admin user before configure-sso.py so that team
+# membership can reference the user on the very first boot.
+# pretix's User model lives in pretixbase (not django.contrib.auth),
+# so standard createsuperuser doesn't work.
 ADMIN_EMAIL="${PRETIX_ADMIN_EMAIL:-admin@mymusic.coach}"
 ADMIN_PASSWORD="${PRETIX_ADMIN_PASSWORD:-}"
 
@@ -79,6 +77,28 @@ PYEOF
 else
   echo "[pretix] PRETIX_ADMIN_PASSWORD not set — skipping admin user creation."
 fi
+
+# Optional second staff user (e.g. site owner).
+# Password preference: PRETIX_EXTRA_ADMIN_PASSWORD > PRETIX_ADMIN_PASSWORD.
+# Password is always synced on startup so a rebuild is enough to change it.
+EXTRA_ADMIN_EMAIL="${PRETIX_EXTRA_ADMIN_EMAIL:-}"
+EXTRA_ADMIN_PASSWORD="${PRETIX_EXTRA_ADMIN_PASSWORD:-${ADMIN_PASSWORD}}"
+if [ -n "$EXTRA_ADMIN_EMAIL" ] && [ -n "$EXTRA_ADMIN_PASSWORD" ]; then
+  python3 -m pretix shell << PYEOF
+from pretix.base.models import User
+u, created = User.objects.get_or_create(email='${EXTRA_ADMIN_EMAIL}', defaults={'is_staff': True, 'is_active': True})
+u.is_staff = True
+u.is_active = True
+u.set_password('${EXTRA_ADMIN_PASSWORD}')
+u.save()
+print('[pretix] Extra admin %s (%s)' % ('${EXTRA_ADMIN_EMAIL}', 'created' if created else 'password synced'))
+PYEOF
+fi
+
+# Provision organiser, Keycloak SSO, Administrators team, and API token
+# (idempotent upsert — safe on every start).
+echo "[pretix] Configuring Keycloak SSO, teams, and API token..."
+python3 /configure-sso.py
 
 # Run the upstream pretix supervisor
 exec pretix "$@"

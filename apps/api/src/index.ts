@@ -20,6 +20,7 @@ import { eventResolvers } from './resolvers/events.js';
 import { assessmentResolvers } from './resolvers/assessments.js';
 import { feedResolvers } from './resolvers/feed.js';
 import { paymentResolvers } from './resolvers/payments.js';
+import { adminResolvers } from './resolvers/admin.js';
 import type { GraphQLContext } from './types.js';
 
 // Import Integrations & Scheduler
@@ -49,6 +50,7 @@ const resolvers = mergeResolvers([
   assessmentResolvers,
   feedResolvers,
   paymentResolvers,
+  adminResolvers,
 ]);
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });
@@ -113,6 +115,7 @@ async function main() {
         prisma,
         user: await resolveRequestUser(req, prisma),
         req,
+        libreBooking: libreBookingAdapter,
       }),
     }),
   );

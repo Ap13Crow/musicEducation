@@ -106,8 +106,9 @@ model User {
   feedComments       FeedComment[]
   following          Follow[]               @relation("follower")
   followers          Follow[]               @relation("following")
-  reviews            Review[]
-  publishedEvents    Event[]
+  reviews             Review[]
+  publishedEvents     Event[]
+  studentAvailability StudentAvailability[]
 }
 
 model UserCredential {
@@ -184,6 +185,18 @@ model TeacherAvailability {
   createdAt        DateTime @default(now())
 
   teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+}
+
+model StudentAvailability {
+  id        String   @id @default(cuid())
+  userId    String
+  dayOfWeek Int      // 0=Sun … 6=Sat
+  startTime String   // "HH:MM"
+  endTime   String   // "HH:MM"
+  timezone  String   @default("Europe/Zurich")
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 model GamificationProfile {

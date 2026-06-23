@@ -52,6 +52,11 @@ export const userResolvers = {
     async teacher(_: unknown, { id }: any, { prisma }: GraphQLContext) {
       return prisma.teacherProfile.findUnique({ where: { id }, include: { certifications: true, availability: true } });
     },
+
+    async myAvailability(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
+      requireAuth(user);
+      return prisma.studentAvailability.findMany({ where: { userId: user!.id }, orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }] });
+    },
   },
 
   Mutation: {
@@ -112,6 +117,26 @@ export const userResolvers = {
         data: slots.map((s: any) => ({ dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, timezone: s.timezone ?? 'Europe/Zurich', teacherProfileId: teacherProfile.id })),
       });
       return prisma.teacherAvailability.findMany({ where: { teacherProfileId: teacherProfile.id } });
+    },
+
+    async setStudentAvailability(_: unknown, { slots }: any, { prisma, user }: GraphQLContext) {
+      requireAuth(user);
+      await prisma.studentAvailability.deleteMany({ where: { userId: user!.id } });
+      if (slots.length > 0) {
+        await prisma.studentAvailability.createMany({
+          data: slots.map((s: any) => ({
+            userId: user!.id,
+            dayOfWeek: s.dayOfWeek,
+            startTime: s.startTime,
+            endTime: s.endTime,
+            timezone: s.timezone ?? 'Europe/Zurich',
+          })),
+        });
+      }
+      return prisma.studentAvailability.findMany({
+        where: { userId: user!.id },
+        orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+      });
     },
 
     async completeOnboarding(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {

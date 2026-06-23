@@ -370,18 +370,20 @@ export default function DashboardPage() {
             </p>
           </section>
 
-          {/* Messages — placeholder until a messaging API exists */}
+          {/* My Availability + Messages */}
           <section className="card p-5">
             <h2 className="mb-4 flex items-center gap-2 font-semibold text-gray-900">
-              <MessageSquare className="h-4 w-4 text-primary-600" /> Messages
+              <Clock className="h-4 w-4 text-primary-600" /> My Availability
             </h2>
-            <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center">
-              <MessageSquare className="mx-auto mb-2 h-6 w-6 text-gray-300" />
-              <p className="text-sm text-gray-500">No messages yet.</p>
-              <p className="mt-1 text-xs text-gray-400">
-                Messaging between students and teachers is coming soon.
-              </p>
-            </div>
+            <p className="mb-3 text-xs text-gray-500">
+              Let your teacher know when you're free. Your declared schedule helps with lesson planning.
+            </p>
+            <Link
+              href="/dashboard/availability"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm font-medium text-primary-700 hover:bg-primary-100"
+            >
+              <Calendar className="h-4 w-4" /> Set my availability <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
           </section>
         </div>
 

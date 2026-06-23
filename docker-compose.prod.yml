@@ -25,6 +25,15 @@ services:
       # Same container target as the base mount, so this shadows the dev realm.
       - ./docker/keycloak/realm-export.prod.json:/opt/keycloak/data/import/realm-export.json
 
+  api:
+    environment:
+      MOODLE_PUBLIC_HOST: learn.mymusic.coach
+      KEYCLOAK_ISSUER: https://auth.mymusic.coach/realms/mymusic-coach
+      KEYCLOAK_ADMIN_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN_REALM: mymusic-coach
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+
   # ── Next.js Web App ────────────────────────────────────────
   # SSO: KEYCLOAK_ISSUER must be the public URL (auth.mymusic.coach) because
   # the browser follows the OIDC redirect — the internal keycloak:8080 address
@@ -78,6 +87,8 @@ services:
       PRETIX_URL: https://tickets.mymusic.coach
       PRETIX_ADMIN_EMAIL: ${PRETIX_ADMIN_EMAIL:-admin@mymusic.coach}
       PRETIX_ADMIN_PASSWORD: ${PRETIX_ADMIN_PASSWORD}
+      PRETIX_EXTRA_ADMIN_EMAIL: ${PRETIX_EXTRA_ADMIN_EMAIL:-}
+      PRETIX_EXTRA_ADMIN_PASSWORD: ${PRETIX_EXTRA_ADMIN_PASSWORD:-}
       PRETIX_OIDC_ISSUER: https://auth.mymusic.coach/realms/mymusic-coach
       PRETIX_OIDC_CLIENT_ID: ${PRETIX_OIDC_CLIENT_ID:-pretix-oidc}
       PRETIX_OIDC_CLIENT_SECRET: ${PRETIX_OIDC_CLIENT_SECRET}

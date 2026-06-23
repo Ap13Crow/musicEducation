@@ -127,10 +127,17 @@ services:
       PRETIX_ORGANISER_SLUG: ${PRETIX_ORGANISER_SLUG:-mymusic-coach}
       MOODLE_URL: ${MOODLE_URL:-http://moodle:8080}
       MOODLE_WS_TOKEN: ${MOODLE_WS_TOKEN:-}
+      MOODLE_PUBLIC_HOST: ${MOODLE_PUBLIC_HOST:-learn.mymusic.coach}
       LIBREBOOKING_URL: ${LIBREBOOKING_URL:-http://librebooking:8080}
       LIBREBOOKING_API_USER: ${LIBREBOOKING_API_USER:-admin}
       LIBREBOOKING_API_PASSWORD: ${LIBREBOOKING_API_PASSWORD:-}
       PRETIX_WEBHOOK_SECRET: ${PRETIX_WEBHOOK_SECRET:-}
+      # ── Keycloak (for admin role sync) ───────────────────
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://keycloak:8080/realms/mymusic-coach}
+      KEYCLOAK_ADMIN_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN_REALM: ${KEYCLOAK_REALM:-mymusic-coach}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin_dev_pw}
       # ── General ──────────────────────────────────────────
       FRONTEND_URL: ${FRONTEND_URL:-http://app.mymusic-coach.test}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://app.mymusic-coach.test}
@@ -371,6 +378,9 @@ services:
       PRETIX_MAIL_PASSWORD: ${PRETIX_MAIL_PASSWORD:-}
       PRETIX_ADMIN_EMAIL: ${PRETIX_ADMIN_EMAIL:-admin@mymusic.coach}
       PRETIX_ADMIN_PASSWORD: ${PRETIX_ADMIN_PASSWORD:-}
+      PRETIX_EXTRA_ADMIN_EMAIL: ${PRETIX_EXTRA_ADMIN_EMAIL:-}
+      PRETIX_EXTRA_ADMIN_PASSWORD: ${PRETIX_EXTRA_ADMIN_PASSWORD:-}
+      PRETIX_API_TOKEN: ${PRETIX_API_TOKEN:-}
       PRETIX_OIDC_ISSUER: ${PRETIX_OIDC_ISSUER:-http://keycloak:8080/realms/mymusic-coach}
       PRETIX_OIDC_CLIENT_ID: ${PRETIX_OIDC_CLIENT_ID:-pretix-oidc}
       PRETIX_OIDC_CLIENT_SECRET: ${PRETIX_OIDC_CLIENT_SECRET:-}

@@ -158,8 +158,16 @@ export const courseResolvers = {
       const coursesToImport = moodleCourses.filter((c: any) => c.id !== 1); // skip site-level course
 
       for (const mc of coursesToImport) {
+        const courseStatus = (mc as any).visible === 0 ? 'DRAFT' : 'PUBLISHED';
         const existing = await prisma.course.findFirst({ where: { moodleCourseId: mc.id } });
-        if (existing) { skipped++; continue; }
+        if (existing) {
+          // Keep status in sync with Moodle visibility
+          if (existing.status !== courseStatus) {
+            await prisma.course.update({ where: { id: existing.id }, data: { status: courseStatus } });
+          }
+          skipped++;
+          continue;
+        }
 
         const slug = mc.shortname.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + mc.id;
         const slugConflict = await prisma.course.findUnique({ where: { slug } });
@@ -169,7 +177,7 @@ export const courseResolvers = {
             title: mc.fullname,
             slug: slugConflict ? slug + '-moodle' : slug,
             moodleCourseId: mc.id,
-            status: 'DRAFT',
+            status: courseStatus,
             instruments: [],
             musicStyles: [],
           },

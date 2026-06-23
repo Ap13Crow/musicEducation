@@ -41,6 +41,42 @@ export class LibreBookingAdapter implements SchedulingAdapter {
     logger.info('LibreBooking: authenticated successfully');
   }
 
+  // ── User provisioning ─────────────────────────────────────────
+
+  async createUser(params: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    username: string;
+    password: string;
+    timezone?: string;
+  }): Promise<{ id: number } | null> {
+    try {
+      const res = await this.client.post('/Users/', {
+        firstName: params.firstName,
+        lastName: params.lastName,
+        emailAddress: params.email,
+        userName: params.username,
+        password: params.password,
+        timezone: params.timezone ?? 'Europe/Zurich',
+        language: 'en_us',
+        phone: '',
+        organization: '',
+        position: 'teacher',
+      });
+      const id: number = res.data?.userId ?? res.data?.id;
+      logger.info({ libreBookingUserId: id, email: params.email }, 'LibreBooking: user created');
+      return { id };
+    } catch (err: any) {
+      if (err?.response?.status === 409) {
+        logger.info({ email: params.email }, 'LibreBooking: user already exists');
+        return null;
+      }
+      logger.error(err, 'LibreBooking: failed to create user');
+      return null;
+    }
+  }
+
   // ── SchedulingAdapter implementation ─────────────────────────
 
   async getAvailability(

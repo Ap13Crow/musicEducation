@@ -15,9 +15,18 @@ export class MoodleAdapter {
 
   constructor(baseUrl: string, wsToken: string) {
     this.token = wsToken;
+    // With sslproxy=true Moodle compares scheme+host against wwwroot.
+    // X-Forwarded-Proto: https makes is_https() return true.
+    // Host: <public hostname> makes the reconstructed URL match wwwroot so
+    // Moodle doesn't issue an HTML redirect when called from the internal network.
+    const moodleHost = (process.env.MOODLE_PUBLIC_HOST ?? 'learn.mymusic.coach');
     this.client = axios.create({
       baseURL: `${baseUrl}/webservice/rest`,
       params: { wstoken: this.token, moodlewsrestformat: 'json' },
+      headers: {
+        'X-Forwarded-Proto': 'https',
+        Host: moodleHost,
+      },
     });
   }
 
@@ -77,7 +86,7 @@ export class MoodleAdapter {
   }
 
   async listCourses(): Promise<
-    Array<{ id: number; shortname: string; fullname: string }>
+    Array<{ id: number; shortname: string; fullname: string; visible: number }>
   > {
     const res = await this.client.post('/server.php', null, {
       params: {
@@ -85,13 +94,14 @@ export class MoodleAdapter {
         wsfunction: 'core_course_get_courses',
       },
     });
-    return (res.data ?? []).map(
-      (c: { id: number; shortname: string; fullname: string }) => ({
+    return (res.data ?? [])
+      .filter((c: any) => c.id > 1) // exclude Moodle's built-in site course (id=1)
+      .map((c: { id: number; shortname: string; fullname: string; visible: number }) => ({
         id: c.id,
         shortname: c.shortname,
         fullname: c.fullname,
-      }),
-    );
+        visible: c.visible ?? 1,
+      }));
   }
 
   // ── Health ─────────────────────────────────────────────────

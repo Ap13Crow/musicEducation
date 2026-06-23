@@ -167,6 +167,15 @@ type TeacherAvailability {
   endTime: String
 }
 
+type StudentAvailability {
+  id: ID!
+  userId: ID!
+  dayOfWeek: Int!
+  startTime: String!
+  endTime: String!
+  timezone: String!
+}
+
 type GamificationProfile {
   id: ID!
   userId: ID!
@@ -706,6 +715,9 @@ type Query {
   # Reviews
   reviews(courseId: ID, eventId: ID, bookingId: ID, page: Int, limit: Int): ReviewConnection!
 
+  # Student availability (self-declaration)
+  myAvailability: [StudentAvailability!]!
+
   # Admin
   adminStats: AdminStats!
   adminSettings: [AdminSetting!]!
@@ -739,6 +751,10 @@ type Mutation {
   ): TeacherProfile!
   addCertification(title: String!, issuingBody: String, issuedYear: Int, documentUrl: String): TeacherCertification!
   setAvailability(slots: [AvailabilitySlotInput!]!): [TeacherAvailability!]!
+
+  # Student availability self-declaration
+  setStudentAvailability(slots: [AvailabilitySlotInput!]!): [StudentAvailability!]!
+
   completeOnboarding: User!
   followUser(userId: ID!): User!
   unfollowUser(userId: ID!): User!
@@ -788,4 +804,5 @@ type Mutation {
   updateAdminSetting(key: String!, value: String!): AdminSetting!
   adminBanUser(userId: ID!): User!
   adminSetRole(userId: ID!, role: Role!): User!
+  syncKeycloakRoles: MoodleSyncResult!
 }
