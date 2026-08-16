@@ -295,9 +295,21 @@ jobs:
         run: |
           set -euo pipefail
           discovery_file="$RUNNER_TEMP/openid-configuration.json"
+          curl_error_file="$RUNNER_TEMP/openid-configuration.curl-error"
+          oidc_host="${OIDC_DISCOVERY_URL#https://}"
+          oidc_host="${oidc_host%%/*}"
+          http_code="000"
 
-          for attempt in $(seq 1 60); do
-            if curl --fail --silent --show-error "$OIDC_DISCOVERY_URL" >"$discovery_file" 2>/dev/null; then
+          for attempt in $(seq 1 30); do
+            : >"$curl_error_file"
+            http_code="$(curl --ipv4 --silent --show-error \
+              --connect-timeout 5 \
+              --max-time 15 \
+              --output "$discovery_file" \
+              --write-out '%{http_code}' \
+              "$OIDC_DISCOVERY_URL" 2>"$curl_error_file" || true)"
+
+            if [[ "$http_code" =~ ^2[0-9][0-9]$ ]]; then
               issuer="$(jq -er '.issuer' "$discovery_file")"
               test "$issuer" = "$OIDC_ISSUER" || {
                 echo "Unexpected public issuer '$issuer'; expected '$OIDC_ISSUER'." >&2
@@ -306,10 +318,24 @@ jobs:
               echo "Public OIDC discovery is reachable with the expected issuer."
               exit 0
             fi
+
+            if (( attempt == 1 || attempt % 10 == 0 )); then
+              echo "Public OIDC attempt $attempt returned HTTP $http_code." >&2
+              cat "$curl_error_file" >&2
+            fi
             sleep 2
           done
 
           echo "Public OIDC discovery did not become reachable through Cloudflare." >&2
+          echo "IPv4 DNS resolution for $oidc_host:" >&2
+          getent ahostsv4 "$oidc_host" >&2 || true
+          echo "Last curl error (HTTP $http_code):" >&2
+          cat "$curl_error_file" >&2
+          if test -s "$discovery_file"; then
+            echo "Response preview:" >&2
+            head -c 512 "$discovery_file" >&2
+            echo >&2
+          fi
           exit 1
 
       - name: Report Keycloak status and resource use
