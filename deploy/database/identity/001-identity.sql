@@ -1,0 +1,58 @@
+DO $$ BEGIN
+  CREATE TYPE "Role" AS ENUM ('STUDENT', 'TEACHER', 'ADMIN');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE "SkillLevel" AS ENUM ('BEGINNER', 'ELEMENTARY', 'INTERMEDIATE', 'ADVANCED', 'PROFESSIONAL');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS "User" (
+  "id" TEXT PRIMARY KEY,
+  "email" TEXT NOT NULL UNIQUE,
+  "emailVerified" BOOLEAN NOT NULL DEFAULT false,
+  "role" "Role" NOT NULL DEFAULT 'STUDENT',
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "UserProfile" (
+  "id" TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL UNIQUE REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "displayName" TEXT,
+  "bio" TEXT,
+  "avatarUrl" TEXT,
+  "instruments" TEXT[] NOT NULL,
+  "musicStyles" TEXT[] NOT NULL,
+  "skillLevel" "SkillLevel" NOT NULL DEFAULT 'BEGINNER',
+  "city" TEXT,
+  "country" TEXT,
+  "language" TEXT NOT NULL DEFAULT 'en',
+  "onboardingDone" BOOLEAN NOT NULL DEFAULT false,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "GamificationProfile" (
+  "id" TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL UNIQUE REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "xp" INTEGER NOT NULL DEFAULT 0,
+  "totalPoints" INTEGER NOT NULL DEFAULT 0,
+  "level" INTEGER NOT NULL DEFAULT 1,
+  "skillLevel" "SkillLevel" NOT NULL DEFAULT 'BEGINNER',
+  "badges" TEXT[] NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "UserExternalIdentity" (
+  "id" TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "provider" TEXT NOT NULL,
+  "externalId" TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "UserExternalIdentity_provider_externalId_key" UNIQUE ("provider", "externalId")
+);
+
+CREATE INDEX IF NOT EXISTS "UserExternalIdentity_userId_idx" ON "UserExternalIdentity"("userId");
