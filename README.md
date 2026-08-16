@@ -2,6 +2,12 @@
 
 A modern, fully open-source, AI-powered education platform for classical music built around **three pillars**:
 
+> **Architecture rebuild:** the provider-neutral Kubernetes bootstrap is under
+> [`deploy/`](deploy/), contributor commands are in
+> [`docs/development.md`](docs/development.md), and coding-agent constraints are
+> in [`AGENTS.md`](AGENTS.md). The Compose stack and `k8s/deployment.yaml` remain
+> legacy migration references while the new architecture is built.
+
 | Pillar | Description |
 |--------|-------------|
 | 🎓 **Theory** | Moodle-powered video courses with quizzes and progress tracking |
@@ -236,4 +242,3 @@ make help           Show all available targets
 ## License
 
 [MIT](LICENSE)
-
