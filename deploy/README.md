@@ -1,6 +1,6 @@
 # Kubernetes architecture scaffold
 
-This directory is the provider-neutral Kustomize home for the MyMusic.Coach rebuild. The foundation development overlay renders only the namespace; database credentials, the provider CA, and the Cloudflare Tunnel token are synchronized at deployment time and are never committed. Keycloak is a separate, opt-in overlay so the foundation workflow cannot deploy a persistent workload as a side effect.
+This directory is the provider-neutral Kustomize home for the MyMusic.Coach rebuild. The foundation development overlay renders only the namespace; database credentials, the provider CA, and the Cloudflare Tunnel token are synchronized at deployment time and are never committed. Keycloak and its one-time development realm bootstrap are separate, opt-in overlays so the foundation workflow cannot deploy persistent identity resources as a side effect.
 
 The older `k8s/deployment.yaml` is a legacy reference. It assumes nginx ingress, cert-manager, Redis, in-cluster PostgreSQL, HPAs, and mutable image tags; it must not be used as the target cluster definition.
 
@@ -23,6 +23,9 @@ deploy/
       kustomization.yaml
       keycloak/
         kustomization.yaml
+      keycloak-realm/
+        realm-import.yaml
+        kustomization.yaml
     prod/
       kustomization.yaml
   platform/
@@ -43,7 +46,7 @@ The PostgreSQL Jobs are one-shot probes. They verify TLS, connectivity, database
 
 The Cloudflare Tunnel is a separate platform target so it can be deployed independently after its token exists. It creates one outbound-only `cloudflared` replica for development and no public Kubernetes Service, Ingress, or LoadBalancer.
 
-The official Keycloak Operator is pinned to `26.7.0`. The Keycloak workload uses the existing `postgres-keycloak` Secret and `postgres-ca` ConfigMap, enables PostgreSQL server verification, and exposes only an internal `ClusterIP` Service. It does not include a realm, ingress, public load balancer, or Cloudflare Tunnel.
+The official Keycloak Operator is pinned to `26.7.0`. The Keycloak workload uses the existing `postgres-keycloak` Secret and `postgres-ca` ConfigMap, enables PostgreSQL server verification, and exposes only an internal `ClusterIP` Service. The development overlay adds a one-time, resource-bounded realm import. Cloudflare reaches the Service through the outbound tunnel; no ingress controller or public load balancer is created.
 
 ## Target topology
 

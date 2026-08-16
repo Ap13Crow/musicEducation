@@ -7,6 +7,7 @@ on:
       - 'deploy/operators/keycloak/**'
       - 'deploy/workloads/keycloak/**'
       - 'deploy/overlays/dev/keycloak/**'
+      - 'deploy/overlays/dev/keycloak-realm/**'
       - 'deploy/README.md'
       - 'docs/deployment.md'
       - 'docs/development.md'
@@ -36,6 +37,10 @@ env:
   CLUSTER_NAME: mymusiccoach-dev
   EXPECTED_CONTEXT: do-ams3-mymusiccoach-dev
   NAMESPACE: mymusic-coach
+  OIDC_ISSUER: https://auth-dev.mymusic.coach/realms/mymusic-coach
+  OIDC_DISCOVERY_URL: https://auth-dev.mymusic.coach/realms/mymusic-coach/.well-known/openid-configuration
+  REALM_IMPORT: mymusiccoach-dev-realm
+  CLIENT_SECRET_NAME: keycloak-client-secrets
 
 jobs:
   validate:
@@ -56,11 +61,14 @@ jobs:
       - name: Render development Keycloak workload
         run: kubectl kustomize deploy/overlays/dev/keycloak > "$RUNNER_TEMP/keycloak.yaml"
 
+      - name: Render development realm bootstrap
+        run: kubectl kustomize deploy/overlays/dev/keycloak-realm > "$RUNNER_TEMP/keycloak-realm.yaml"
+
       - name: Enforce manifest safety constraints
         shell: bash
         run: |
           set -euo pipefail
-          manifests=("$RUNNER_TEMP/keycloak-operator.yaml" "$RUNNER_TEMP/keycloak.yaml")
+          manifests=("$RUNNER_TEMP/keycloak-operator.yaml" "$RUNNER_TEMP/keycloak.yaml" "$RUNNER_TEMP/keycloak-realm.yaml")
 
           if grep -Fq 'my-music-coach' "${manifests[@]}"; then
             echo "Rendered Keycloak manifests target the obsolete namespace 'my-music-coach'; use 'mymusic-coach'." >&2
@@ -80,6 +88,13 @@ jobs:
           grep -Fq 'name: db-tls-mode' "$RUNNER_TEMP/keycloak.yaml"
           grep -Fq 'value: verify-server' "$RUNNER_TEMP/keycloak.yaml"
           grep -Fq 'enabled: false' "$RUNNER_TEMP/keycloak.yaml"
+          grep -Fq 'hostname: https://auth-dev.mymusic.coach' "$RUNNER_TEMP/keycloak.yaml"
+          grep -Fq 'headers: xforwarded' "$RUNNER_TEMP/keycloak.yaml"
+          grep -Fq 'kind: KeycloakRealmImport' "$RUNNER_TEMP/keycloak-realm.yaml"
+          grep -Fq 'realm: mymusic-coach' "$RUNNER_TEMP/keycloak-realm.yaml"
+          grep -Fq 'clientId: mymusic-coach-web' "$RUNNER_TEMP/keycloak-realm.yaml"
+          grep -Fq 'secret: ${WEB_CLIENT_SECRET}' "$RUNNER_TEMP/keycloak-realm.yaml"
+          grep -Fq 'memory: 256Mi' "$RUNNER_TEMP/keycloak-realm.yaml"
 
   reconcile:
     name: Reconcile or inspect development Keycloak
@@ -193,6 +208,110 @@ jobs:
           echo "Keycloak readiness endpoint did not return success." >&2
           exit 1
 
+      - name: Bootstrap development realm
+        id: realm
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+
+          check_realm() {
+            local port_forward_log="$RUNNER_TEMP/keycloak-realm-port-forward.log"
+            kubectl -n "$NAMESPACE" port-forward service/keycloak 19080:8080 >"$port_forward_log" 2>&1 &
+            local port_forward_pid=$!
+
+            for attempt in $(seq 1 30); do
+              if curl --fail --silent \
+                -H 'Host: auth-dev.mymusic.coach' \
+                -H 'X-Forwarded-Host: auth-dev.mymusic.coach' \
+                -H 'X-Forwarded-Proto: https' \
+                -H 'X-Forwarded-Port: 443' \
+                http://127.0.0.1:19080/realms/mymusic-coach/.well-known/openid-configuration \
+                >/dev/null 2>&1; then
+                kill "$port_forward_pid" 2>/dev/null || true
+                wait "$port_forward_pid" 2>/dev/null || true
+                return 0
+              fi
+              sleep 1
+            done
+
+            kill "$port_forward_pid" 2>/dev/null || true
+            wait "$port_forward_pid" 2>/dev/null || true
+            return 1
+          }
+
+          if check_realm; then
+            client_secret_data="$(kubectl -n "$NAMESPACE" get secret "$CLIENT_SECRET_NAME" \
+              -o 'jsonpath={.data.WEB_CLIENT_SECRET}' 2>/dev/null || true)"
+            test -n "$client_secret_data" || {
+              echo "Realm exists, but Secret '$CLIENT_SECRET_NAME' is missing WEB_CLIENT_SECRET. Refusing to generate a mismatched replacement." >&2
+              exit 1
+            }
+            echo "Realm mymusic-coach already exists; bootstrap is idempotently skipped."
+            exit 0
+          fi
+
+          if ! kubectl -n "$NAMESPACE" get secret "$CLIENT_SECRET_NAME" >/dev/null 2>&1; then
+            client_secret="$(openssl rand -base64 48 | tr -d '\n')"
+            kubectl -n "$NAMESPACE" create secret generic "$CLIENT_SECRET_NAME" \
+              --from-literal=WEB_CLIENT_SECRET="$client_secret" \
+              --dry-run=client -o yaml | kubectl apply -f -
+            unset client_secret
+            echo "Generated the development OIDC client Secret inside Kubernetes."
+          fi
+
+          client_secret_data="$(kubectl -n "$NAMESPACE" get secret "$CLIENT_SECRET_NAME" \
+            -o 'jsonpath={.data.WEB_CLIENT_SECRET}')"
+          test -n "$client_secret_data" || {
+            echo "Secret '$CLIENT_SECRET_NAME' is missing WEB_CLIENT_SECRET." >&2
+            exit 1
+          }
+
+          kubectl -n "$NAMESPACE" delete keycloakrealmimport "$REALM_IMPORT" \
+            --ignore-not-found --wait=true
+          kubectl apply -k deploy/overlays/dev/keycloak-realm
+
+          if ! kubectl -n "$NAMESPACE" wait \
+            --for=condition=Done \
+            --timeout=600s \
+            "keycloakrealmimport/$REALM_IMPORT"; then
+            kubectl -n "$NAMESPACE" get keycloakrealmimport "$REALM_IMPORT" -o yaml || true
+            kubectl -n "$NAMESPACE" get jobs,pods -l app.kubernetes.io/component=realm-bootstrap -o wide || true
+            exit 1
+          fi
+
+          check_realm || {
+            echo "Realm import completed, but internal OIDC discovery is unavailable." >&2
+            exit 1
+          }
+
+          kubectl -n "$NAMESPACE" delete keycloakrealmimport "$REALM_IMPORT" --wait=true
+          echo "Realm bootstrap completed and its one-shot import resources were cleaned up."
+
+      - name: Verify public OIDC discovery through Cloudflare
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          discovery_file="$RUNNER_TEMP/openid-configuration.json"
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error "$OIDC_DISCOVERY_URL" >"$discovery_file" 2>/dev/null; then
+              issuer="$(jq -er '.issuer' "$discovery_file")"
+              test "$issuer" = "$OIDC_ISSUER" || {
+                echo "Unexpected public issuer '$issuer'; expected '$OIDC_ISSUER'." >&2
+                exit 1
+              }
+              echo "Public OIDC discovery is reachable with the expected issuer."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "Public OIDC discovery did not become reachable through Cloudflare." >&2
+          exit 1
+
       - name: Report Keycloak status and resource use
         if: always()
         shell: bash
@@ -207,6 +326,12 @@ jobs:
           kubectl -n "$NAMESPACE" get service/keycloak networkpolicy/keycloak-network-policy 2>/dev/null || true
           kubectl -n "$NAMESPACE" get pods -l app=keycloak -o wide 2>/dev/null || true
 
+          if curl --fail --silent "$OIDC_DISCOVERY_URL" >/dev/null 2>&1; then
+            echo "Public OIDC discovery is reachable."
+          else
+            echo "Public OIDC discovery is not reachable."
+          fi
+
           if ! kubectl -n "$NAMESPACE" top pods -l app=keycloak; then
             echo "Pod metrics are not available yet; readiness is reported separately."
           fi
@@ -218,4 +343,12 @@ jobs:
           kubectl -n "$NAMESPACE" get keycloak keycloak -o yaml || true
           kubectl -n "$NAMESPACE" describe keycloak keycloak || true
           kubectl -n "$NAMESPACE" describe statefulset keycloak || true
+          kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -n 100 || true
+
+      - name: Diagnose a failed realm bootstrap
+        if: always() && inputs.operation == 'deploy' && steps.realm.outcome == 'failure'
+        shell: bash
+        run: |
+          kubectl -n "$NAMESPACE" get keycloakrealmimport "$REALM_IMPORT" -o yaml || true
+          kubectl -n "$NAMESPACE" get jobs,pods -l app.kubernetes.io/component=realm-bootstrap -o wide || true
           kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -n 100 || true

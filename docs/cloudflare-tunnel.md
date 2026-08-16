@@ -48,19 +48,19 @@ Then run `deploy`. The workflow:
 
 The Cloudflare dashboard should then show the `mymusiccoach-dev` tunnel as healthy. This confirms the connector, but no hostname is public yet.
 
-## 4. Add development routes later
+## 4. Development routes
 
-Do not change the current `mymusic.coach` apex route during development. Once the corresponding Kubernetes Services exist, add published application routes to the same tunnel, for example:
+Do not change the current `mymusic.coach` apex route during development. Add each development hostname only after its internal Kubernetes Service is healthy. The Keycloak route is active and is verified by the protected deployment workflow:
 
 | Public hostname | Internal service target | When to add it |
 | --- | --- | --- |
-| `auth-dev.mymusic.coach` | `http://keycloak.mymusic-coach.svc.cluster.local:8080` | After Keycloak is ready |
+| `auth-dev.mymusic.coach` | `http://keycloak.mymusic-coach.svc.cluster.local:8080` | Active; OIDC discovery is deployment-tested |
 | `dev.mymusic.coach` | `http://web.mymusic-coach.svc.cluster.local:3000` | After the web Deployment is ready |
 | `api-dev.mymusic.coach` | `http://api.mymusic-coach.svc.cluster.local:3001` | Only if the API needs a separate public hostname |
 
 These ports are target contracts for the new workload manifests and should be confirmed when those workloads are implemented. Prefer keeping browser API traffic behind the web hostname when the application architecture permits it.
 
-Before exposing the Keycloak hostname, configure its external hostname and proxy headers for Cloudflare. Protect administrative paths separately; the user-facing OpenID Connect endpoints must remain reachable by students and teachers.
+Keycloak uses the fixed external hostname `https://auth-dev.mymusic.coach` and accepts Cloudflare's overwritten `X-Forwarded-*` headers. Only port `8080` is routed; never publish management port `9000`. Protect administrative paths separately while keeping user-facing OpenID Connect endpoints reachable by students and teachers.
 
 ## Operations and security
 
