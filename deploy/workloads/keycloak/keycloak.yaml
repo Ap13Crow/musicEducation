@@ -47,7 +47,10 @@ spec:
     serviceName: keycloak
     serviceHttpPort: 8080
   hostname:
-    strict: false
+    hostname: https://auth-dev.mymusic.coach
+    strict: true
+  proxy:
+    headers: xforwarded
   ingress:
     enabled: false
 
@@ -57,6 +60,9 @@ spec:
       - namespaceSelector:
           matchLabels:
             kubernetes.io/metadata.name: mymusic-coach
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: cloudflared
     management:
       - namespaceSelector:
           matchLabels:

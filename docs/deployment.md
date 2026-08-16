@@ -2,7 +2,7 @@
 
 The development cluster is deployed from GitHub Actions. A local repository clone is not required: GitHub stores the source, the workflow authenticates to DigitalOcean Kubernetes, and Kubernetes pulls immutable application images when those workloads are added.
 
-The foundation workflow deploys only the namespace, the managed PostgreSQL CA and credential contracts, and two short-lived database smoke-test Jobs. Keycloak is the first opt-in persistent workload and has its own workflow. The application, realm configuration, Cloudflare Tunnel, ingress controller, and public LoadBalancer remain deferred.
+The foundation workflow deploys only the namespace, the managed PostgreSQL CA and credential contracts, and two short-lived database smoke-test Jobs. Keycloak, its development realm, and Cloudflare Tunnel are opt-in workloads with protected workflows. The application workloads remain separate increments; no ingress controller or public LoadBalancer is used.
 
 ## GitHub environment
 
@@ -52,9 +52,9 @@ It does not yet run Prisma migrations or create Keycloak tables. Those are separ
 
 After `deploy-and-test` succeeds, open **Actions → Development Keycloak → Run workflow** on the `main` branch and choose one operation:
 
-- `plan` renders the pinned official operator and the Keycloak custom resource, rejects committed Kubernetes Secrets and mutable `latest` tags, and does not contact the cluster.
-- `deploy` verifies the existing `postgres-keycloak` Secret and `postgres-ca` ConfigMap, installs Keycloak Operator `26.7.0`, reconciles one Keycloak instance, waits for readiness, checks the management health endpoint, verifies that the Service is a `ClusterIP`, and reports Pod resource use when metrics are available.
-- `status` performs read-only cluster inspection and reports the Keycloak custom resource, Deployments, internal Service, NetworkPolicy, Pods, and available resource metrics.
+- `plan` renders the pinned official operator, Keycloak custom resource, and one-time development realm import; it rejects committed Kubernetes Secrets and mutable `latest` tags without contacting the cluster.
+- `deploy` verifies the database prerequisites, installs Keycloak Operator `26.7.0`, reconciles one Keycloak instance, checks internal health, creates the runtime web-client Secret if the realm does not exist, imports the realm once, cleans up the import Job, and verifies public OIDC discovery through Cloudflare.
+- `status` performs read-only cluster inspection and reports the Keycloak custom resource, operator Deployment, Keycloak StatefulSet, internal Service, NetworkPolicy, Pods, public discovery reachability, and available resource metrics.
 
 The workflow refuses cluster access from branches other than `main`. Merging these manifests does not deploy them; a reviewed manual `deploy` run is still required.
 
@@ -62,9 +62,34 @@ The Keycloak custom resource connects to database `keycloak` using the `keycloak
 
 The operator creates the bootstrap administrator credentials in the Kubernetes Secret `keycloak-initial-admin`. Do not print, copy into GitHub logs, or commit those values. Realm import and a permanent administrator lifecycle are intentionally separate changes.
 
-The internal service is named `keycloak` and exposes application HTTP on port `8080` plus the management endpoint on port `9000`. Ingress is disabled, and the operator-managed NetworkPolicy allows those ports only from the `mymusic-coach` namespace. This keeps the first deployment private while still allowing a later `cloudflared` Pod in the same namespace to connect.
+The internal service is named `keycloak` and exposes application HTTP on port `8080` plus the management endpoint on port `9000`. Ingress is disabled. The operator-managed NetworkPolicy permits application HTTP from the labelled `cloudflared` Pod in `mymusic-coach`; port `9000` remains internal and is never part of the Cloudflare route.
 
-The initial development sizing is one replica with a 250 millicore/512 MiB request and a 1 CPU/1 GiB limit. Treat this as a measurement baseline. Review `status` output under realistic login and token traffic before changing limits, adding replicas, importing the realm, or exposing Keycloak through Cloudflare.
+The initial development sizing is one replica with a 250 millicore/512 MiB request and a 1 CPU/1 GiB limit. Treat this as a measurement baseline. Review `status` output under realistic login and token traffic before changing limits or adding replicas.
+
+## Development realm bootstrap
+
+The development realm is named `mymusic-coach`. It enables self-registration,
+uses email addresses as usernames, and assigns `STUDENT` by default. Realm
+roles are `STUDENT`, `TEACHER`, and `ADMIN`. Email verification remains
+disabled until SMTP is configured.
+
+The confidential `mymusic-coach-web` client accepts
+`https://dev.mymusic.coach/*` redirects and requires authorization code flow
+with PKCE. On the first bootstrap, the workflow generates its client secret
+inside Kubernetes Secret `keycloak-client-secrets` under key
+`WEB_CLIENT_SECRET`. If the realm already exists but this Secret is missing,
+the workflow fails rather than generating a value that would no longer match
+Keycloak.
+
+The `KeycloakRealmImport` resource is creation-only. The workflow applies it
+only when discovery proves the realm is absent, waits for `Done`, verifies the
+realm internally, and deletes the import resource so its Job and Pod are
+cleaned up. The import Job requests 250 millicores and 256 MiB instead of
+inheriting Keycloak's larger limits.
+
+The public issuer is
+`https://auth-dev.mymusic.coach/realms/mymusic-coach`. The deployment fails if
+Cloudflare discovery is unreachable or advertises another issuer.
 
 ## Secret lifecycle
 
