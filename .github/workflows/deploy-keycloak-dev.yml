@@ -158,7 +158,7 @@ jobs:
             --for=condition=Ready \
             --timeout=600s \
             keycloak/keycloak
-          kubectl -n "$NAMESPACE" rollout status deployment/keycloak --timeout=600s
+          kubectl -n "$NAMESPACE" rollout status statefulset/keycloak --timeout=600s
 
           service_type="$(kubectl -n "$NAMESPACE" get service keycloak -o jsonpath='{.spec.type}')"
           test "$service_type" = "ClusterIP" || {
@@ -203,7 +203,7 @@ jobs:
           fi
 
           kubectl -n "$NAMESPACE" get keycloak keycloak -o wide 2>/dev/null || true
-          kubectl -n "$NAMESPACE" get deployment/keycloak-operator deployment/keycloak 2>/dev/null || true
+          kubectl -n "$NAMESPACE" get deployment/keycloak-operator statefulset/keycloak 2>/dev/null || true
           kubectl -n "$NAMESPACE" get service/keycloak networkpolicy/keycloak-network-policy 2>/dev/null || true
           kubectl -n "$NAMESPACE" get pods -l app=keycloak -o wide 2>/dev/null || true
 
@@ -217,5 +217,5 @@ jobs:
         run: |
           kubectl -n "$NAMESPACE" get keycloak keycloak -o yaml || true
           kubectl -n "$NAMESPACE" describe keycloak keycloak || true
-          kubectl -n "$NAMESPACE" describe deployment keycloak || true
+          kubectl -n "$NAMESPACE" describe statefulset keycloak || true
           kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -n 100 || true
