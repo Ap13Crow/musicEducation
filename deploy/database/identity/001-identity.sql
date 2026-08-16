@@ -23,8 +23,8 @@ CREATE TABLE IF NOT EXISTS "UserProfile" (
   "displayName" TEXT,
   "bio" TEXT,
   "avatarUrl" TEXT,
-  "instruments" TEXT[] NOT NULL,
-  "musicStyles" TEXT[] NOT NULL,
+  "instruments" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  "musicStyles" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
   "skillLevel" "SkillLevel" NOT NULL DEFAULT 'BEGINNER',
   "city" TEXT,
   "country" TEXT,
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS "GamificationProfile" (
   "totalPoints" INTEGER NOT NULL DEFAULT 0,
   "level" INTEGER NOT NULL DEFAULT 1,
   "skillLevel" "SkillLevel" NOT NULL DEFAULT 'BEGINNER',
-  "badges" TEXT[] NOT NULL,
+  "badges" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMPTZ NOT NULL
 );
