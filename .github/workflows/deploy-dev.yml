@@ -22,8 +22,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: mymusiccoach-development
-  cancel-in-progress: false
+  group: >-
+    ${{ github.event_name == 'workflow_dispatch' && inputs.operation != 'plan' &&
+    'mymusiccoach-development' || format('mymusiccoach-validation-{0}', github.ref) }}
+  cancel-in-progress: >-
+    ${{ github.event_name != 'workflow_dispatch' || inputs.operation == 'plan' }}
 
 env:
   CLUSTER_NAME: mymusiccoach-dev
@@ -53,7 +56,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -Eq '^kind:[[:space:]]+Secret$' "$RUNNER_TEMP/dev.yaml" "$RUNNER_TEMP/postgres-tests.yaml"; then
+          if grep -Eq '^[[:space:]]*kind:[[:space:]]+Secret[[:space:]]*$' "$RUNNER_TEMP/dev.yaml" "$RUNNER_TEMP/postgres-tests.yaml"; then
             echo "Rendered manifests must not contain Kubernetes Secret resources." >&2
             exit 1
           fi
@@ -95,23 +98,29 @@ jobs:
 
       - name: Remove completed or failed smoke-test Jobs
         if: inputs.operation == 'cleanup-tests'
+        shell: bash
         run: |
-          kubectl -n "$NAMESPACE" delete job \
-            postgres-mymusiccoach-smoke \
-            postgres-keycloak-smoke \
-            --ignore-not-found
+          set -euo pipefail
+          if kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
+            kubectl -n "$NAMESPACE" delete job \
+              postgres-mymusiccoach-smoke \
+              postgres-keycloak-smoke \
+              --ignore-not-found
+          else
+            echo "Namespace '$NAMESPACE' does not exist; nothing to clean up."
+          fi
 
       - name: Validate deployment configuration
         if: inputs.operation == 'deploy-and-test'
         env:
-          POSTGRES_HOST: ${{ vars.POSTGRES_HOST }}
+          PGHOST: ${{ vars.PGHOST }}
           POSTGRES_CA_CERT: ${{ secrets.POSTGRES_CA_CERT }}
           POSTGRES_MYMUSICCOACH_PASSWORD: ${{ secrets.POSTGRES_MYMUSICCOACH_PASSWORD }}
           POSTGRES_KEYCLOAK_PASSWORD: ${{ secrets.POSTGRES_KEYCLOAK_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$POSTGRES_HOST" || { echo "POSTGRES_HOST is not configured." >&2; exit 1; }
+          test -n "$PGHOST" || { echo "PGHOST is not configured." >&2; exit 1; }
           test -n "$POSTGRES_MYMUSICCOACH_PASSWORD" || { echo "POSTGRES_MYMUSICCOACH_PASSWORD is not configured." >&2; exit 1; }
           test -n "$POSTGRES_KEYCLOAK_PASSWORD" || { echo "POSTGRES_KEYCLOAK_PASSWORD is not configured." >&2; exit 1; }
           grep -q -- '-----BEGIN CERTIFICATE-----' <<< "$POSTGRES_CA_CERT" || {
@@ -122,8 +131,8 @@ jobs:
       - name: Synchronize namespace, database CA, and database Secrets
         if: inputs.operation == 'deploy-and-test'
         env:
-          POSTGRES_HOST: ${{ vars.POSTGRES_HOST }}
-          POSTGRES_PORT: ${{ vars.POSTGRES_PORT || '25060' }}
+          PGHOST: ${{ vars.PGHOST }}
+          PGPORT: ${{ vars.PGPORT || '25060' }}
           POSTGRES_CA_CERT: ${{ secrets.POSTGRES_CA_CERT }}
           POSTGRES_MYMUSICCOACH_PASSWORD: ${{ secrets.POSTGRES_MYMUSICCOACH_PASSWORD }}
           POSTGRES_KEYCLOAK_PASSWORD: ${{ secrets.POSTGRES_KEYCLOAK_PASSWORD }}
@@ -140,8 +149,8 @@ jobs:
 
           printf '%s\n' "$POSTGRES_CA_CERT" > "$ca_file"
           {
-            printf 'PGHOST=%s\n' "$POSTGRES_HOST"
-            printf 'PGPORT=%s\n' "$POSTGRES_PORT"
+            printf 'PGHOST=%s\n' "$PGHOST"
+            printf 'PGPORT=%s\n' "$PGPORT"
             printf 'PGDATABASE=mymusiccoach\n'
             printf 'PGUSER=mymusiccoach_app\n'
             printf 'PGPASSWORD=%s\n' "$POSTGRES_MYMUSICCOACH_PASSWORD"
@@ -149,8 +158,8 @@ jobs:
             printf 'PGSSLROOTCERT=/etc/postgres-ca/ca.crt\n'
           } > "$mymusiccoach_env"
           {
-            printf 'PGHOST=%s\n' "$POSTGRES_HOST"
-            printf 'PGPORT=%s\n' "$POSTGRES_PORT"
+            printf 'PGHOST=%s\n' "$PGHOST"
+            printf 'PGPORT=%s\n' "$PGPORT"
             printf 'PGDATABASE=keycloak\n'
             printf 'PGUSER=keycloak_app\n'
             printf 'PGPASSWORD=%s\n' "$POSTGRES_KEYCLOAK_PASSWORD"

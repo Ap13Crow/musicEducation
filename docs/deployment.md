@@ -10,8 +10,8 @@ Create a GitHub Environment named `development` in **Settings → Environments**
 
 | Variable | Value |
 | --- | --- |
-| `POSTGRES_HOST` | Hostname from the DigitalOcean database's private connection details |
-| `POSTGRES_PORT` | `25060` |
+| `PGHOST` | Hostname from the DigitalOcean database connection details |
+| `PGPORT` | `25060` |
 
 Add these environment secrets:
 
