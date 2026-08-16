@@ -73,10 +73,12 @@ Render manifests without contacting a cluster:
 ```bash
 kubectl kustomize deploy/overlays/dev
 kubectl kustomize deploy/overlays/prod
+kubectl kustomize deploy/operators/keycloak
+kubectl kustomize deploy/overlays/dev/keycloak
 kubectl kustomize deploy/tests/postgres
 ```
 
-These are render-only checks. The protected GitHub workflow described in `docs/deployment.md` is the authorized development deployment path.
+These are render-only checks. Rendering the operator target downloads the pinned official Keycloak manifests. The protected GitHub workflows described in `docs/deployment.md` are the authorized development deployment path.
 
 ## Legacy Compose stack
 
