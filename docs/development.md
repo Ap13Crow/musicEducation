@@ -1,11 +1,11 @@
 # Development and validation commands
 
-This repository is an npm workspace managed by Turborepo. Run commands from the repository root.
+This repository is an npm workspace managed by Turborepo. Run commands from the repository root when using a local development checkout. The deployment path itself is GitHub-based and does not require a clone; see `docs/deployment.md`.
 
 ## Prerequisites
 
 - Node.js 20 or newer
-- npm 10 or newer
+- npm 10 or newer (the repository pins npm 10.9.4)
 - Docker with Compose v2 only when working with the legacy local stack
 - `kubectl` with Kustomize support only for rendering the new deployment scaffold
 
@@ -68,14 +68,15 @@ npm run db:studio
 
 ## Kubernetes scaffold validation
 
-Render manifests locally without contacting a cluster:
+Render manifests without contacting a cluster:
 
 ```bash
 kubectl kustomize deploy/overlays/dev
 kubectl kustomize deploy/overlays/prod
+kubectl kustomize deploy/tests/postgres
 ```
 
-These are render-only checks. Do not pipe their output to `kubectl apply`, and do not deploy unless the user explicitly requests it.
+These are render-only checks. The protected GitHub workflow described in `docs/deployment.md` is the authorized development deployment path.
 
 ## Legacy Compose stack
 

@@ -2,4 +2,4 @@
 
 Future helper scripts belong here. They must be idempotent, fail safely, avoid printing secrets, and default to render or dry-run behavior.
 
-The proposed `create-dev-secrets.sh` is deliberately not included in the bootstrap. Define and review the exact Secret contract before adding a script that reads local credentials.
+The development Secret contract is currently implemented in `.github/workflows/deploy-dev.yml` so an online-only GitHub workflow can synchronize credentials without requiring a local repository clone. Do not add a script containing embedded credentials or a committed `.env` file.
