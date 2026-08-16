@@ -1,0 +1,155 @@
+name: Development Cloudflare Tunnel
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/deploy-cloudflare-dev.yml"
+      - "deploy/platform/cloudflare-tunnel/**"
+      - "docs/cloudflare-tunnel.md"
+      - "deploy/README.md"
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Operation to perform for the development tunnel
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - deploy
+
+permissions:
+  contents: read
+
+concurrency:
+  group: >-
+    ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy' &&
+    'mymusiccoach-development' || format('mymusiccoach-cloudflare-validation-{0}', github.ref) }}
+  cancel-in-progress: >-
+    ${{ github.event_name != 'workflow_dispatch' || inputs.operation == 'plan' }}
+
+env:
+  CLUSTER_NAME: mymusiccoach-dev
+  EXPECTED_CONTEXT: do-ams3-mymusiccoach-dev
+  NAMESPACE: mymusic-coach
+
+jobs:
+  validate:
+    name: Render and validate tunnel manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.3
+
+      - name: Render Cloudflare Tunnel
+        run: kubectl kustomize deploy/platform/cloudflare-tunnel > "$RUNNER_TEMP/cloudflare-tunnel.yaml"
+
+      - name: Enforce tunnel safety boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="$RUNNER_TEMP/cloudflare-tunnel.yaml"
+          if grep -Eq '^[[:space:]]*kind:[[:space:]]+(Secret|Ingress)[[:space:]]*$' "$manifest"; then
+            echo "Tunnel manifests must not contain Secret or Ingress resources." >&2
+            exit 1
+          fi
+          if grep -Eq '^[[:space:]]*type:[[:space:]]+LoadBalancer[[:space:]]*$' "$manifest"; then
+            echo "Tunnel manifests must not create a public LoadBalancer." >&2
+            exit 1
+          fi
+          if grep -Eq '^[[:space:]]*image:.*:latest([@[:space:]]|$)' "$manifest"; then
+            echo "Tunnel images must use an immutable build tag or digest." >&2
+            exit 1
+          fi
+
+  deploy:
+    name: Synchronize and deploy Cloudflare Tunnel
+    needs: validate
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.operation == 'deploy'
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.3
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Authenticate to the expected cluster
+        shell: bash
+        run: |
+          set -euo pipefail
+          doctl kubernetes cluster kubeconfig save "$CLUSTER_NAME"
+          actual_context="$(kubectl config current-context)"
+          test "$actual_context" = "$EXPECTED_CONTEXT" || {
+            echo "Refusing to continue: expected context '$EXPECTED_CONTEXT', got '$actual_context'." >&2
+            exit 1
+          }
+          kubectl get nodes >/dev/null
+
+      - name: Validate tunnel token
+        env:
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_TUNNEL_TOKEN" || {
+            echo "CLOUDFLARE_TUNNEL_TOKEN is not configured in the development environment." >&2
+            exit 1
+          }
+          test "${#CLOUDFLARE_TUNNEL_TOKEN}" -ge 40 || {
+            echo "CLOUDFLARE_TUNNEL_TOKEN does not look complete." >&2
+            exit 1
+          }
+
+      - name: Synchronize tunnel token
+        env:
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          umask 077
+
+          token_file="$RUNNER_TEMP/cloudflare-tunnel.env"
+          trap 'rm -f "$token_file"' EXIT
+          printf 'TUNNEL_TOKEN=%s\n' "$CLOUDFLARE_TUNNEL_TOKEN" > "$token_file"
+
+          kubectl apply -k deploy/overlays/dev
+          kubectl -n "$NAMESPACE" create secret generic cloudflare-tunnel \
+            --from-env-file="$token_file" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy tunnel connector
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl apply -k deploy/platform/cloudflare-tunnel
+          kubectl -n "$NAMESPACE" rollout restart deployment/cloudflared
+          kubectl -n "$NAMESPACE" rollout status deployment/cloudflared --timeout=180s
+
+      - name: Verify connector readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl -n "$NAMESPACE" get deployment,pods \
+            -l app.kubernetes.io/name=cloudflared \
+            -o wide
+          kubectl -n "$NAMESPACE" logs deployment/cloudflared \
+            --tail=50 \
+            --prefix
