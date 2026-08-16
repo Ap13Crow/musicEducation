@@ -22,11 +22,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: >-
-    ${{ github.event_name == 'workflow_dispatch' && inputs.operation != 'plan' &&
-    'mymusiccoach-development' || format('mymusiccoach-validation-{0}', github.ref) }}
-  cancel-in-progress: >-
-    ${{ github.event_name != 'workflow_dispatch' || inputs.operation == 'plan' }}
+  group: mymusiccoach-development
+  cancel-in-progress: false
 
 env:
   CLUSTER_NAME: mymusiccoach-dev
@@ -56,7 +53,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -Eq '^[[:space:]]*kind:[[:space:]]+Secret[[:space:]]*$' "$RUNNER_TEMP/dev.yaml" "$RUNNER_TEMP/postgres-tests.yaml"; then
+          if grep -Eq '^kind:[[:space:]]+Secret$' "$RUNNER_TEMP/dev.yaml" "$RUNNER_TEMP/postgres-tests.yaml"; then
             echo "Rendered manifests must not contain Kubernetes Secret resources." >&2
             exit 1
           fi
@@ -98,17 +95,11 @@ jobs:
 
       - name: Remove completed or failed smoke-test Jobs
         if: inputs.operation == 'cleanup-tests'
-        shell: bash
         run: |
-          set -euo pipefail
-          if kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
-            kubectl -n "$NAMESPACE" delete job \
-              postgres-mymusiccoach-smoke \
-              postgres-keycloak-smoke \
-              --ignore-not-found
-          else
-            echo "Namespace '$NAMESPACE' does not exist; nothing to clean up."
-          fi
+          kubectl -n "$NAMESPACE" delete job \
+            postgres-mymusiccoach-smoke \
+            postgres-keycloak-smoke \
+            --ignore-not-found
 
       - name: Validate deployment configuration
         if: inputs.operation == 'deploy-and-test'
