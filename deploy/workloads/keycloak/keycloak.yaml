@@ -4,7 +4,7 @@ metadata:
   name: keycloak
   labels:
     app.kubernetes.io/name: keycloak
-    app.kubernetes.io/part-of: my-music-coach
+    app.kubernetes.io/part-of: mymusic-coach
 spec:
   instances: 1
 
@@ -56,11 +56,11 @@ spec:
     http:
       - namespaceSelector:
           matchLabels:
-            kubernetes.io/metadata.name: my-music-coach
+            kubernetes.io/metadata.name: mymusic-coach
     management:
       - namespaceSelector:
           matchLabels:
-            kubernetes.io/metadata.name: my-music-coach
+            kubernetes.io/metadata.name: mymusic-coach
 
   resources:
     requests:

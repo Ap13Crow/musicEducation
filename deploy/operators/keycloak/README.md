@@ -1,7 +1,7 @@
 # Keycloak operator
 
 This Kustomization installs the official Keycloak Operator `26.7.0` into the
-`my-music-coach` namespace. The version is pinned because an operator upgrade
+`mymusic-coach` namespace. The version is pinned because an operator upgrade
 can also upgrade Keycloak and its database schema.
 
 Render it without contacting a cluster:

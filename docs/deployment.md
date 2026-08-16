@@ -62,7 +62,7 @@ The Keycloak custom resource connects to database `keycloak` using the `keycloak
 
 The operator creates the bootstrap administrator credentials in the Kubernetes Secret `keycloak-initial-admin`. Do not print, copy into GitHub logs, or commit those values. Realm import and a permanent administrator lifecycle are intentionally separate changes.
 
-The internal service is named `keycloak` and exposes application HTTP on port `8080` plus the management endpoint on port `9000`. Ingress is disabled, and the operator-managed NetworkPolicy allows those ports only from the `my-music-coach` namespace. This keeps the first deployment private while still allowing a later `cloudflared` Pod in the same namespace to connect.
+The internal service is named `keycloak` and exposes application HTTP on port `8080` plus the management endpoint on port `9000`. Ingress is disabled, and the operator-managed NetworkPolicy allows those ports only from the `mymusic-coach` namespace. This keeps the first deployment private while still allowing a later `cloudflared` Pod in the same namespace to connect.
 
 The initial development sizing is one replica with a 250 millicore/512 MiB request and a 1 CPU/1 GiB limit. Treat this as a measurement baseline. Review `status` output under realistic login and token traffic before changing limits, adding replicas, importing the realm, or exposing Keycloak through Cloudflare.
 

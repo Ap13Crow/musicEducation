@@ -62,6 +62,11 @@ jobs:
           set -euo pipefail
           manifests=("$RUNNER_TEMP/keycloak-operator.yaml" "$RUNNER_TEMP/keycloak.yaml")
 
+          if grep -Fq 'my-music-coach' "${manifests[@]}"; then
+            echo "Rendered Keycloak manifests target the obsolete namespace 'my-music-coach'; use 'mymusic-coach'." >&2
+            exit 1
+          fi
+
           if grep -Eq '^[[:space:]]*kind:[[:space:]]+Secret[[:space:]]*$' "${manifests[@]}"; then
             echo "Rendered manifests must not contain Kubernetes Secret resources." >&2
             exit 1
