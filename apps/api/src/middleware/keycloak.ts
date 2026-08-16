@@ -19,9 +19,11 @@ export interface KeycloakClaims {
   given_name?: string;
   family_name?: string;
   realm_access?: { roles?: string[] };
+  azp?: string;
 }
 
 const KEYCLOAK_ISSUER = process.env.KEYCLOAK_ISSUER?.replace(/\/$/, '');
+const KEYCLOAK_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID;
 
 // Lazily-created JWKS client so the JWKS endpoint is only contacted when a
 // Keycloak token is actually presented (local-JWT-only deployments pay nothing).
@@ -78,7 +80,12 @@ export async function verifyKeycloakToken(token: string): Promise<KeycloakClaims
           resolve(null);
           return;
         }
-        resolve(decoded as unknown as KeycloakClaims);
+        const claims = decoded as unknown as KeycloakClaims;
+        if (KEYCLOAK_CLIENT_ID && claims.azp && claims.azp !== KEYCLOAK_CLIENT_ID) {
+          resolve(null);
+          return;
+        }
+        resolve(claims);
       },
     );
   });
@@ -128,7 +135,7 @@ export async function provisionKeycloakUser(
   }
 
   // 2. Link to an existing local account that shares the verified email.
-  if (claims.email) {
+  if (claims.email && claims.email_verified) {
     const existing = await prisma.user.findUnique({ where: { email: claims.email } });
     if (existing) {
       await prisma.userExternalIdentity.create({
