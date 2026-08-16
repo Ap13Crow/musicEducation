@@ -10,6 +10,17 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
+  async function logout() {
+    try {
+      const response = await fetch('/api/auth/keycloak-logout', { cache: 'no-store' });
+      const payload = await response.json();
+      await signOut({ redirect: false });
+      window.location.assign(payload.url ?? '/');
+    } catch {
+      await signOut({ callbackUrl: '/' });
+    }
+  }
+
   const navigation = [
     { name: 'Courses', href: '/courses', icon: BookOpen },
     { name: 'Teachers', href: '/teachers', icon: Music },
@@ -53,7 +64,7 @@ export default function Navbar() {
                   Log in
                 </button>
                 <button
-                  onClick={() => signIn('keycloak')}
+                  onClick={() => signIn('keycloak', { callbackUrl: '/dashboard' }, { kc_action: 'register' })}
                   className="btn-primary rounded-lg px-4 py-2 text-sm"
                 >
                   Register
@@ -109,7 +120,7 @@ export default function Navbar() {
                         </Link>
                       )}
                       <button
-                        onClick={() => signOut()}
+                        onClick={() => void logout()}
                         className="flex w-full items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                       >
                         <LogOut className="h-4 w-4" /> Sign out
@@ -156,7 +167,7 @@ export default function Navbar() {
                   Log in
                 </button>
                 <button
-                  onClick={() => signIn('keycloak')}
+                  onClick={() => signIn('keycloak', { callbackUrl: '/dashboard' }, { kc_action: 'register' })}
                   className="btn-primary rounded-lg px-4 py-2 text-sm"
                 >
                   Register
@@ -189,7 +200,7 @@ export default function Navbar() {
                   </Link>
                 )}
                 <button
-                  onClick={() => signOut()}
+                  onClick={() => void logout()}
                   className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50"
                 >
                   <LogOut className="h-4 w-4" /> Sign out
