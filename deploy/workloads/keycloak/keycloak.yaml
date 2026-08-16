@@ -1,0 +1,71 @@
+apiVersion: k8s.keycloak.org/v2beta1
+kind: Keycloak
+metadata:
+  name: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/part-of: my-music-coach
+spec:
+  instances: 1
+
+  db:
+    vendor: postgres
+    database: keycloak
+    usernameSecret:
+      name: postgres-keycloak
+      key: PGUSER
+    passwordSecret:
+      name: postgres-keycloak
+      key: PGPASSWORD
+    poolInitialSize: 1
+    poolMinSize: 1
+    poolMaxSize: 10
+
+  additionalOptions:
+    - name: db-url-host
+      secret:
+        name: postgres-keycloak
+        key: PGHOST
+    - name: db-url-port
+      secret:
+        name: postgres-keycloak
+        key: PGPORT
+    - name: db-tls-mode
+      value: verify-server
+    - name: log-console-output
+      value: json
+    - name: metrics-enabled
+      value: 'true'
+
+  truststores:
+    postgres-ca:
+      configMap:
+        name: postgres-ca
+
+  http:
+    httpEnabled: true
+    serviceName: keycloak
+    serviceHttpPort: 8080
+  hostname:
+    strict: false
+  ingress:
+    enabled: false
+
+  networkPolicy:
+    enabled: true
+    http:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: my-music-coach
+    management:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: my-music-coach
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: '1'
+      memory: 1Gi

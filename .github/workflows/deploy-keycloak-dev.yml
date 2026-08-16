@@ -1,0 +1,216 @@
+name: Development Keycloak
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/deploy-keycloak-dev.yml'
+      - 'deploy/operators/keycloak/**'
+      - 'deploy/workloads/keycloak/**'
+      - 'deploy/overlays/dev/keycloak/**'
+      - 'deploy/README.md'
+      - 'docs/deployment.md'
+      - 'docs/development.md'
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Operation to perform for development Keycloak
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - deploy
+          - status
+
+permissions:
+  contents: read
+
+concurrency:
+  group: >-
+    ${{ github.event_name == 'workflow_dispatch' && inputs.operation != 'plan' &&
+    'mymusiccoach-development' || format('mymusiccoach-keycloak-validation-{0}', github.ref) }}
+  cancel-in-progress: >-
+    ${{ github.event_name != 'workflow_dispatch' || inputs.operation == 'plan' }}
+
+env:
+  CLUSTER_NAME: mymusiccoach-dev
+  EXPECTED_CONTEXT: do-ams3-mymusiccoach-dev
+  NAMESPACE: mymusic-coach
+
+jobs:
+  validate:
+    name: Render and validate Keycloak manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.3
+
+      - name: Render pinned Keycloak operator
+        run: kubectl kustomize deploy/operators/keycloak > "$RUNNER_TEMP/keycloak-operator.yaml"
+
+      - name: Render development Keycloak workload
+        run: kubectl kustomize deploy/overlays/dev/keycloak > "$RUNNER_TEMP/keycloak.yaml"
+
+      - name: Enforce manifest safety constraints
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifests=("$RUNNER_TEMP/keycloak-operator.yaml" "$RUNNER_TEMP/keycloak.yaml")
+
+          if grep -Eq '^[[:space:]]*kind:[[:space:]]+Secret[[:space:]]*$' "${manifests[@]}"; then
+            echo "Rendered manifests must not contain Kubernetes Secret resources." >&2
+            exit 1
+          fi
+
+          if grep -Eq '^[[:space:]]*image:[[:space:]]+[^#[:space:]]+:latest([[:space:]]|$)' "${manifests[@]}"; then
+            echo "Rendered manifests must not use mutable latest image tags." >&2
+            exit 1
+          fi
+
+          grep -Fq 'name: db-tls-mode' "$RUNNER_TEMP/keycloak.yaml"
+          grep -Fq 'value: verify-server' "$RUNNER_TEMP/keycloak.yaml"
+          grep -Fq 'enabled: false' "$RUNNER_TEMP/keycloak.yaml"
+
+  reconcile:
+    name: Reconcile or inspect development Keycloak
+    needs: validate
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.operation != 'plan'
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.3
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Authenticate to the expected cluster
+        shell: bash
+        run: |
+          set -euo pipefail
+          doctl kubernetes cluster kubeconfig save "$CLUSTER_NAME"
+          actual_context="$(kubectl config current-context)"
+          test "$actual_context" = "$EXPECTED_CONTEXT" || {
+            echo "Refusing to continue: expected context '$EXPECTED_CONTEXT', got '$actual_context'." >&2
+            exit 1
+          }
+          kubectl get nodes >/dev/null
+
+      - name: Verify foundation prerequisites
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl get namespace "$NAMESPACE" >/dev/null
+          kubectl -n "$NAMESPACE" get secret postgres-keycloak >/dev/null
+          kubectl -n "$NAMESPACE" get configmap postgres-ca >/dev/null
+
+          for key in PGHOST PGPORT PGUSER PGPASSWORD; do
+            value="$(kubectl -n "$NAMESPACE" get secret postgres-keycloak -o "jsonpath={.data.${key}}")"
+            test -n "$value" || {
+              echo "Secret postgres-keycloak is missing required key '$key'." >&2
+              exit 1
+            }
+          done
+
+          ca_data="$(kubectl -n "$NAMESPACE" get configmap postgres-ca -o 'jsonpath={.data.ca\.crt}')"
+          test -n "$ca_data" || {
+            echo "ConfigMap postgres-ca is missing required key 'ca.crt'." >&2
+            exit 1
+          }
+
+      - name: Install the pinned Keycloak operator
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl apply --server-side --field-manager=mymusiccoach-deploy -k deploy/operators/keycloak
+          kubectl -n "$NAMESPACE" rollout status deployment/keycloak-operator --timeout=300s
+
+      - name: Reconcile Keycloak and wait for readiness
+        id: keycloak
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl apply -k deploy/overlays/dev/keycloak
+          kubectl -n "$NAMESPACE" wait \
+            --for=condition=Ready \
+            --timeout=600s \
+            keycloak/keycloak
+          kubectl -n "$NAMESPACE" rollout status deployment/keycloak --timeout=600s
+
+          service_type="$(kubectl -n "$NAMESPACE" get service keycloak -o jsonpath='{.spec.type}')"
+          test "$service_type" = "ClusterIP" || {
+            echo "Refusing unexpected Keycloak Service type '$service_type'." >&2
+            exit 1
+          }
+
+          if kubectl -n "$NAMESPACE" get ingress keycloak-ingress >/dev/null 2>&1; then
+            echo "Keycloak ingress exists even though this increment must remain internal." >&2
+            exit 1
+          fi
+
+      - name: Verify the management readiness endpoint
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          port_forward_log="$RUNNER_TEMP/keycloak-port-forward.log"
+          kubectl -n "$NAMESPACE" port-forward service/keycloak 19000:9000 >"$port_forward_log" 2>&1 &
+          port_forward_pid=$!
+          trap 'kill "$port_forward_pid" 2>/dev/null || true' EXIT
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:19000/health/ready >/dev/null; then
+              echo "Keycloak readiness endpoint returned success."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          cat "$port_forward_log" >&2
+          echo "Keycloak readiness endpoint did not return success." >&2
+          exit 1
+
+      - name: Report Keycloak status and resource use
+        if: always()
+        shell: bash
+        run: |
+          if ! kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
+            echo "Namespace '$NAMESPACE' does not exist."
+            exit 0
+          fi
+
+          kubectl -n "$NAMESPACE" get keycloak keycloak -o wide 2>/dev/null || true
+          kubectl -n "$NAMESPACE" get deployment/keycloak-operator deployment/keycloak 2>/dev/null || true
+          kubectl -n "$NAMESPACE" get service/keycloak networkpolicy/keycloak-network-policy 2>/dev/null || true
+          kubectl -n "$NAMESPACE" get pods -l app=keycloak -o wide 2>/dev/null || true
+
+          if ! kubectl -n "$NAMESPACE" top pods -l app=keycloak; then
+            echo "Pod metrics are not available yet; readiness is reported separately."
+          fi
+
+      - name: Diagnose a failed Keycloak reconciliation
+        if: always() && inputs.operation == 'deploy' && steps.keycloak.outcome == 'failure'
+        shell: bash
+        run: |
+          kubectl -n "$NAMESPACE" get keycloak keycloak -o yaml || true
+          kubectl -n "$NAMESPACE" describe keycloak keycloak || true
+          kubectl -n "$NAMESPACE" describe deployment keycloak || true
+          kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -n 100 || true
