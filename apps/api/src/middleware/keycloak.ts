@@ -159,8 +159,15 @@ export async function provisionKeycloakUser(
       emailVerified: claims.email_verified ?? false,
       role,
       externalIdentities: { create: { provider, externalId: claims.sub } },
-      profile: { create: { displayName: displayNameFromClaims(claims), onboardingDone: false } },
-      gamification: { create: {} },
+      profile: {
+        create: {
+          displayName: displayNameFromClaims(claims),
+          instruments: [],
+          musicStyles: [],
+          onboardingDone: false,
+        },
+      },
+      gamification: { create: { badges: [] } },
     },
   });
 }
