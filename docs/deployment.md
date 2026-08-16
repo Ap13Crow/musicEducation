@@ -91,6 +91,45 @@ The public issuer is
 `https://auth-dev.mymusic.coach/realms/mymusic-coach`. The deployment fails if
 Cloudflare discovery is unreachable or advertises another issuer.
 
+## Authenticated application milestone
+
+The development application uses two immutable images in one DigitalOcean
+Container Registry repository: `api-<commit>` and `web-<commit>`. Keeping both
+image variants in repository `mymusiccoach` allows development to use the
+Starter registry tier (one repository, 500 MiB) without making either image
+public. The workflow uses `DOCR_REGISTRY` when configured, reuses the account's
+single existing registry, or creates `ap13crow-mymusiccoach` on the free
+Starter tier when no registry exists.
+
+Open **Actions → Development application → Run workflow** on `main`:
+
+- `plan` renders the application and identity-schema targets and builds both
+  containers without cluster access or registry writes.
+- `deploy` creates/reuses the registry, pushes commit-tagged images, integrates
+  it with DOKS, creates stable runtime session secrets inside Kubernetes, applies
+  the minimal identity/profile schema, rolls out `api` and `web`, and proves
+  that `https://dev.mymusic.coach` exposes web health and the Keycloak provider.
+- `status` performs read-only inspection of application workloads and the
+  public health route.
+
+Only `web` is reachable from the Cloudflare Tunnel at
+`http://web.mymusic-coach.svc.cluster.local:3000`. Browser GraphQL requests go
+through `/api/graphql`; the web server forwards the Keycloak bearer token to
+the internal `api` ClusterIP. No `api-dev` public route is required.
+
+The first database increment creates only `User`, `UserProfile`,
+`GamificationProfile`, and `UserExternalIdentity`. It is intentionally not a
+replacement for the reviewed Prisma migration history required before
+production. On the first authenticated GraphQL request, the API verifies the
+Keycloak token against realm JWKS, links by Keycloak subject, and creates the
+local profile with the realm role.
+
+After deployment, perform one browser acceptance test: register through
+Keycloak, return to `/dashboard`, confirm the displayed role, sign out, and sign
+in again. That proves the interactive authorization-code/PKCE path and the
+just-in-time provisioning path that CI cannot exercise without storing a test
+user password.
+
 ## Secret lifecycle
 
 GitHub Environment secrets are the source for this development phase. The workflow creates the Kubernetes Secrets idempotently on every `deploy-and-test` run. Secrets are never rendered by Kustomize and are never committed.
