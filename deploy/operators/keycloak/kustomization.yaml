@@ -3,7 +3,7 @@ kind: Kustomization
 
 # The official operator watches the namespace where it is installed. Keep the
 # version pinned so Keycloak upgrades remain deliberate, reviewable changes.
-namespace: my-music-coach
+namespace: mymusic-coach
 resources:
   - github.com/keycloak/keycloak-k8s-resources/kubernetes?ref=26.7.0
 
@@ -18,4 +18,4 @@ patches:
     patch: |-
       - op: replace
         path: /subjects/0/namespace
-        value: my-music-coach
+        value: mymusic-coach
