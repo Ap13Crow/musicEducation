@@ -147,6 +147,22 @@ export const userResolvers = {
   },
 
   User: {
+    async username(u: any) {
+      return u.email?.split('@')[0] ?? u.id;
+    },
+    async displayName(u: any, _: unknown, { prisma }: GraphQLContext) {
+      if (u.profile?.displayName) return u.profile.displayName;
+      const profile = await prisma.userProfile.findUnique({ where: { userId: u.id }, select: { displayName: true } });
+      return profile?.displayName ?? u.email?.split('@')[0] ?? 'Musician';
+    },
+    isEmailVerified(u: any) {
+      return Boolean(u.emailVerified);
+    },
+    async avatarUrl(u: any, _: unknown, { prisma }: GraphQLContext) {
+      if (u.profile?.avatarUrl) return u.profile.avatarUrl;
+      const profile = await prisma.userProfile.findUnique({ where: { userId: u.id }, select: { avatarUrl: true } });
+      return profile?.avatarUrl ?? null;
+    },
     async profile(u: any, _: unknown, { prisma }: GraphQLContext) {
       return prisma.userProfile.findUnique({ where: { userId: u.id } });
     },
@@ -190,6 +206,11 @@ export const userResolvers = {
         prisma.feedPost.count({ where }),
       ]);
       return { nodes, pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount } };
+    },
+  },
+  GamificationProfile: {
+    currentStreak() {
+      return 0;
     },
   },
 };

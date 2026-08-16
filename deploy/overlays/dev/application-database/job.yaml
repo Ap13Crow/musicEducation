@@ -1,0 +1,66 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: application-identity-schema
+  labels:
+    app.kubernetes.io/name: application-identity-schema
+    app.kubernetes.io/component: database-migration
+    app.kubernetes.io/part-of: mymusic-coach
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: application-identity-schema
+        app.kubernetes.io/component: database-migration
+        app.kubernetes.io/part-of: mymusic-coach
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: psql
+          image: postgres:17.10-alpine3.23
+          command: [psql]
+          args:
+            - --set=ON_ERROR_STOP=1
+            - --file=/schema/001-identity.sql
+          envFrom:
+            - secretRef:
+                name: postgres-mymusiccoach
+          volumeMounts:
+            - name: schema
+              mountPath: /schema
+              readOnly: true
+            - name: postgres-ca
+              mountPath: /etc/postgres-ca
+              readOnly: true
+            - name: temporary
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
+            readOnlyRootFilesystem: true
+      volumes:
+        - name: schema
+          configMap:
+            name: application-identity-schema
+        - name: postgres-ca
+          configMap:
+            name: postgres-ca
+        - name: temporary
+          emptyDir: {}

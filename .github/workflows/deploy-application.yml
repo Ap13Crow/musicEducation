@@ -1,0 +1,258 @@
+name: Development application
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/deploy-application.yml'
+      - 'apps/api/**'
+      - 'apps/web/**'
+      - 'packages/database/**'
+      - 'packages/graphql-schema/**'
+      - 'deploy/workloads/application/**'
+      - 'deploy/database/identity/**'
+      - 'deploy/overlays/dev/application/**'
+      - 'deploy/overlays/dev/application-database/**'
+      - 'docs/deployment.md'
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Operation to perform against development
+        required: true
+        default: plan
+        type: choice
+        options: [plan, deploy, status]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.operation != 'plan' && 'mymusiccoach-application-development' || format('mymusiccoach-application-validation-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' || inputs.operation == 'plan' }}
+
+env:
+  CLUSTER_NAME: mymusiccoach-dev
+  EXPECTED_CONTEXT: do-ams3-mymusiccoach-dev
+  NAMESPACE: mymusic-coach
+  PUBLIC_URL: https://dev.mymusic.coach
+  OIDC_ISSUER: https://auth-dev.mymusic.coach/realms/mymusic-coach
+
+jobs:
+  validate:
+    name: Build and validate application
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.3
+      - name: Render application targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl kustomize deploy/overlays/dev/application > "$RUNNER_TEMP/application.yaml"
+          kubectl kustomize deploy/overlays/dev/application-database > "$RUNNER_TEMP/application-database.yaml"
+          grep -Fq 'image: mymusiccoach/web:dev' "$RUNNER_TEMP/application.yaml"
+          grep -Fq 'image: mymusiccoach/api:dev' "$RUNNER_TEMP/application.yaml"
+          grep -Fq 'kind: Job' "$RUNNER_TEMP/application-database.yaml"
+          if grep -Eq '^[[:space:]]*kind:[[:space:]]+Secret[[:space:]]*$' "$RUNNER_TEMP/application.yaml" "$RUNNER_TEMP/application-database.yaml"; then
+            echo 'Rendered manifests must not contain Secret resources.' >&2
+            exit 1
+          fi
+          if grep -Eq '^[[:space:]]*image:[[:space:]]+[^#[:space:]]+:latest([[:space:]]|$)' "$RUNNER_TEMP/application.yaml" "$RUNNER_TEMP/application-database.yaml"; then
+            echo 'Rendered manifests must not use latest image tags.' >&2
+            exit 1
+          fi
+      - name: Build API image
+        run: docker build --file apps/api/Dockerfile --tag mymusiccoach-api:validation .
+      - name: Build web image
+        run: >-
+          docker build
+          --file apps/web/Dockerfile
+          --build-arg NEXT_PUBLIC_GRAPHQL_URL=/api/graphql
+          --build-arg NEXT_PUBLIC_ENABLE_LIVE_API=true
+          --build-arg NEXT_PUBLIC_KEYCLOAK_ISSUER="$OIDC_ISSUER"
+          --build-arg NEXT_PUBLIC_APP_URL="$PUBLIC_URL"
+          --tag mymusiccoach-web:validation
+          .
+
+  reconcile:
+    name: Reconcile or inspect application
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.operation != 'plan'
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.3
+      - uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      - name: Authenticate to the expected cluster
+        shell: bash
+        run: |
+          set -euo pipefail
+          doctl kubernetes cluster kubeconfig save "$CLUSTER_NAME"
+          actual_context="$(kubectl config current-context)"
+          test "$actual_context" = "$EXPECTED_CONTEXT" || {
+            echo "Refusing context '$actual_context'; expected '$EXPECTED_CONTEXT'." >&2
+            exit 1
+          }
+          kubectl get nodes >/dev/null
+      - name: Verify application prerequisites
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl get namespace "$NAMESPACE" >/dev/null
+          kubectl -n "$NAMESPACE" get secret postgres-mymusiccoach keycloak-client-secrets >/dev/null
+          kubectl -n "$NAMESPACE" get configmap postgres-ca >/dev/null
+          kubectl -n "$NAMESPACE" get service keycloak >/dev/null
+          for key in PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD PGSSLMODE PGSSLROOTCERT; do
+            test -n "$(kubectl -n "$NAMESPACE" get secret postgres-mymusiccoach -o "jsonpath={.data.${key}}")" || {
+              echo "Secret postgres-mymusiccoach is missing '$key'." >&2
+              exit 1
+            }
+          done
+          test -n "$(kubectl -n "$NAMESPACE" get secret keycloak-client-secrets -o 'jsonpath={.data.WEB_CLIENT_SECRET}')"
+      - name: Select or create the free DigitalOcean registry
+        id: registry
+        if: inputs.operation == 'deploy'
+        env:
+          CONFIGURED_REGISTRY: ${{ vars.DOCR_REGISTRY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t registries < <(doctl registries list --format Name --no-header | sed '/^[[:space:]]*$/d')
+          registry_name="$CONFIGURED_REGISTRY"
+          if [[ -z "$registry_name" && ${#registries[@]} -eq 1 ]]; then
+            registry_name="${registries[0]}"
+          elif [[ -z "$registry_name" && ${#registries[@]} -eq 0 ]]; then
+            registry_name='ap13crow-mymusiccoach'
+            doctl registries create "$registry_name" --subscription-tier starter --region ams3 >/dev/null
+            echo "Created Starter registry '$registry_name' at no monthly charge."
+          elif [[ -z "$registry_name" ]]; then
+            echo 'More than one registry exists. Set development variable DOCR_REGISTRY.' >&2
+            exit 1
+          elif ! printf '%s\n' "${registries[@]}" | grep -Fxq "$registry_name"; then
+            doctl registries create "$registry_name" --subscription-tier starter --region ams3 >/dev/null
+            echo "Created configured Starter registry '$registry_name'."
+          fi
+          echo "name=$registry_name" >> "$GITHUB_OUTPUT"
+          echo "repository=registry.digitalocean.com/$registry_name/mymusiccoach" >> "$GITHUB_OUTPUT"
+      - name: Build and push immutable application images
+        id: images
+        if: inputs.operation == 'deploy'
+        env:
+          REGISTRY_NAME: ${{ steps.registry.outputs.name }}
+          REPOSITORY: ${{ steps.registry.outputs.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          doctl registries login "$REGISTRY_NAME" --expiry-seconds 1200
+          api_image="$REPOSITORY:api-$GITHUB_SHA"
+          web_image="$REPOSITORY:web-$GITHUB_SHA"
+          docker buildx build --platform linux/amd64 --file apps/api/Dockerfile --tag "$api_image" --push .
+          docker buildx build --platform linux/amd64 --file apps/web/Dockerfile \
+            --build-arg NEXT_PUBLIC_GRAPHQL_URL=/api/graphql \
+            --build-arg NEXT_PUBLIC_ENABLE_LIVE_API=true \
+            --build-arg NEXT_PUBLIC_KEYCLOAK_ISSUER="$OIDC_ISSUER" \
+            --build-arg NEXT_PUBLIC_APP_URL="$PUBLIC_URL" \
+            --tag "$web_image" --push .
+          echo "api=$api_image" >> "$GITHUB_OUTPUT"
+          echo "web=$web_image" >> "$GITHUB_OUTPUT"
+      - name: Integrate the registry with DOKS
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          doctl kubernetes cluster registry add "$CLUSTER_NAME"
+      - name: Create stable runtime-only application secrets
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          if kubectl -n "$NAMESPACE" get secret application-runtime >/dev/null 2>&1; then
+            for key in JWT_SECRET NEXTAUTH_SECRET; do
+              test -n "$(kubectl -n "$NAMESPACE" get secret application-runtime -o "jsonpath={.data.${key}}")" || {
+                echo "Existing application-runtime Secret is missing '$key'." >&2
+                exit 1
+              }
+            done
+          else
+            jwt_secret="$(openssl rand -base64 48 | tr -d '\n')"
+            nextauth_secret="$(openssl rand -base64 48 | tr -d '\n')"
+            kubectl -n "$NAMESPACE" create secret generic application-runtime \
+              --from-literal=JWT_SECRET="$jwt_secret" \
+              --from-literal=NEXTAUTH_SECRET="$nextauth_secret"
+            unset jwt_secret nextauth_secret
+            echo 'Created application runtime secrets inside Kubernetes.'
+          fi
+      - name: Apply the identity schema
+        id: schema
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl -n "$NAMESPACE" delete job application-identity-schema --ignore-not-found --wait=true
+          kubectl apply -k deploy/overlays/dev/application-database
+          kubectl -n "$NAMESPACE" wait --for=condition=complete --timeout=180s job/application-identity-schema
+          kubectl -n "$NAMESPACE" logs job/application-identity-schema
+      - name: Deploy immutable web and API images
+        id: rollout
+        if: inputs.operation == 'deploy'
+        env:
+          API_IMAGE: ${{ steps.images.outputs.api }}
+          WEB_IMAGE: ${{ steps.images.outputs.web }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="$RUNNER_TEMP/application.yaml"
+          kubectl kustomize deploy/overlays/dev/application > "$manifest"
+          sed -i "s|mymusiccoach/api:dev|$API_IMAGE|g; s|mymusiccoach/web:dev|$WEB_IMAGE|g" "$manifest"
+          grep -Fq "image: $API_IMAGE" "$manifest"
+          grep -Fq "image: $WEB_IMAGE" "$manifest"
+          kubectl apply -f "$manifest"
+          kubectl -n "$NAMESPACE" rollout status deployment/api --timeout=300s
+          kubectl -n "$NAMESPACE" rollout status deployment/web --timeout=300s
+      - name: Verify internal services and public web route
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_pod="$(kubectl -n "$NAMESPACE" get pod -l app.kubernetes.io/name=api -o jsonpath='{.items[0].metadata.name}')"
+          web_pod="$(kubectl -n "$NAMESPACE" get pod -l app.kubernetes.io/name=web -o jsonpath='{.items[0].metadata.name}')"
+          kubectl -n "$NAMESPACE" exec "$api_pod" -- node -e "fetch('http://127.0.0.1:4000/health/ready').then(async r=>{if(!r.ok)throw Error(await r.text())})"
+          kubectl -n "$NAMESPACE" exec "$web_pod" -- node -e "fetch('http://127.0.0.1:3000/api/health').then(async r=>{if(!r.ok)throw Error(await r.text())})"
+          providers="$RUNNER_TEMP/providers.json"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error "$PUBLIC_URL/api/health" >/dev/null \
+              && curl --fail --silent --show-error "$PUBLIC_URL/api/auth/providers" > "$providers" \
+              && jq -e '.keycloak.type == "oauth"' "$providers" >/dev/null; then
+              echo 'Public web health and Keycloak provider discovery succeeded.'
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'The public Cloudflare route did not reach the ready web service.' >&2
+          exit 1
+      - name: Report application status
+        if: always()
+        shell: bash
+        run: |
+          if ! kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then exit 0; fi
+          kubectl -n "$NAMESPACE" get deployment,service,pod -l app.kubernetes.io/part-of=mymusic-coach -o wide || true
+          kubectl -n "$NAMESPACE" get networkpolicy api-ingress web-ingress 2>/dev/null || true
+          kubectl -n "$NAMESPACE" top pod -l app.kubernetes.io/part-of=mymusic-coach 2>/dev/null || true
+          curl --fail --silent "$PUBLIC_URL/api/health" || true
+      - name: Diagnose deployment failure
+        if: always() && inputs.operation == 'deploy' && (steps.schema.outcome == 'failure' || steps.rollout.outcome == 'failure')
+        shell: bash
+        run: |
+          kubectl -n "$NAMESPACE" get pods,jobs -o wide || true
+          kubectl -n "$NAMESPACE" logs job/application-identity-schema --all-containers=true || true
+          kubectl -n "$NAMESPACE" logs deployment/api --tail=150 || true
+          kubectl -n "$NAMESPACE" logs deployment/web --tail=150 || true
+          kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -n 100 || true

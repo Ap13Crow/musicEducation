@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels: &apiLabels
+    app.kubernetes.io/name: api
+    app.kubernetes.io/component: application-api
+    app.kubernetes.io/part-of: mymusic-coach
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  template:
+    metadata:
+      labels: *apiLabels
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: mymusiccoach/api:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 4000
+          envFrom:
+            - secretRef:
+                name: postgres-mymusiccoach
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: '4000'
+            - name: CORS_ORIGIN
+              value: http://web:3000
+            - name: KEYCLOAK_ISSUER
+              value: https://auth-dev.mymusic.coach/realms/mymusic-coach
+            - name: KEYCLOAK_CLIENT_ID
+              value: mymusic-coach-web
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: application-runtime
+                  key: JWT_SECRET
+            - name: ENABLE_LEGACY_SCHEDULER
+              value: 'false'
+          volumeMounts:
+            - name: postgres-ca
+              mountPath: /etc/postgres-ca
+              readOnly: true
+            - name: temporary
+              mountPath: /tmp
+          readinessProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - fetch('http://127.0.0.1:4000/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - fetch('http://127.0.0.1:4000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
+            readOnlyRootFilesystem: true
+      volumes:
+        - name: postgres-ca
+          configMap:
+            name: postgres-ca
+        - name: temporary
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: mymusic-coach
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: api
+  ports:
+    - name: http
+      port: 4000
+      targetPort: http
