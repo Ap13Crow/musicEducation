@@ -1,0 +1,203 @@
+name: Development foundation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/deploy-dev.yml"
+      - "deploy/**"
+      - "docs/deployment.md"
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Operation to perform against the development cluster
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - deploy-and-test
+          - cleanup-tests
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mymusiccoach-development
+  cancel-in-progress: false
+
+env:
+  CLUSTER_NAME: mymusiccoach-dev
+  EXPECTED_CONTEXT: do-ams3-mymusiccoach-dev
+  NAMESPACE: mymusic-coach
+
+jobs:
+  validate:
+    name: Render and validate manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.3
+
+      - name: Render development foundation
+        run: kubectl kustomize deploy/overlays/dev > "$RUNNER_TEMP/dev.yaml"
+
+      - name: Render PostgreSQL smoke tests
+        run: kubectl kustomize deploy/tests/postgres > "$RUNNER_TEMP/postgres-tests.yaml"
+
+      - name: Reject committed Secret resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -Eq '^kind:[[:space:]]+Secret$' "$RUNNER_TEMP/dev.yaml" "$RUNNER_TEMP/postgres-tests.yaml"; then
+            echo "Rendered manifests must not contain Kubernetes Secret resources." >&2
+            exit 1
+          fi
+
+  deploy:
+    name: Synchronize foundation and verify PostgreSQL
+    needs: validate
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.operation != 'plan'
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.3
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Authenticate to the expected cluster
+        shell: bash
+        run: |
+          set -euo pipefail
+          doctl kubernetes cluster kubeconfig save "$CLUSTER_NAME"
+          actual_context="$(kubectl config current-context)"
+          test "$actual_context" = "$EXPECTED_CONTEXT" || {
+            echo "Refusing to continue: expected context '$EXPECTED_CONTEXT', got '$actual_context'." >&2
+            exit 1
+          }
+          kubectl get nodes >/dev/null
+
+      - name: Remove completed or failed smoke-test Jobs
+        if: inputs.operation == 'cleanup-tests'
+        run: |
+          kubectl -n "$NAMESPACE" delete job \
+            postgres-mymusiccoach-smoke \
+            postgres-keycloak-smoke \
+            --ignore-not-found
+
+      - name: Validate deployment configuration
+        if: inputs.operation == 'deploy-and-test'
+        env:
+          POSTGRES_HOST: ${{ vars.POSTGRES_HOST }}
+          POSTGRES_CA_CERT: ${{ secrets.POSTGRES_CA_CERT }}
+          POSTGRES_MYMUSICCOACH_PASSWORD: ${{ secrets.POSTGRES_MYMUSICCOACH_PASSWORD }}
+          POSTGRES_KEYCLOAK_PASSWORD: ${{ secrets.POSTGRES_KEYCLOAK_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$POSTGRES_HOST" || { echo "POSTGRES_HOST is not configured." >&2; exit 1; }
+          test -n "$POSTGRES_MYMUSICCOACH_PASSWORD" || { echo "POSTGRES_MYMUSICCOACH_PASSWORD is not configured." >&2; exit 1; }
+          test -n "$POSTGRES_KEYCLOAK_PASSWORD" || { echo "POSTGRES_KEYCLOAK_PASSWORD is not configured." >&2; exit 1; }
+          grep -q -- '-----BEGIN CERTIFICATE-----' <<< "$POSTGRES_CA_CERT" || {
+            echo "POSTGRES_CA_CERT is not a PEM certificate." >&2
+            exit 1
+          }
+
+      - name: Synchronize namespace, database CA, and database Secrets
+        if: inputs.operation == 'deploy-and-test'
+        env:
+          POSTGRES_HOST: ${{ vars.POSTGRES_HOST }}
+          POSTGRES_PORT: ${{ vars.POSTGRES_PORT || '25060' }}
+          POSTGRES_CA_CERT: ${{ secrets.POSTGRES_CA_CERT }}
+          POSTGRES_MYMUSICCOACH_PASSWORD: ${{ secrets.POSTGRES_MYMUSICCOACH_PASSWORD }}
+          POSTGRES_KEYCLOAK_PASSWORD: ${{ secrets.POSTGRES_KEYCLOAK_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          umask 077
+
+          ca_file="$RUNNER_TEMP/postgres-ca.crt"
+          mymusiccoach_env="$RUNNER_TEMP/postgres-mymusiccoach.env"
+          keycloak_env="$RUNNER_TEMP/postgres-keycloak.env"
+          trap 'rm -f "$ca_file" "$mymusiccoach_env" "$keycloak_env"' EXIT
+
+          printf '%s\n' "$POSTGRES_CA_CERT" > "$ca_file"
+          {
+            printf 'PGHOST=%s\n' "$POSTGRES_HOST"
+            printf 'PGPORT=%s\n' "$POSTGRES_PORT"
+            printf 'PGDATABASE=mymusiccoach\n'
+            printf 'PGUSER=mymusiccoach_app\n'
+            printf 'PGPASSWORD=%s\n' "$POSTGRES_MYMUSICCOACH_PASSWORD"
+            printf 'PGSSLMODE=verify-full\n'
+            printf 'PGSSLROOTCERT=/etc/postgres-ca/ca.crt\n'
+          } > "$mymusiccoach_env"
+          {
+            printf 'PGHOST=%s\n' "$POSTGRES_HOST"
+            printf 'PGPORT=%s\n' "$POSTGRES_PORT"
+            printf 'PGDATABASE=keycloak\n'
+            printf 'PGUSER=keycloak_app\n'
+            printf 'PGPASSWORD=%s\n' "$POSTGRES_KEYCLOAK_PASSWORD"
+            printf 'PGSSLMODE=verify-full\n'
+            printf 'PGSSLROOTCERT=/etc/postgres-ca/ca.crt\n'
+          } > "$keycloak_env"
+
+          kubectl apply -k deploy/overlays/dev
+          kubectl -n "$NAMESPACE" create configmap postgres-ca \
+            --from-file=ca.crt="$ca_file" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n "$NAMESPACE" create secret generic postgres-mymusiccoach \
+            --from-env-file="$mymusiccoach_env" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n "$NAMESPACE" create secret generic postgres-keycloak \
+            --from-env-file="$keycloak_env" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Run PostgreSQL TLS and permission smoke tests
+        id: smoke
+        if: inputs.operation == 'deploy-and-test'
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl -n "$NAMESPACE" delete job \
+            postgres-mymusiccoach-smoke \
+            postgres-keycloak-smoke \
+            --ignore-not-found
+          kubectl apply -k deploy/tests/postgres
+          kubectl -n "$NAMESPACE" wait \
+            --for=condition=complete \
+            --timeout=180s \
+            job/postgres-mymusiccoach-smoke \
+            job/postgres-keycloak-smoke
+
+      - name: Show smoke-test results
+        if: always() && inputs.operation == 'deploy-and-test'
+        shell: bash
+        run: |
+          kubectl -n "$NAMESPACE" logs job/postgres-mymusiccoach-smoke --all-containers=true || true
+          kubectl -n "$NAMESPACE" logs job/postgres-keycloak-smoke --all-containers=true || true
+
+      - name: Diagnose failed smoke tests
+        if: always() && inputs.operation == 'deploy-and-test' && steps.smoke.outcome == 'failure'
+        shell: bash
+        run: |
+          kubectl -n "$NAMESPACE" get jobs,pods -o wide
+          kubectl -n "$NAMESPACE" describe job postgres-mymusiccoach-smoke || true
+          kubectl -n "$NAMESPACE" describe job postgres-keycloak-smoke || true
+          exit 1
