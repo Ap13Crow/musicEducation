@@ -75,6 +75,8 @@ spec:
               cpu: 500m
               memory: 512Mi
           securityContext:
+            runAsUser: 1001
+            runAsGroup: 1001
             allowPrivilegeEscalation: false
             capabilities:
               drop: ['ALL']
