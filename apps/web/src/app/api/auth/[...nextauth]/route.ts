@@ -69,6 +69,7 @@ async function refreshAccessToken(token: AuthToken): Promise<AuthToken> {
 const authOptions: NextAuthOptions = {
   providers: [KeycloakProvider({ clientId, clientSecret, issuer })],
   session: { strategy: 'jwt' },
+  pages: { error: '/auth/error' },
   callbacks: {
     async redirect({ url, baseUrl }) {
       if (url.startsWith('/')) return `${baseUrl}${url}`;
