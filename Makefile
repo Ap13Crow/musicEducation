@@ -26,10 +26,6 @@ logs: ## Tail logs for all services (Ctrl-C to stop)
 logs-api: ## Tail API logs only
 	docker compose logs -f api
 
-.PHONY: logs-pretix
-logs-pretix: ## Tail pretix logs only
-	docker compose logs -f pretix
-
 .PHONY: ps
 ps: ## Show running services
 	docker compose ps
@@ -91,9 +87,6 @@ hosts: ## Print /etc/hosts entries needed for local development
 	@echo "127.0.0.1  app.mymusic-coach.test"
 	@echo "127.0.0.1  api.mymusic-coach.test"
 	@echo "127.0.0.1  auth.mymusic-coach.test"
-	@echo "127.0.0.1  learn.mymusic-coach.test"
-	@echo "127.0.0.1  booking.mymusic-coach.test"
-	@echo "127.0.0.1  tickets.mymusic-coach.test"
 	@echo ""
 
 # ── Utilities ────────────────────────────────────────────────
