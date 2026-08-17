@@ -2,7 +2,6 @@ import axios from 'axios';
 import { requireRole } from '../middleware/auth.js';
 import { mapKeycloakRole } from '../middleware/keycloak.js';
 import type { GraphQLContext } from '../types.js';
-import { logger } from '../utils/logger.js';
 
 export const adminResolvers = {
   Query: {
@@ -63,7 +62,7 @@ export const adminResolvers = {
     },
 
     // Schema name: adminSetRole
-    async adminSetRole(_: unknown, { userId, role }: any, { prisma, user, libreBooking }: GraphQLContext) {
+    async adminSetRole(_: unknown, { userId, role }: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'ADMIN');
       const validRoles = ['STUDENT', 'TEACHER', 'ADMIN'];
       if (!validRoles.includes(role)) {
@@ -75,21 +74,6 @@ export const adminResolvers = {
         include: { profile: true },
       });
 
-      // When a user becomes a teacher, provision them in LibreBooking so they
-      // can manage their schedule immediately.
-      if (role === 'TEACHER' && libreBooking) {
-        const displayName = updated.profile?.displayName ?? updated.email.split('@')[0];
-        const [firstName, ...rest] = displayName.split(' ');
-        const lastName = rest.join(' ') || '-';
-        const username = updated.email.split('@')[0].replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        libreBooking.createUser({
-          email: updated.email,
-          firstName,
-          lastName,
-          username,
-          password: `KC_${userId.slice(0, 8)}!`, // token-based login in KC; password is a placeholder
-        }).catch((err) => logger.warn(err, 'LibreBooking teacher provisioning failed (non-fatal)'));
-      }
 
       return updated;
     },
