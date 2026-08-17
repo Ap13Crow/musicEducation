@@ -285,8 +285,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          api_pod="$(kubectl -n "$NAMESPACE" get pod -l app.kubernetes.io/name=api -o jsonpath='{.items[0].metadata.name}')"
-          web_pod="$(kubectl -n "$NAMESPACE" get pod -l app.kubernetes.io/name=web -o jsonpath='{.items[0].metadata.name}')"
+          ready_pod() {
+            local app="$1"
+            kubectl -n "$NAMESPACE" get pods -l "app.kubernetes.io/name=$app" -o json \
+              | jq -r '.items[] | select(.status.phase == "Running" and any(.status.containerStatuses[]?; .ready)) | .metadata.name' \
+              | head -n 1
+          }
+          api_pod="$(ready_pod api)"
+          web_pod="$(ready_pod web)"
+          test -n "$api_pod" || { echo 'No Ready API Pod found.' >&2; exit 1; }
+          test -n "$web_pod" || { echo 'No Ready web Pod found.' >&2; exit 1; }
           kubectl -n "$NAMESPACE" exec "$api_pod" -- node -e "fetch('http://127.0.0.1:4000/health/ready').then(async r=>{if(!r.ok)throw Error(await r.text())})"
           kubectl -n "$NAMESPACE" exec "$web_pod" -- node -e "fetch('http://127.0.0.1:3000/api/health').then(async r=>{if(!r.ok)throw Error(await r.text())})"
           providers="$RUNNER_TEMP/providers.json"
