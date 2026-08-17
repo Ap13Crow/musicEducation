@@ -41,6 +41,9 @@ export const bookingResolvers = {
 
       const teacherProfile = await prisma.teacherProfile.findUnique({ where: { id: teacherProfileId } });
       if (!teacherProfile) throw new GraphQLError('Teacher not found.', { extensions: { code: 'NOT_FOUND' } });
+      if (teacherProfile.userId === user.id) {
+        throw new GraphQLError('You cannot book a lesson with yourself.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
       if (!teacherProfile.isAvailable) throw new GraphQLError('Teacher is not available.', { extensions: { code: 'BAD_USER_INPUT' } });
 
       const startsAtDate = new Date(startsAt);
