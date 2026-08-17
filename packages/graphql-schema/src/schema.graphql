@@ -27,21 +27,24 @@ enum CourseStatus {
 enum BookingStatus {
   PENDING
   CONFIRMED
-  COMPLETED
   CANCELLED
+  COMPLETED
+  NO_SHOW
 }
 
 enum BookingFormat {
-  ZOOM
   IN_PERSON
+  ONLINE
+  HYBRID
 }
 
 enum EventType {
-  CONCERT
   MASTERCLASS
   WORKSHOP
+  CONCERT
   COMPETITION
-  RECITAL
+  OPEN_MIC
+  LECTURE
   OTHER
 }
 
@@ -64,8 +67,11 @@ enum PaymentProvider {
 }
 
 enum EventBookingStatus {
+  PENDING
   CONFIRMED
   CANCELLED
+  REFUNDED
+  ATTENDED
 }
 
 # ── Pagination ───────────────────────────────────────────────────

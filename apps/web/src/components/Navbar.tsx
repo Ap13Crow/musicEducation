@@ -15,10 +15,15 @@ export default function Navbar() {
     try {
       const response = await fetch('/api/auth/keycloak-logout', { cache: 'no-store' });
       const payload = await response.json();
-      await signOut({ redirect: false });
-      window.location.assign(payload.url ?? '/');
+      await signOut({ redirect: false, callbackUrl: '/' });
+      if (response.ok && typeof payload.url === 'string') {
+        window.location.replace(payload.url);
+      } else {
+        window.location.replace('/');
+      }
     } catch {
-      await signOut({ callbackUrl: '/' });
+      await signOut({ redirect: false, callbackUrl: '/' });
+      window.location.replace('/');
     }
   }
 
