@@ -341,7 +341,13 @@ jobs:
             || true
           echo 'API environment contract (values are not printed):'
           kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
-            "for (const key of ['DATABASE_URL','KEYCLOAK_ISSUER','KEYCLOAK_CLIENT_ID']) console.log(key + '=' + (process.env[key] ? 'configured' : 'missing'))"
+            "for (const key of ['PGHOST','PGPORT','PGDATABASE','PGUSER','PGPASSWORD','PGSSLROOTCERT','KEYCLOAK_ISSUER','KEYCLOAK_CLIENT_ID']) console.log(key + '=' + (process.env[key] ? 'configured' : 'missing'))"
+          echo 'Database readiness from the running API process:'
+          kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
+            "fetch('http://127.0.0.1:4000/health/ready').then(async r => { console.log(await r.text()); if (!r.ok) process.exit(1) })"
+          echo 'Keycloak JWKS reachability from the API Pod:'
+          kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
+            "fetch(process.env.KEYCLOAK_ISSUER + '/protocol/openid-connect/certs').then(async r => { const body = await r.json(); console.log('status=' + r.status + ' keys=' + (Array.isArray(body.keys) ? body.keys.length : 0)); if (!r.ok || !Array.isArray(body.keys) || body.keys.length === 0) process.exit(1) })"
           echo 'Public health:'
           curl --fail --silent --show-error "$PUBLIC_URL/api/health"
 
