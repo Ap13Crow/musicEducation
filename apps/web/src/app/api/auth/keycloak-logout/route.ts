@@ -1,17 +1,28 @@
 import { getToken } from 'next-auth/jwt';
 import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET(req: NextRequest) {
+export async function POST(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
   const issuer = process.env.KEYCLOAK_ISSUER;
-  const appUrl = process.env.NEXTAUTH_URL;
-  if (!issuer || !appUrl) {
-    return NextResponse.json({ error: 'Logout is not configured.' }, { status: 503 });
+  const clientId = process.env.KEYCLOAK_CLIENT_ID;
+  const clientSecret = process.env.KEYCLOAK_CLIENT_SECRET;
+
+  if (issuer && clientId && clientSecret && typeof token?.refreshToken === 'string') {
+    try {
+      await fetch(`${issuer}/protocol/openid-connect/logout`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: token.refreshToken,
+        }),
+        cache: 'no-store',
+      });
+    } catch {
+      // Local sign-out must still complete. Registration forces a fresh login.
+    }
   }
 
-  const url = new URL(`${issuer}/protocol/openid-connect/logout`);
-  url.searchParams.set('post_logout_redirect_uri', appUrl);
-  url.searchParams.set('client_id', process.env.KEYCLOAK_CLIENT_ID ?? 'mymusic-coach-web');
-  if (typeof token?.idToken === 'string') url.searchParams.set('id_token_hint', token.idToken);
-  return NextResponse.json({ url: url.toString() });
+  return NextResponse.json({ ok: true });
 }
