@@ -141,12 +141,20 @@ async function main() {
   const server = new ApolloServer<GraphQLContext>({ schema });
   await server.start();
   app.use('/graphql', expressMiddleware(server, {
-    context: async ({ req }) => ({
-      prisma,
-      user: await resolveRequestUser(req, prisma),
-      req,
-      libreBooking: libreBookingAdapter,
-    }),
+    context: async ({ req }) => {
+      try {
+        const user = await resolveRequestUser(req, prisma, (diagnostic) => {
+          logger.warn({ auth: diagnostic }, 'Keycloak access token was rejected');
+        });
+        if (req.headers.authorization?.startsWith('Bearer ') && !user) {
+          logger.warn('Bearer token did not resolve to an application user');
+        }
+        return { prisma, user, req, libreBooking: libreBookingAdapter };
+      } catch (error) {
+        logger.error({ err: error }, 'Authenticated user provisioning failed');
+        throw error;
+      }
+    },
   }));
 
   const port = Number(process.env.PORT ?? 4000);
