@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useSession, signIn, signOut } from 'next-auth/react';
+import { useSession, signIn } from 'next-auth/react';
 import { useState } from 'react';
 import { Menu, X, User, LogOut, Settings, BookOpen, Music, Calendar, ChevronDown, GraduationCap } from 'lucide-react';
 import { hasRole } from '@/lib/roles';
@@ -14,11 +14,9 @@ export default function Navbar() {
   async function logout() {
     try {
       await fetch('/api/auth/keycloak-logout', { method: 'POST', cache: 'no-store' });
-      await signOut({ redirect: false, callbackUrl: '/' });
-      window.location.replace('/');
+      window.location.assign('/?signedOut=1');
     } catch {
-      await signOut({ redirect: false, callbackUrl: '/' });
-      window.location.replace('/');
+      window.location.assign('/?signedOut=1');
     }
   }
 
