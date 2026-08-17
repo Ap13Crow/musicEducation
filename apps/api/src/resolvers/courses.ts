@@ -108,13 +108,21 @@ export const courseResolvers = {
 
     async updateCourse(_: unknown, { id, input }: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'TEACHER', 'ADMIN');
-      const course = await prisma.course.findUnique({ where: { id } });
+      const course = await prisma.course.findUnique({ where: { id }, include: { teacherProfile: true } });
       if (!course) throw new GraphQLError('Course not found.', { extensions: { code: 'NOT_FOUND' } });
+      if (user!.role !== 'ADMIN' && course.teacherProfile?.userId !== user!.id) {
+        throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
+      }
       return prisma.course.update({ where: { id }, data: input });
     },
 
     async publishCourse(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'TEACHER', 'ADMIN');
+      const course = await prisma.course.findUnique({ where: { id }, include: { teacherProfile: true } });
+      if (!course) throw new GraphQLError('Course not found.', { extensions: { code: 'NOT_FOUND' } });
+      if (user!.role !== 'ADMIN' && course.teacherProfile?.userId !== user!.id) {
+        throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
+      }
       return prisma.course.update({ where: { id }, data: { status: 'PUBLISHED' } });
     },
 

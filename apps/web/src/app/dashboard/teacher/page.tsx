@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { CalendarClock, ClipboardList, UserRoundCheck } from 'lucide-react';
+import { BookOpen, CalendarClock, CalendarPlus, UserRoundCheck } from 'lucide-react';
 import RoleGate from '@/components/auth/RoleGate';
 
 export default function TeacherWorkspacePage() {
@@ -17,10 +17,11 @@ export default function TeacherWorkspacePage() {
             </p>
           </div>
         </section>
-        <div className="mx-auto grid max-w-6xl gap-4 px-6 py-8 md:grid-cols-3">
+        <div className="mx-auto grid max-w-6xl gap-4 px-6 py-8 md:grid-cols-4">
           <WorkspaceCard href="/dashboard/profile" icon={<UserRoundCheck />} title="Teacher profile" text="Complete your public teaching profile and instruments." />
-          <WorkspaceCard href="/dashboard/availability" icon={<CalendarClock />} title="Availability" text="Define the times students can request lessons." />
-          <WorkspaceCard href="/dashboard" icon={<ClipboardList />} title="Activity" text="Return to your account overview and current activity." />
+          <WorkspaceCard href="/dashboard/teacher/availability" icon={<CalendarClock />} title="Lesson availability" text="Publish the recurring times students can book." />
+          <WorkspaceCard href="/dashboard/teacher/content" icon={<BookOpen />} title="Theory studio" text="Create and publish native courses." />
+          <WorkspaceCard href="/dashboard/teacher/content#performance" icon={<CalendarPlus />} title="Performance studio" text="Create and publish events." />
         </div>
       </main>
     </RoleGate>
