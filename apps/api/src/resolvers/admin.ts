@@ -68,12 +68,27 @@ export const adminResolvers = {
       if (!validRoles.includes(role)) {
         throw new Error(`Invalid role. Must be one of: ${validRoles.join(', ')}`);
       }
-      const updated = await prisma.user.update({
-        where: { id: userId },
-        data: { role },
-        include: { profile: true },
+      const updated = await prisma.$transaction(async (tx) => {
+        const savedUser = await tx.user.update({
+          where: { id: userId },
+          data: { role },
+          include: { profile: true },
+        });
+        if (role === 'TEACHER') {
+          await tx.teacherProfile.upsert({
+            where: { userId },
+            create: {
+              userId,
+              instruments: savedUser.profile?.instruments ?? [],
+              musicStyles: savedUser.profile?.musicStyles ?? [],
+              languages: [],
+              isAvailable: true,
+            },
+            update: {},
+          });
+        }
+        return savedUser;
       });
-
 
       return updated;
     },
