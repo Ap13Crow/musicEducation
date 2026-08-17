@@ -22,6 +22,11 @@ on:
           - plan
           - deploy
           - status
+          - grant-realm-admin
+      realm_admin_user:
+        description: Existing mymusic-coach username or email to promote (grant-realm-admin only)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -337,6 +342,57 @@ jobs:
             echo >&2
           fi
           exit 1
+
+      - name: Grant an existing user realm administration
+        if: inputs.operation == 'grant-realm-admin'
+        env:
+          TARGET_USER: ${{ inputs.realm_admin_user }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+
+          test -n "$TARGET_USER" || {
+            echo 'realm_admin_user is required for grant-realm-admin.' >&2
+            exit 1
+          }
+          [[ "$TARGET_USER" =~ ^[A-Za-z0-9@._+-]+$ ]] || {
+            echo 'realm_admin_user contains unsupported characters.' >&2
+            exit 1
+          }
+
+          kubectl -n "$NAMESPACE" get secret keycloak-initial-admin >/dev/null
+          admin_username="$(kubectl -n "$NAMESPACE" get secret keycloak-initial-admin -o 'jsonpath={.data.username}' | base64 -d)"
+          admin_password="$(kubectl -n "$NAMESPACE" get secret keycloak-initial-admin -o 'jsonpath={.data.password}' | base64 -d)"
+          test -n "$admin_username" && test -n "$admin_password"
+
+          keycloak_pod="$(kubectl -n "$NAMESPACE" get pods -l app=keycloak -o json | jq -r '.items[] | select(.status.phase == "Running") | .metadata.name' | head -n 1)"
+          test -n "$keycloak_pod" || {
+            echo 'No running Keycloak Pod was found.' >&2
+            exit 1
+          }
+
+          kcadm_config="/tmp/kcadm-$GITHUB_RUN_ID.config"
+          cleanup() {
+            kubectl -n "$NAMESPACE" exec "$keycloak_pod" -- rm -f "$kcadm_config" >/dev/null 2>&1 || true
+            unset admin_password
+          }
+          trap cleanup EXIT
+
+          kubectl -n "$NAMESPACE" exec "$keycloak_pod" --             /opt/keycloak/bin/kcadm.sh config credentials             --config "$kcadm_config"             --server http://127.0.0.1:8080             --realm master             --user "$admin_username"             --password "$admin_password" >/dev/null
+
+          users_json="$(kubectl -n "$NAMESPACE" exec "$keycloak_pod" --             /opt/keycloak/bin/kcadm.sh get users             --config "$kcadm_config"             -r mymusic-coach             -q "search=$TARGET_USER"             --fields id,username,email)"
+          user_id="$(jq -er --arg target "$TARGET_USER"             '[.[] | select(.username == $target or .email == $target)] | if length == 1 then .[0].id else empty end'             <<<"$users_json")" || {
+              echo "Expected exactly one existing realm user matching '$TARGET_USER'." >&2
+              exit 1
+            }
+
+          kubectl -n "$NAMESPACE" exec "$keycloak_pod" --             /opt/keycloak/bin/kcadm.sh add-roles             --config "$kcadm_config"             -r mymusic-coach             --uid "$user_id"             --cclientid realm-management             --rolename realm-admin >/dev/null
+
+          kubectl -n "$NAMESPACE" exec "$keycloak_pod" --             /opt/keycloak/bin/kcadm.sh add-roles             --config "$kcadm_config"             -r mymusic-coach             --uid "$user_id"             --rolename ADMIN >/dev/null
+
+          echo "Granted realm administration and application ADMIN access to '$TARGET_USER'."
+          echo 'The user must sign out and back in before the application role appears in a new token.'
 
       - name: Report Keycloak status and resource use
         if: always()
