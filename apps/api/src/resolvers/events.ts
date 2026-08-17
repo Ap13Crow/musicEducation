@@ -105,7 +105,7 @@ export const eventResolvers = {
       requireRole(user, 'TEACHER', 'ADMIN');
       const slug = input.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now();
       return prisma.event.create({
-        data: { ...input, publisherId: user.id, slug },
+        data: { ...input, publisherId: user!.id, slug },
       });
     },
 
