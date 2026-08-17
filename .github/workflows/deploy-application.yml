@@ -63,7 +63,16 @@ jobs:
             exit 1
           fi
       - name: Build API image
-        run: docker build --file apps/api/Dockerfile --tag mymusiccoach-api:validation .
+        run: |
+          set -euo pipefail
+          docker build --file apps/api/Dockerfile --tag mymusiccoach-api:validation .
+          image_bytes="$(docker image inspect mymusiccoach-api:validation --format '{{.Size}}')"
+          max_bytes="$((450 * 1024 * 1024))"
+          echo "API runtime image size: $((image_bytes / 1024 / 1024)) MiB"
+          if (( image_bytes > max_bytes )); then
+            echo 'API runtime image exceeds the 450 MiB development ceiling.' >&2
+            exit 1
+          fi
       - name: Build web image
         run: >-
           docker build
@@ -141,6 +150,56 @@ jobs:
           fi
           echo "name=$registry_name" >> "$GITHUB_OUTPUT"
           echo "repository=registry.digitalocean.com/$registry_name/mymusiccoach" >> "$GITHUB_OUTPUT"
+      - name: Reclaim failed bootstrap image storage
+        if: inputs.operation == 'deploy'
+        env:
+          REGISTRY_NAME: ${{ steps.registry.outputs.name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if kubectl -n "$NAMESPACE" get deployment/api >/dev/null 2>&1 \
+            || kubectl -n "$NAMESPACE" get deployment/web >/dev/null 2>&1; then
+            echo 'Application workloads exist; preserving bootstrap image tags.'
+            exit 0
+          fi
+
+          failed_tags=(
+            api-40c63d1f1a17508accd35002e12ee01f5b04f7f9
+            web-40c63d1f1a17508accd35002e12ee01f5b04f7f9
+            api-59055822ba256b017e3c7855345c21d1f7a8bd11
+            web-59055822ba256b017e3c7855345c21d1f7a8bd11
+          )
+          mapfile -t existing_tags < <(
+            doctl registry repository list-tags mymusiccoach \
+              --registry "$REGISTRY_NAME" --format Tag --no-header \
+              | sed '/^[[:space:]]*$/d'
+          )
+          deleted=0
+          for tag in "${failed_tags[@]}"; do
+            if printf '%s\n' "${existing_tags[@]}" | grep -Fxq "$tag"; then
+              doctl registry repository delete-tag mymusiccoach "$tag" \
+                --registry "$REGISTRY_NAME" --force
+              deleted=$((deleted + 1))
+            fi
+          done
+          if (( deleted == 0 )); then
+            echo 'No failed bootstrap tags require cleanup.'
+            exit 0
+          fi
+
+          echo "Removed $deleted failed bootstrap tag(s); reclaiming their unreferenced blobs."
+          doctl registry garbage-collection start "$REGISTRY_NAME" \
+            --include-untagged-manifests --force >/dev/null
+          for attempt in $(seq 1 60); do
+            if ! doctl registry garbage-collection get-active "$REGISTRY_NAME" \
+              --format Status --no-header >/dev/null 2>&1; then
+              echo 'Registry garbage collection completed.'
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'Timed out waiting for registry garbage collection.' >&2
+          exit 1
       - name: Build and push immutable application images
         id: images
         if: inputs.operation == 'deploy'
