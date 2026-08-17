@@ -143,9 +143,11 @@ export default function ProfilePage() {
           },
         },
       });
-      await refetch();
+      // The mutation is the source of truth. Exit edit mode immediately; a
+      // secondary dashboard query must never make a successful save look failed.
       setEditing(false);
       setSaved(true);
+      void refetch().catch(() => undefined);
       setTimeout(() => setSaved(false), 3000);
     } catch {
       // saveError is shown inline

@@ -70,6 +70,15 @@ const authOptions: NextAuthOptions = {
   providers: [KeycloakProvider({ clientId, clientSecret, issuer })],
   session: { strategy: 'jwt' },
   callbacks: {
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith('/')) return `${baseUrl}${url}`;
+      try {
+        if (new URL(url).origin === new URL(baseUrl).origin) return url;
+      } catch {
+        // Fall through to the trusted application origin.
+      }
+      return baseUrl;
+    },
     async jwt({ token, account }) {
       if (account) return { ...token, ...tokenFromAccount(account) };
       const current = token as typeof token & AuthToken;
