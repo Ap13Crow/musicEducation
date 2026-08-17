@@ -7,7 +7,7 @@
 
 services:
 
-  # ── Gateway / Reverse Proxy (Caddy) ────────────────────────
+  # ── Gateway / Reverse Proxy (Caddy) ────────────────────
   gateway:
     image: caddy:2.8-alpine
     container_name: mymusic_coach_gateway
@@ -25,19 +25,13 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_healthy
-      moodle:
-        condition: service_started
-      librebooking:
-        condition: service_started
-      pretix:
-        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 80"]
       interval: 15s
       timeout: 5s
       retries: 5
 
-  # ── PostgreSQL (main platform DB) ──────────────────────────
+  # ── PostgreSQL (main platform DB) ────────────────────
   postgres-main:
     image: postgres:16-alpine
     container_name: mymusic_coach_postgres
@@ -72,7 +66,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Keycloak (central identity provider) ───────────────────
+  # ── Keycloak (central identity provider) ──────────────────
   keycloak:
     image: quay.io/keycloak/keycloak:24.0
     container_name: mymusic_coach_keycloak
@@ -103,7 +97,7 @@ services:
       retries: 10
       start_period: 30s
 
-  # ── GraphQL API ────────────────────────────────────────────
+  # ── GraphQL API ────────────────────────────────
   api:
     build:
       context: .
@@ -121,25 +115,13 @@ services:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       ZOOM_API_KEY: ${ZOOM_API_KEY:-}
       ZOOM_API_SECRET: ${ZOOM_API_SECRET:-}
-      # ── Integration layer ────────────────────────────────
-      PRETIX_URL: ${PRETIX_URL:-http://pretix:80}
-      PRETIX_API_TOKEN: ${PRETIX_API_TOKEN:-}
-      PRETIX_SSO_SECRET: ${PRETIX_SSO_SECRET:-}
-      PRETIX_ORGANISER_SLUG: ${PRETIX_ORGANISER_SLUG:-mymusic-coach}
-      MOODLE_URL: ${MOODLE_URL:-http://moodle:8080}
-      MOODLE_WS_TOKEN: ${MOODLE_WS_TOKEN:-}
-      MOODLE_PUBLIC_HOST: ${MOODLE_PUBLIC_HOST:-learn.mymusic.coach}
-      LIBREBOOKING_URL: ${LIBREBOOKING_URL:-http://librebooking:8080}
-      LIBREBOOKING_API_USER: ${LIBREBOOKING_API_USER:-admin}
-      LIBREBOOKING_API_PASSWORD: ${LIBREBOOKING_API_PASSWORD:-}
-      PRETIX_WEBHOOK_SECRET: ${PRETIX_WEBHOOK_SECRET:-}
-      # ── Keycloak (for admin role sync) ───────────────────
+      # ── Keycloak (for admin role sync) ────────────────
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://keycloak:8080/realms/mymusic-coach}
       KEYCLOAK_ADMIN_URL: http://keycloak:8080
       KEYCLOAK_ADMIN_REALM: ${KEYCLOAK_REALM:-mymusic-coach}
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin_dev_pw}
-      # ── General ──────────────────────────────────────────
+      # ── General ──────────────────────────
       FRONTEND_URL: ${FRONTEND_URL:-http://app.mymusic-coach.test}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://app.mymusic-coach.test}
       PORT: 4000
@@ -158,7 +140,7 @@ services:
       retries: 5
       start_period: 30s
 
-  # ── Next.js Web App ────────────────────────────────────────
+  # ── Next.js Web App ────────────────────────────
   web:
     build:
       context: .
@@ -166,10 +148,6 @@ services:
       args:
         NEXT_PUBLIC_GRAPHQL_URL: ${NEXT_PUBLIC_GRAPHQL_URL}
         NEXT_PUBLIC_GRAPHQL_WS_URL: ${NEXT_PUBLIC_GRAPHQL_WS_URL}
-        NEXT_PUBLIC_PRETIX_WIDGET_URL: ${NEXT_PUBLIC_PRETIX_WIDGET_URL}
-        NEXT_PUBLIC_LEARN_URL: ${NEXT_PUBLIC_LEARN_URL}
-        NEXT_PUBLIC_BOOKING_URL: ${NEXT_PUBLIC_BOOKING_URL}
-        NEXT_PUBLIC_TICKETS_URL: ${NEXT_PUBLIC_TICKETS_URL}
         NEXT_PUBLIC_ENABLE_LIVE_API: ${NEXT_PUBLIC_ENABLE_LIVE_API}
         NEXT_PUBLIC_KEYCLOAK_ISSUER: ${NEXT_PUBLIC_KEYCLOAK_ISSUER}
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
@@ -182,14 +160,13 @@ services:
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-mymusic-coach-web}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://keycloak:8080/realms/mymusic-coach}
-      NEXT_PUBLIC_PRETIX_WIDGET_URL: ${NEXT_PUBLIC_PRETIX_WIDGET_URL:-http://tickets.mymusic-coach.test}
     expose:
       - "3000"
     depends_on:
       api:
         condition: service_healthy
 
-  # ── MCP Server (AI) ───────────────────────────────────────
+  # ── MCP Server (AI) ─────────────────────────
   mcp-server:
     build:
       context: .
@@ -215,7 +192,7 @@ services:
       retries: 3
       start_period: 20s
 
-  # ── MinIO (object storage) ────────────────────────────────
+  # ── MinIO (object storage) ──────────────────────
   minio:
     image: minio/minio:RELEASE.2024-06-13T22-53-53Z
     container_name: mymusic_coach_minio
@@ -235,222 +212,15 @@ services:
       timeout: 20s
       retries: 3
 
-  # ══════════════════════════════════════════════════════════
-  #  MOODLE (online-learning core)
-  # ══════════════════════════════════════════════════════════
-
-  moodle:
-    build:
-      context: ./docker/moodle
-      dockerfile: Dockerfile
-    container_name: mymusic_coach_moodle
-    restart: unless-stopped
-    environment:
-      MOODLE_DATABASE_TYPE: pgsql
-      MOODLE_DATABASE_HOST: moodle-db
-      MOODLE_DATABASE_PORT_NUMBER: 5432
-      MOODLE_DATABASE_USER: ${MOODLE_DB_USER:-moodle}
-      MOODLE_DATABASE_PASSWORD: ${MOODLE_DB_PASSWORD:-moodle_dev_pw}
-      MOODLE_DATABASE_NAME: ${MOODLE_DB_NAME:-moodle}
-      MOODLE_USERNAME: ${MOODLE_ADMIN_USER:-admin}
-      MOODLE_PASSWORD: ${MOODLE_ADMIN_PASSWORD:-moodle_admin_pw}
-      MOODLE_EMAIL: ${MOODLE_ADMIN_EMAIL:-admin@mymusic.coach}
-      MOODLE_SITE_NAME: "My Music Coach"
-      MOODLE_SSLPROXY: "true"
-      MOODLE_HOST: learn.mymusic-coach.test
-      MOODLE_WS_TOKEN: ${MOODLE_WS_TOKEN:-}
-      MOODLE_OIDC_CLIENT_ID: ${MOODLE_OIDC_CLIENT_ID:-}
-      FRONTEND_URL: ${FRONTEND_URL:-http://app.mymusic-coach.test}
-      MOODLE_OIDC_CLIENT_SECRET: ${MOODLE_OIDC_CLIENT_SECRET:-}
-      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-https://auth.mymusic.coach/realms/mymusic-coach}
-      MOODLE_SITE_ADMIN_EMAIL: ${MOODLE_SITE_ADMIN_EMAIL:-}
-      MOODLE_SITE_KC_USERNAME: ${MOODLE_SITE_KC_USERNAME:-}
-    volumes:
-      - moodle_data:/var/moodledata
-    expose:
-      - "8080"
-    depends_on:
-      moodle-db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/login/index.php || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 20
-      start_period: 600s
-
-  moodle-db:
-    image: postgres:16-alpine
-    container_name: mymusic_coach_moodle_db
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${MOODLE_DB_USER:-moodle}
-      POSTGRES_PASSWORD: ${MOODLE_DB_PASSWORD:-moodle_dev_pw}
-      POSTGRES_DB: ${MOODLE_DB_NAME:-moodle}
-    volumes:
-      - moodle_db_data:/var/lib/postgresql/data
-    expose:
-      - "5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${MOODLE_DB_USER:-moodle}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ══════════════════════════════════════════════════════════
-  #  LIBREBOOKING (physical lesson scheduling core)
-  # ══════════════════════════════════════════════════════════
-
-  librebooking:
-    build:
-      context: ./docker/librebooking
-      dockerfile: Dockerfile
-    container_name: mymusic_coach_librebooking
-    restart: unless-stopped
-    environment:
-      LIBREBOOKING_DB_HOST: librebooking-db
-      LIBREBOOKING_DB_USER: ${LIBREBOOKING_DB_USER:-librebooking}
-      LIBREBOOKING_DB_PASSWORD: ${LIBREBOOKING_DB_PASSWORD:-librebooking_dev_pw}
-      LIBREBOOKING_DB_NAME: ${LIBREBOOKING_DB_NAME:-librebooking}
-      LIBREBOOKING_APP_TITLE: "My Music Coach Booking"
-      LIBREBOOKING_TIMEZONE: ${LIBREBOOKING_TIMEZONE:-Europe/Zurich}
-      LIBREBOOKING_SCRIPT_URL: http://booking.mymusic-coach.test
-      LIBREBOOKING_ADMIN_EMAIL: ${LIBREBOOKING_ADMIN_EMAIL:-admin@mymusic.coach}
-      LIBREBOOKING_OIDC_CLIENT_ID: ${LIBREBOOKING_OIDC_CLIENT_ID:-}
-      LIBREBOOKING_OIDC_CLIENT_SECRET: ${LIBREBOOKING_OIDC_CLIENT_SECRET:-}
-      LIBREBOOKING_KEYCLOAK_URL: ${LIBREBOOKING_KEYCLOAK_URL:-https://auth.mymusic.coach}
-      LIBREBOOKING_KEYCLOAK_REALM: ${LIBREBOOKING_KEYCLOAK_REALM:-mymusic-coach}
-    expose:
-      - "8080"
-    depends_on:
-      librebooking-db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fL http://localhost:8080/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
-
-  librebooking-db:
-    image: mariadb:11.4
-    container_name: mymusic_coach_librebooking_db
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: ${LIBREBOOKING_DB_ROOT_PASSWORD:-librebooking_root_pw}
-      MYSQL_DATABASE: ${LIBREBOOKING_DB_NAME:-librebooking}
-      MYSQL_USER: ${LIBREBOOKING_DB_USER:-librebooking}
-      MYSQL_PASSWORD: ${LIBREBOOKING_DB_PASSWORD:-librebooking_dev_pw}
-    volumes:
-      - librebooking_db_data:/var/lib/mysql
-    expose:
-      - "3306"
-    healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ══════════════════════════════════════════════════════════
-  #  PRETIX (event ticketing core)
-  # ══════════════════════════════════════════════════════════
-
-  pretix:
-    build:
-      context: ./docker/pretix
-      dockerfile: Dockerfile
-    container_name: mymusic_coach_pretix
-    restart: unless-stopped
-    environment:
-      PRETIX_INSTANCE_NAME: "My Music Coach Tickets"
-      PRETIX_URL: http://tickets.mymusic-coach.test
-      PRETIX_CURRENCY: ${PRETIX_CURRENCY:-CHF}
-      PRETIX_DB_HOST: pretix-db
-      PRETIX_MAIL_BACKEND: django.core.mail.backends.dummy.EmailBackend
-      PRETIX_DB_USER: ${PRETIX_DB_USER:-pretix}
-      PRETIX_DB_PASSWORD: ${PRETIX_DB_PASSWORD:-pretix_dev_pw}
-      PRETIX_DB_NAME: ${PRETIX_DB_NAME:-pretix}
-      PRETIX_REDIS_HOST: pretix-redis
-      PRETIX_REDIS_PASSWORD: ${PRETIX_REDIS_PASSWORD:-pretix_redis_pw}
-      PRETIX_MAIL_FROM: ${PRETIX_MAIL_FROM:-tickets@mymusic.coach}
-      PRETIX_MAIL_HOST: ${PRETIX_MAIL_HOST:-localhost}
-      PRETIX_MAIL_PORT: ${PRETIX_MAIL_PORT:-587}
-      PRETIX_MAIL_USER: ${PRETIX_MAIL_USER:-}
-      PRETIX_MAIL_PASSWORD: ${PRETIX_MAIL_PASSWORD:-}
-      PRETIX_ADMIN_EMAIL: ${PRETIX_ADMIN_EMAIL:-admin@mymusic.coach}
-      PRETIX_ADMIN_PASSWORD: ${PRETIX_ADMIN_PASSWORD:-}
-      PRETIX_EXTRA_ADMIN_EMAIL: ${PRETIX_EXTRA_ADMIN_EMAIL:-}
-      PRETIX_EXTRA_ADMIN_PASSWORD: ${PRETIX_EXTRA_ADMIN_PASSWORD:-}
-      PRETIX_SSO_SECRET: ${PRETIX_SSO_SECRET:-}
-      PRETIX_API_TOKEN: ${PRETIX_API_TOKEN:-}
-      PRETIX_OIDC_ISSUER: ${PRETIX_OIDC_ISSUER:-http://keycloak:8080/realms/mymusic-coach}
-      PRETIX_OIDC_CLIENT_ID: ${PRETIX_OIDC_CLIENT_ID:-pretix-oidc}
-      PRETIX_OIDC_CLIENT_SECRET: ${PRETIX_OIDC_CLIENT_SECRET:-}
-    volumes:
-      - pretix_data:/data
-    expose:
-      - "80"
-    depends_on:
-      pretix-db:
-        condition: service_healthy
-      pretix-redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
-
-  pretix-db:
-    image: postgres:16-alpine
-    container_name: mymusic_coach_pretix_db
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${PRETIX_DB_USER:-pretix}
-      POSTGRES_PASSWORD: ${PRETIX_DB_PASSWORD:-pretix_dev_pw}
-      POSTGRES_DB: ${PRETIX_DB_NAME:-pretix}
-    volumes:
-      - pretix_db_data:/var/lib/postgresql/data
-    expose:
-      - "5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${PRETIX_DB_USER:-pretix}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  pretix-redis:
-    image: redis:7-alpine
-    container_name: mymusic_coach_pretix_redis
-    restart: unless-stopped
-    command: redis-server --requirepass ${PRETIX_REDIS_PASSWORD:-pretix_redis_pw}
-    volumes:
-      - pretix_redis_data:/data
-    expose:
-      - "6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${PRETIX_REDIS_PASSWORD:-pretix_redis_pw}", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-# ── Volumes ──────────────────────────────────────────────────
+# ── Volumes ──────────────────────────────────────
 volumes:
   caddy_data:
   caddy_config:
   postgres_main_data:
   redis_main_data:
   minio_data:
-  moodle_data:
-  moodle_moodledata:
-  moodle_db_data:
-  librebooking_db_data:
-  pretix_data:
-  pretix_db_data:
-  pretix_redis_data:
 
-# ── Network ──────────────────────────────────────────────────
+# ── Network ──────────────────────────────────────
 networks:
   default:
     name: mymusic_coach_network

@@ -1,186 +1,109 @@
-# 🎵 My Music Coach — Classical Music Education
+# 🎵 MyMusic.Coach — Classical Music Education
 
-A modern, fully open-source, AI-powered education platform for classical music built around **three pillars**:
+A TypeScript monorepo delivering three product pillars in **one native application** —
+there is no Moodle, LibreBooking, or pretix in the target system. Those were an early
+reference approach and have been removed; do not reintroduce them.
 
 > **Architecture rebuild:** the provider-neutral Kubernetes bootstrap is under
 > [`deploy/`](deploy/), contributor commands are in
 > [`docs/development.md`](docs/development.md), and coding-agent constraints are
-> in [`AGENTS.md`](AGENTS.md). The Compose stack and `k8s/deployment.yaml` remain
-> legacy migration references while the new architecture is built.
+> in [`AGENTS.md`](AGENTS.md) / [`CLAUDE.md`](CLAUDE.md). `docker-compose*.yml`,
+> `docker/`, and `k8s/deployment.yaml` remain legacy migration references only.
 
 | Pillar | Description |
 |--------|-------------|
-| 🎓 **Theory** | Moodle-powered video courses with quizzes and progress tracking |
-| 🎸 **Practice** | Online lessons (Zoom) + in-person bookings (LibreBooking) with Stripe/Yapeal payments |
-| 🎪 **Performance** | Discover and publish concerts, masterclasses and workshops — ticketed via pretix |
+| 🎓 **Learning** | Native course authoring, publishing, purchase, viewer, progress, assessment |
+| 🎸 **Booking** | Teacher discovery, availability, exact teacher-defined slots, Stripe payment |
+| 🎪 **Events** | Teacher-published events plus normalized external discovery (Ticketmaster, later Classictic) and Europeana cultural-heritage content |
+
+All three are modules of the same application, not separate platforms.
 
 ---
 
 ## Architecture
 
-My Music Coach is a **hub-and-spoke platform** with five core systems:
+### Workloads
 
-| System | Role | Domain (local) |
-|--------|------|----------------|
-| **my-music-coach** | User profiles, orchestration, public event discovery | `app.mymusic-coach.test` / `api.mymusic-coach.test` |
-| **Keycloak** | Central identity provider (OIDC + SAML) | `auth.mymusic-coach.test` |
-| **Moodle** | Online learning core (courses, lessons, quizzes) | `learn.mymusic-coach.test` |
-| **LibreBooking** | Physical lesson scheduling (rooms, resources) | `booking.mymusic-coach.test` |
-| **pretix** | Event ticketing core (orders, check-in, refunds) | `tickets.mymusic-coach.test` |
+| Workload | Role |
+|----------|------|
+| `apps/web` | Next.js UI |
+| `apps/api` | GraphQL API + webhooks (Stripe at `/api/webhooks/stripe`) |
+| `apps/worker` | Async jobs: webhook processing, email, external-event ingestion, retries (being introduced — async work currently runs in-process in the API) |
 
-### Service Map
+Shared code lives in `packages/database` (Prisma, `db push` workflow), `packages/graphql-schema`,
+and `packages/mcp-server`.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Caddy Gateway (:80)                           │
-│  app.  │  api.  │  auth.  │  learn.  │  booking.  │  tickets.  │
-└───┬────┴───┬────┴────┬────┴────┬─────┴─────┬──────┴─────┬──────┘
-    │        │         │         │            │            │
-    ▼        ▼         ▼         ▼            ▼            ▼
-  [web]    [api]   [keycloak]  [moodle]  [librebooking]  [pretix]
-    │        │         ▲         │            │            │
-    │        │    OIDC/SAML      │            │            │
-    │        │    ┌────┴─────────┤            │            │
-    │        │    │    ┌─────────┼────────────┤            │
-    │        │    │    │    ┌────┼────────────┼────────────┤
-    │        │    │    │    │    │            │            │
-    │        ▼    │    ▼    │    ▼            ▼            ▼
-    │   [postgres] │ [moodle-db] │  [librebooking-db]  [pretix-db]
-    │   [redis]    │             │                     [pretix-redis]
-    │   [minio]    │             │
-    │   [mcp-svc]  │             │
-    └──────────────┘             │
-                                 └──────── All DBs/Redis internal only
-```
+### Identity and data ownership
 
-### Startup Order
+- **Keycloak** is the identity authority (OIDC, PKCE, server-side sessions).
+- The application **PostgreSQL database** owns profiles, roles, marketplace, bookings, courses,
+  entitlements, and progress. `UserExternalIdentity` maps the immutable Keycloak `sub` to the
+  platform user.
+- **Stripe test mode only** in development. Payment state is a state machine; the signed webhook —
+  never the browser redirect — confirms payment.
+- External providers (Ticketmaster, Europeana, later Classictic) are read-only discovery inputs
+  behind server-side adapters.
 
-1. **Databases** — `postgres-main`, `moodle-db`, `librebooking-db`, `pretix-db`
-2. **Caches** — `redis-main`, `pretix-redis`
-3. **Identity** — `keycloak`
-4. **External services** — `moodle`, `librebooking`, `pretix`
-5. **Platform** — `api` → `web`
-6. **AI / Storage** — `mcp-server`, `minio`
-7. **Gateway** — `gateway` (last — waits for all upstreams)
+### Target deployment
+
+Production and development both target **DigitalOcean Kubernetes (DOKS)**, reached through a
+**Cloudflare Tunnel** — there is no public LoadBalancer or ingress controller. GitHub Actions builds
+SHA-tagged images, syncs secrets from GitHub environment secrets, and applies manifests to the
+cluster; local development does not require cluster access. See [`deploy/README.md`](deploy/README.md)
+for the Kustomize layout and [`docs/deployment.md`](docs/deployment.md) for the deployment path.
 
 ---
 
-## Quick Start
+## Quick Start (local development)
 
 ### 1. Prerequisites
 
-- Docker & Docker Compose v2
 - Node.js ≥ 20 + npm ≥ 10
+- Docker with Compose v2 only if you want the legacy local stack (Postgres, Redis, Keycloak, MinIO)
 
-### 2. Configure `/etc/hosts`
-
-```bash
-# Add to /etc/hosts (or run: make hosts)
-127.0.0.1  app.mymusic-coach.test
-127.0.0.1  api.mymusic-coach.test
-127.0.0.1  auth.mymusic-coach.test
-127.0.0.1  learn.mymusic-coach.test
-127.0.0.1  booking.mymusic-coach.test
-127.0.0.1  tickets.mymusic-coach.test
-```
-
-### 3. Start the full stack
+### 2. Install and generate
 
 ```bash
+npm ci
 cp .env.example .env
-# Edit .env with your secrets/API keys
-
-make up          # or: docker compose up -d --build
-make migrate     # Run DB migrations
+npm run db:generate
 ```
 
-### 4. Access services
-
-| Service | URL |
-|---------|-----|
-| 🌐 Web App | http://app.mymusic-coach.test |
-| 🔌 GraphQL API | http://api.mymusic-coach.test/graphql |
-| 🔑 Keycloak Admin | http://auth.mymusic-coach.test |
-| 📚 Moodle LMS | http://learn.mymusic-coach.test |
-| 📅 LibreBooking | http://booking.mymusic-coach.test |
-| 🎫 pretix Ticketing | http://tickets.mymusic-coach.test |
-
-### 5. Development (hot-reload, no Docker)
+### 3. Run
 
 ```bash
-npm install
 npm run dev
+# or a single workspace:
+npm run dev --workspace @my-music-coach/web
+npm run dev --workspace @my-music-coach/api
 ```
 
----
+See [`docs/development.md`](docs/development.md) for the full command reference (build, test, lint,
+database commands, and rendering the Kubernetes manifests without touching a cluster).
 
-## Production on `mymusic.coach` (Cloudflare tunnel)
+### Legacy Compose stack
 
-The live deployment runs on a Linux (Ubuntu) host. TLS terminates at
-Cloudflare, and a [`cloudflared`](docker-compose.prod.yml) tunnel connects
-**outbound only** to the internal Caddy gateway — nothing is exposed on the
-host's public IP. All services are reachable on the real domain:
-
-| Service | URL |
-|---------|-----|
-| 🌐 Web App | https://app.mymusic.coach |
-| 🔌 GraphQL API | https://api.mymusic.coach/graphql |
-| 🔑 Keycloak | https://auth.mymusic.coach |
-| 📚 Moodle LMS | https://learn.mymusic.coach |
-| 📅 LibreBooking | https://booking.mymusic.coach |
-| 🎫 pretix Ticketing | https://tickets.mymusic.coach |
+The Compose topology in [`docker-compose.yml`](docker-compose.yml) (Postgres, Redis, Keycloak,
+MinIO, the app workloads, and the MCP server) remains available as a migration reference. It is
+**not** the target architecture — that's the DOKS layout under `deploy/`.
 
 ```bash
-# 1. Generate a production .env with fresh, URL-safe secrets
-bash scripts/gen-prod-env.sh
-# then add CLOUDFLARE_TUNNEL_TOKEN=... (from the Cloudflare Zero Trust dashboard)
-
-# 2. Bring up the stack with the production overrides + tunnel
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-make migrate
+docker compose config      # render only
+docker compose up -d --build
+docker compose down
 ```
-
-The override file ([`docker-compose.prod.yml`](docker-compose.prod.yml)) flips
-the services that bake a hostname into their own config (Keycloak, Moodle,
-LibreBooking, pretix) to the `https://*.mymusic.coach` hosts and adds the
-`cloudflared` tunnel. The base `docker-compose.yml` stays the dev source of
-truth (`*.mymusic-coach.test`).
-
-Configure your Cloudflare tunnel **ingress** so every public hostname routes to
-the gateway service (`http://gateway:80`), and point each `*.mymusic.coach`
-hostname's DNS at the tunnel. See
-[`docs/production-runbook.md`](docs/production-runbook.md) for the full
-deployment checklist and a diagnostic runbook for the external containers.
 
 ---
 
 ## Tech Stack
 
-- **Backend**: Node.js · TypeScript · Apollo Server 4 (GraphQL) · Prisma · PostgreSQL 16 · Redis
+- **Backend**: Node.js · TypeScript · Apollo Server 4 (GraphQL) · Prisma · PostgreSQL 16
 - **Frontend**: Next.js 14 · TypeScript · Tailwind CSS · Apollo Client
-- **Auth**: Keycloak 24 (OpenID Connect + SAML) — central SSO for all systems
-- **Learning**: Moodle 4.4 — online course delivery
-- **Scheduling**: LibreBooking 2.8 — physical room/resource booking
-- **Ticketing**: pretix 2024.7 — event ticketing and check-in
-- **AI**: MCP Server + DeepSeek V4
-- **Payments**: Stripe + Yapeal (Swiss)
-- **Video**: Zoom API
-- **Storage**: MinIO (S3-compatible)
-- **Gateway**: Caddy 2.8 (reverse proxy)
-- **Infrastructure**: Docker Compose + Kubernetes
-
----
-
-## Key Features
-
-- **AI-powered onboarding assessment** (15–20 min) — theory, performance recording, musical culture + preferences → personalised skill level + learning path
-- **Duolingo-style gamification** — XP, levels, streaks, badges, achievements
-- **Moodle-powered courses** — sections, lessons (video/audio/text/quiz), enrollments, progress
-- **Teacher marketplace** — certifications, availability, ratings, Zoom/LibreBooking scheduling
-- **pretix-powered event ticketing** — geo-search for nearby concerts, full ticket lifecycle
-- **Social feed** — posts, likes, comments, follows
-- **AI recommendations** — courses, teachers and events matched to your profile
-- **Central SSO** — one Keycloak account logs into all systems
+- **Auth**: Keycloak (OpenID Connect, PKCE, server-side sessions) — central identity for the app
+- **Payments**: Stripe (test mode in development), Stripe Connect for teacher/seller payouts
+- **AI**: MCP Server
+- **Infrastructure**: DigitalOcean Kubernetes (Kustomize) behind a Cloudflare Tunnel; Docker Compose
+  kept only as a legacy local-dev reference
 
 ---
 
@@ -188,54 +111,30 @@ deployment checklist and a diagnostic runbook for the external containers.
 
 ```
 apps/api/                     GraphQL API (Apollo Server + Express)
-  src/integrations/           Integration layer (adapters, webhooks, sync)
-    adapters/                 LibreBooking, Moodle, pretix adapters
-    webhooks/                 Webhook handlers
-    provisioning/             User provisioning flows
-    sync/                     Periodic sync jobs
 apps/web/                     Next.js 14 frontend
+apps/worker/                  Async job runner (being introduced)
 packages/database/            Prisma schema (PostgreSQL)
 packages/graphql-schema/      Shared GraphQL SDL
-packages/mcp-server/          MCP server (AI tools via DeepSeek)
-docker/
-  gateway/                    Caddy reverse proxy config
-  keycloak/                   Keycloak realm export
-  moodle/                     Moodle Dockerfile
-  librebooking/               LibreBooking Dockerfile + entrypoint
-  pretix/                     pretix Dockerfile + entrypoint
-k8s/                          Kubernetes manifests
+packages/mcp-server/          MCP server (AI tools)
+deploy/                       Provider-neutral Kustomize scaffold (target Kubernetes layout)
+docker/                       Legacy Compose build contexts (gateway, keycloak) — migration reference
+docker-compose.yml            Legacy local dev stack — migration reference, not the target architecture
+k8s/                          Legacy Kubernetes manifest — migration reference, not the target layout
 docs/
-  integration-architecture.md Full integration design
-  local-domains.md            /etc/hosts setup guide
-  pretix-integration.md       pretix integration details
-  security-baseline.md        Security controls and checklist
-```
-
----
-
-## Make Targets
-
-```
-make up             Start the full stack
-make down           Stop all services
-make logs           Tail all service logs
-make migrate        Run Prisma migrations
-make seed           Seed the database
-make realm-import   Re-import Keycloak realm
-make hosts          Print required /etc/hosts entries
-make dev            Start local dev servers (no Docker)
-make help           Show all available targets
+  development.md              Contributor commands (install, build, test, lint, manifest rendering)
+  deployment.md                Deployment path and GitHub Actions/DOKS details
+  cloudflare-tunnel.md        Cloudflare Tunnel setup and routing
 ```
 
 ---
 
 ## Documentation
 
-- [`docs/integration-architecture.md`](docs/integration-architecture.md) — system design, service map, data flows
-- [`docs/local-domains.md`](docs/local-domains.md) — local domain setup guide
-- [`docs/pretix-integration.md`](docs/pretix-integration.md) — pretix ticketing integration
-- [`docs/security-baseline.md`](docs/security-baseline.md) — security controls and secrets management
-- [`docs/architecture.md`](docs/architecture.md) — original architecture reference
+- [`AGENTS.md`](AGENTS.md) / [`CLAUDE.md`](CLAUDE.md) — coding-agent guidance and guardrails
+- [`docs/development.md`](docs/development.md) — install, build, test, lint, and manifest rendering
+- [`docs/deployment.md`](docs/deployment.md) — deployment path (GitHub Actions → DOKS)
+- [`docs/cloudflare-tunnel.md`](docs/cloudflare-tunnel.md) — Cloudflare Tunnel setup and routing
+- [`deploy/README.md`](deploy/README.md) — target Kubernetes (Kustomize) layout
 
 ---
 
