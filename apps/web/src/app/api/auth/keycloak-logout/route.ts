@@ -25,15 +25,36 @@ export async function POST(req: NextRequest) {
   }
 
   const response = NextResponse.json({ ok: true });
-  for (const name of [
+  const authCookiePrefixes = [
     'next-auth.session-token',
     '__Secure-next-auth.session-token',
     'next-auth.callback-url',
     '__Secure-next-auth.callback-url',
     'next-auth.csrf-token',
     '__Host-next-auth.csrf-token',
-  ]) {
-    response.cookies.set(name, '', { path: '/', maxAge: 0 });
+  ];
+
+  // NextAuth splits large JWT sessions into numbered cookies such as
+  // __Secure-next-auth.session-token.0. Clear every matching cookie, not only
+  // the unchunked base name, otherwise the browser reconstructs the session.
+  const cookieNames = new Set([
+    ...authCookiePrefixes,
+    ...req.cookies
+      .getAll()
+      .map(({ name }) => name)
+      .filter((name) => authCookiePrefixes.some((prefix) => name === prefix || name.startsWith(`${prefix}.`))),
+  ]);
+
+  for (const name of cookieNames) {
+    response.cookies.set(name, '', {
+      path: '/',
+      maxAge: 0,
+      expires: new Date(0),
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: name.startsWith('__Secure-') || name.startsWith('__Host-'),
+    });
   }
+  response.headers.set('Cache-Control', 'no-store');
   return response;
 }
