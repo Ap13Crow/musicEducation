@@ -1,7 +1,6 @@
 import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import type { GraphQLContext } from '../types.js';
-import { MoodleAdapter } from '../integrations/adapters/moodle.js';
 
 export const courseResolvers = {
   Query: {
@@ -149,51 +148,6 @@ export const courseResolvers = {
         throw new GraphQLError('Please complete payment first.', { extensions: { code: 'PAYMENT_REQUIRED' } });
       }
       return prisma.enrollment.create({ data: { userId: user.id, courseId } });
-    },
-
-    async syncCoursesFromMoodle(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
-      requireRole(user, 'ADMIN');
-      const moodleUrl = process.env.MOODLE_URL;
-      const moodleToken = process.env.MOODLE_WS_TOKEN;
-      if (!moodleUrl || !moodleToken) {
-        throw new GraphQLError('Moodle integration not configured.', { extensions: { code: 'BAD_CONFIGURATION' } });
-      }
-      const moodle = new MoodleAdapter(moodleUrl, moodleToken);
-      const moodleCourses = await moodle.listCourses();
-
-      let created = 0;
-      let skipped = 0;
-      const coursesToImport = moodleCourses.filter((c: any) => c.id !== 1); // skip site-level course
-
-      for (const mc of coursesToImport) {
-        const courseStatus = (mc as any).visible === 0 ? 'DRAFT' : 'PUBLISHED';
-        const existing = await prisma.course.findFirst({ where: { moodleCourseId: mc.id } });
-        if (existing) {
-          // Keep status in sync with Moodle visibility
-          if (existing.status !== courseStatus) {
-            await prisma.course.update({ where: { id: existing.id }, data: { status: courseStatus } });
-          }
-          skipped++;
-          continue;
-        }
-
-        const slug = mc.shortname.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + mc.id;
-        const slugConflict = await prisma.course.findUnique({ where: { slug } });
-
-        await prisma.course.create({
-          data: {
-            title: mc.fullname,
-            slug: slugConflict ? slug + '-moodle' : slug,
-            moodleCourseId: mc.id,
-            status: courseStatus,
-            instruments: [],
-            musicStyles: [],
-          },
-        });
-        created++;
-      }
-
-      return { created, skipped, total: coursesToImport.length };
     },
 
     async markLessonComplete(_: unknown, { lessonId }: any, { prisma, user }: GraphQLContext) {

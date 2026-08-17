@@ -13,14 +13,9 @@ export default function Navbar() {
 
   async function logout() {
     try {
-      const response = await fetch('/api/auth/keycloak-logout', { cache: 'no-store' });
-      const payload = await response.json();
+      await fetch('/api/auth/keycloak-logout', { method: 'POST', cache: 'no-store' });
       await signOut({ redirect: false, callbackUrl: '/' });
-      if (response.ok && typeof payload.url === 'string') {
-        window.location.replace(payload.url);
-      } else {
-        window.location.replace('/');
-      }
+      window.location.replace('/');
     } catch {
       await signOut({ redirect: false, callbackUrl: '/' });
       window.location.replace('/');
@@ -70,7 +65,7 @@ export default function Navbar() {
                   Log in
                 </button>
                 <button
-                  onClick={() => signIn('keycloak', { callbackUrl: '/dashboard' }, { kc_action: 'register' })}
+                  onClick={() => signIn('keycloak', { callbackUrl: '/dashboard' }, { kc_action: 'register', prompt: 'login', max_age: '0' })}
                   className="btn-primary rounded-lg px-4 py-2 text-sm"
                 >
                   Register
@@ -182,7 +177,7 @@ export default function Navbar() {
                   Log in
                 </button>
                 <button
-                  onClick={() => signIn('keycloak', { callbackUrl: '/dashboard' }, { kc_action: 'register' })}
+                  onClick={() => signIn('keycloak', { callbackUrl: '/dashboard' }, { kc_action: 'register', prompt: 'login', max_age: '0' })}
                   className="btn-primary rounded-lg px-4 py-2 text-sm"
                 >
                   Register
