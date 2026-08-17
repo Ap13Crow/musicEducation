@@ -46,8 +46,37 @@ export const bookingResolvers = {
       }
       if (!teacherProfile.isAvailable) throw new GraphQLError('Teacher is not available.', { extensions: { code: 'BAD_USER_INPUT' } });
 
+      if (durationMin !== 60) {
+        throw new GraphQLError('Lessons are booked in one-hour slots.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
       const startsAtDate = new Date(startsAt);
-      const endsAt = new Date(startsAtDate.getTime() + durationMin * 60 * 1000);
+      if (Number.isNaN(startsAtDate.getTime()) || startsAtDate <= new Date()) {
+        throw new GraphQLError('Choose a future lesson slot.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      const endsAt = new Date(startsAtDate.getTime() + 60 * 60 * 1000);
+      const availability = await prisma.teacherAvailability.findMany({ where: { teacherProfileId } });
+      const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const matchesAvailability = availability.some((slot) => {
+        const timezone = slot.timezone ?? 'Europe/Zurich';
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: timezone, weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+        }).formatToParts(startsAtDate);
+        const weekday = weekdayNames.indexOf(parts.find((part) => part.type === 'weekday')?.value ?? '');
+        const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? -1);
+        const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? -1);
+        const requestedMinutes = hour * 60 + minute;
+        const [startHour, startMinute] = slot.startTime.split(':').map(Number);
+        const [endHour, endMinute] = slot.endTime.split(':').map(Number);
+        const slotStart = startHour * 60 + startMinute;
+        const slotEnd = endHour * 60 + endMinute;
+        return weekday === slot.dayOfWeek &&
+          requestedMinutes >= slotStart &&
+          requestedMinutes + 60 <= slotEnd &&
+          (requestedMinutes - slotStart) % 60 === 0;
+      });
+      if (!matchesAvailability) {
+        throw new GraphQLError('This time was not offered by the teacher.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
 
       const conflict = await prisma.booking.findFirst({
         where: {
