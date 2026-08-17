@@ -2,7 +2,6 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
-import jwt from 'jsonwebtoken';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@apollo/server/express4';
 import { makeExecutableSchema } from '@graphql-tools/schema';
@@ -23,12 +22,6 @@ import { feedResolvers } from './resolvers/feed.js';
 import { paymentResolvers } from './resolvers/payments.js';
 import { adminResolvers } from './resolvers/admin.js';
 import type { GraphQLContext } from './types.js';
-import { PretixAdapter } from './integrations/adapters/pretix.js';
-import { LibreBookingAdapter } from './integrations/adapters/librebooking.js';
-import { MoodleAdapter } from './integrations/adapters/moodle.js';
-import { startScheduler } from './integrations/scheduler.js';
-import { createPretixWebhookHandler } from './integrations/webhooks/pretix-webhook.js';
-import { createLibreBookingWebhookHandler } from './integrations/webhooks/librebooking-webhook.js';
 import { createStripeWebhookHandler } from './integrations/webhooks/payment-webhook.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -77,26 +70,6 @@ const resolvers = mergeResolvers([
 const schema = makeExecutableSchema({ typeDefs, resolvers });
 
 async function main() {
-  const legacySchedulerEnabled = process.env.ENABLE_LEGACY_SCHEDULER === 'true';
-  const pretixAdapter = legacySchedulerEnabled && process.env.PRETIX_URL && process.env.PRETIX_API_TOKEN
-    ? new PretixAdapter(process.env.PRETIX_URL, process.env.PRETIX_API_TOKEN)
-    : undefined;
-  const libreBookingAdapter = legacySchedulerEnabled && process.env.LIBREBOOKING_URL && process.env.LIBREBOOKING_API_USER && process.env.LIBREBOOKING_API_PASSWORD
-    ? new LibreBookingAdapter(process.env.LIBREBOOKING_URL, {
-        username: process.env.LIBREBOOKING_API_USER,
-        password: process.env.LIBREBOOKING_API_PASSWORD,
-      })
-    : undefined;
-  const moodleAdapter = legacySchedulerEnabled && process.env.MOODLE_URL && process.env.MOODLE_WS_TOKEN
-    ? new MoodleAdapter(process.env.MOODLE_URL, process.env.MOODLE_WS_TOKEN)
-    : undefined;
-
-  if (legacySchedulerEnabled) {
-    startScheduler(prisma, { pretix: pretixAdapter, libreBooking: libreBookingAdapter, moodle: moodleAdapter }, {
-      pretixOrganiserSlug: process.env.PRETIX_ORGANISER_SLUG,
-    });
-  }
-
   const app = express();
   const httpServer = createServer(app);
   app.disable('x-powered-by');
@@ -111,8 +84,6 @@ async function main() {
   }
 
   app.use(express.json());
-  if (pretixAdapter) app.post('/webhooks/pretix', createPretixWebhookHandler(prisma, pretixAdapter));
-  if (libreBookingAdapter) app.post('/webhooks/librebooking', createLibreBookingWebhookHandler(prisma));
 
   app.use(authMiddleware);
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
@@ -126,18 +97,6 @@ async function main() {
     }
   });
 
-  app.get('/pretix-sso-link', async (req, res) => {
-    const auth = await resolveRequestUser(req, prisma);
-    if (!auth || auth.role !== 'ADMIN') return res.status(403).json({ error: 'Admin access required' });
-    const dbUser = await prisma.user.findUnique({ where: { id: auth.id }, select: { email: true } });
-    if (!dbUser?.email) return res.status(500).json({ error: 'User email not found' });
-    const secret = process.env.PRETIX_SSO_SECRET;
-    if (!secret) return res.status(503).json({ error: 'PRETIX_SSO_SECRET not configured' });
-    const token = jwt.sign({ email: dbUser.email }, secret, { expiresIn: 60, algorithm: 'HS256' } as any);
-    const pretixUrl = (process.env.PRETIX_URL ?? 'https://tickets.mymusic.coach').replace('http://pretix:80', 'https://tickets.mymusic.coach');
-    return res.json({ url: `${pretixUrl}/control/login/?sso_token=${token}` });
-  });
-
   const server = new ApolloServer<GraphQLContext>({ schema });
   await server.start();
   app.use('/graphql', expressMiddleware(server, {
@@ -149,7 +108,7 @@ async function main() {
         if (req.headers.authorization?.startsWith('Bearer ') && !user) {
           logger.warn('Bearer token did not resolve to an application user');
         }
-        return { prisma, user, req, libreBooking: libreBookingAdapter };
+        return { prisma, user, req };
       } catch (error) {
         logger.error({ err: error }, 'Authenticated user provisioning failed');
         throw error;
