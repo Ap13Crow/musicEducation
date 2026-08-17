@@ -20,7 +20,7 @@ on:
         required: true
         default: plan
         type: choice
-        options: [plan, deploy, status]
+        options: [plan, deploy, status, diagnose]
 
 permissions:
   contents: read
@@ -125,7 +125,7 @@ jobs:
             }
           done
           test -n "$(kubectl -n "$NAMESPACE" get secret keycloak-client-secrets -o 'jsonpath={.data.WEB_CLIENT_SECRET}')"
-      - name: Select or create the free DigitalOcean registry
+      - name: Select or create the DigitalOcean registry
         id: registry
         if: inputs.operation == 'deploy'
         env:
@@ -216,13 +216,26 @@ jobs:
           doctl registries login "$REGISTRY_NAME" --expiry-seconds 1200
           api_image="$REPOSITORY:api-$GITHUB_SHA"
           web_image="$REPOSITORY:web-$GITHUB_SHA"
-          docker buildx build --platform linux/amd64 --file apps/api/Dockerfile --tag "$api_image" --push .
-          docker buildx build --platform linux/amd64 --file apps/web/Dockerfile \
-            --build-arg NEXT_PUBLIC_GRAPHQL_URL=/api/graphql \
-            --build-arg NEXT_PUBLIC_ENABLE_LIVE_API=true \
-            --build-arg NEXT_PUBLIC_KEYCLOAK_ISSUER="$OIDC_ISSUER" \
-            --build-arg NEXT_PUBLIC_APP_URL="$PUBLIC_URL" \
-            --tag "$web_image" --push .
+          push_failed=0
+          docker buildx build --platform linux/amd64 --file apps/api/Dockerfile --tag "$api_image" --push . || push_failed=1
+          if (( push_failed == 0 )); then
+            docker buildx build --platform linux/amd64 --file apps/web/Dockerfile \
+              --build-arg NEXT_PUBLIC_GRAPHQL_URL=/api/graphql \
+              --build-arg NEXT_PUBLIC_ENABLE_LIVE_API=true \
+              --build-arg NEXT_PUBLIC_KEYCLOAK_ISSUER="$OIDC_ISSUER" \
+              --build-arg NEXT_PUBLIC_APP_URL="$PUBLIC_URL" \
+              --tag "$web_image" --push . || push_failed=1
+          fi
+          if (( push_failed != 0 )); then
+            echo 'The registry rejected an immutable application image.' >&2
+            echo 'Current registry subscription and storage information:' >&2
+            doctl registries list --format Name,SubscriptionTier,StorageUsageBytes,StorageUsageBytesUpdatedAt --no-header >&2 || true
+            echo 'Current application tags:' >&2
+            doctl registry repository list-tags mymusiccoach --registry "$REGISTRY_NAME" \
+              --format Tag,UpdatedAt --no-header >&2 || true
+            echo 'If this registry is on the 500 MiB Starter tier, upgrade it before retrying the deployment; live image tags cannot be deleted safely before their replacement is running.' >&2
+            exit 1
+          fi
           echo "api=$api_image" >> "$GITHUB_OUTPUT"
           echo "web=$web_image" >> "$GITHUB_OUTPUT"
       - name: Integrate the registry with DOKS
@@ -309,6 +322,29 @@ jobs:
           done
           echo 'The public Cloudflare route did not reach the ready web service.' >&2
           exit 1
+      - name: Diagnose authenticated profile provisioning
+        if: inputs.operation == 'diagnose'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'Current immutable images:'
+          kubectl -n "$NAMESPACE" get deployment api web -o custom-columns='NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image,READY:.status.readyReplicas'
+          echo 'Identity schema objects:'
+          db_pod="$(kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name=api -o json | jq -r '.items[] | select(.status.phase == "Running") | .metadata.name' | head -n 1)"
+          test -n "$db_pod" || {
+            echo 'No running API Pod was found.' >&2
+            exit 1
+          }
+          echo 'Recent API logs (bearer tokens redacted):'
+          kubectl -n "$NAMESPACE" logs "$db_pod" --since=6h --tail=500 \
+            | sed -E 's/Bearer[[:space:]]+[A-Za-z0-9._~-]+/Bearer [REDACTED]/g' \
+            || true
+          echo 'API environment contract (values are not printed):'
+          kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
+            "for (const key of ['DATABASE_URL','KEYCLOAK_ISSUER','KEYCLOAK_CLIENT_ID']) console.log(key + '=' + (process.env[key] ? 'configured' : 'missing'))"
+          echo 'Public health:'
+          curl --fail --silent --show-error "$PUBLIC_URL/api/health"
+
       - name: Report application status
         if: always()
         shell: bash

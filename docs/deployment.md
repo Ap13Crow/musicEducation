@@ -160,3 +160,40 @@ implemented.
 Realm changes made after bootstrap are live Keycloak state. The
 `KeycloakRealmImport` remains creation-only and must not be rerun to manage
 individual users or roles.
+
+
+## Provisioning diagnostics and realm administration
+
+If an interactive Keycloak sign-in succeeds but the dashboard cannot load the
+local profile, run **Development application** with operation `diagnose` on
+`main`. The operation is read-only. It reports the currently deployed image
+digests, the required API environment contract, public health, and recent API
+logs with bearer-token values redacted. It does not require or print a user's
+password or access token.
+
+The operator-generated bootstrap administrator remains in Kubernetes Secret
+`keycloak-initial-admin`. Do not extract or copy it into GitHub. To establish
+a permanent human administrator:
+
+1. self-register the intended administrator in the `mymusic-coach` realm;
+2. run **Development Keycloak** with operation `grant-realm-admin`;
+3. enter that existing user's exact username or email in
+   `realm_admin_user`; and
+4. sign out and back in after the workflow succeeds.
+
+The protected workflow uses the bootstrap Secret only inside the cluster and
+grants both `realm-management/realm-admin` and the application `ADMIN`
+realm role. It never changes the user's password.
+
+## Container registry capacity
+
+Immutable deployment requires enough registry capacity to hold the currently
+running API/web images and their replacements simultaneously. The DigitalOcean
+Starter registry has a 500 MiB ceiling, which is no longer sufficient for safe
+application rollouts. Upgrade the existing registry to the Basic tier before
+the next deployment. Basic provides 5 GiB and does not require changing
+`DOCR_REGISTRY` or the Kubernetes image-pull integration.
+
+The deploy workflow does not purchase or upgrade a registry automatically. If
+an image push fails, it prints the subscription/storage summary and preserves
+the live image tags.
