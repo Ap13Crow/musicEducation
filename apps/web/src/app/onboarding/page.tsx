@@ -11,6 +11,18 @@ const START_ASSESSMENT = gql`
   }
 `;
 
+const UPDATE_PREFERENCES = gql`
+  mutation SaveOnboardingPreferences($input: UpdateProfileInput!) {
+    updateProfile(input: $input) { id profile { instruments musicStyles } }
+  }
+`;
+
+const COMPLETE_ONBOARDING = gql`
+  mutation FinishOnboarding {
+    completeOnboarding { id profile { onboardingDone } }
+  }
+`;
+
 const COMPLETE_ASSESSMENT = gql`
   mutation CompleteAssessment($assessmentId: ID!) {
     completeAssessment(assessmentId: $assessmentId) {
@@ -76,6 +88,8 @@ export default function OnboardingPage() {
   const [result, setResult] = useState<any>(null);
 
   const [startAssessment] = useMutation(START_ASSESSMENT);
+  const [updatePreferences] = useMutation(UPDATE_PREFERENCES);
+  const [completeOnboarding] = useMutation(COMPLETE_ONBOARDING);
   const [completeAssessment, { loading: completing }] = useMutation(COMPLETE_ASSESSMENT);
 
   async function handleStart() {
@@ -97,16 +111,20 @@ export default function OnboardingPage() {
   }
 
   async function handleComplete() {
-    if (assessmentId) {
-      try {
+    try {
+      await updatePreferences({
+        variables: { input: { instruments: selectedInstruments, musicStyles: selectedStyles } },
+      });
+      let assessmentResult = null;
+      if (assessmentId) {
         const { data } = await completeAssessment({ variables: { assessmentId } });
-        setResult(data.completeAssessment);
-        setStep(steps.length);
-      } catch {
-        setStep(steps.length);
+        assessmentResult = data?.completeAssessment ?? null;
       }
-    } else {
+      await completeOnboarding();
+      setResult(assessmentResult);
       setStep(steps.length);
+    } catch {
+      // Keep the user on the final step so their preferences are not silently lost.
     }
   }
 
@@ -135,7 +153,7 @@ export default function OnboardingPage() {
             <Music className="mx-auto mb-6 h-16 w-16 text-primary-600" />
             <h1 className="mb-4 text-3xl font-bold">Welcome to My Music Coach</h1>
             <p className="mb-8 text-gray-600">
-              Take our 15-minute music assessment and let our AI build your personalised learning path.
+              Create a useful starting profile for your teacher and learning plan. Audio analysis will be added when the private AI pipeline is activated.
               We&apos;ll evaluate your theory knowledge, musical culture and guide you to the best courses, teachers and events.
             </p>
             <button onClick={handleStart} className="btn-primary px-10 py-3 text-base">

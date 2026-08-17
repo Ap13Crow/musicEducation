@@ -102,6 +102,7 @@ const GET_TEACHERS = gql`
         locationCity locationCountry
         isAvailable yearsExperience
         avgRating totalReviews
+        user { id email displayName avatarUrl }
         certifications { id title issuingBody }
       }
       pageInfo { totalCount hasNextPage }
@@ -111,6 +112,7 @@ const GET_TEACHERS = gql`
 
 function TeacherCard({ teacher }: { teacher: any }) {
   const { data: session } = useSession();
+  const isOwnProfile = Boolean(session?.user?.email && session.user.email === teacher.user?.email);
 
   return (
     <article className="card p-5 hover:border-primary-300 transition-colors">
@@ -120,7 +122,9 @@ function TeacherCard({ teacher }: { teacher: any }) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold truncate">{teacher.user?.displayName}</h2>
+            <Link href={`/teachers/${teacher.id}`} className="text-lg font-semibold truncate hover:text-primary-700">
+              {teacher.user?.displayName}
+            </Link>
             {teacher.isAvailable ? (
               <span className="shrink-0 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Available</span>
             ) : (
@@ -194,8 +198,11 @@ function TeacherCard({ teacher }: { teacher: any }) {
             <span className="text-sm text-gray-500">Contact for pricing</span>
           )}
         </div>
-        {teacher.isAvailable ? (
+        <div className="flex items-center gap-2">
+          <Link href={`/teachers/${teacher.id}`} className="btn-secondary">View profile</Link>
+          {teacher.isAvailable ? (
           session ? (
+            isOwnProfile ? <span className="text-sm text-gray-500">Your profile</span> :
             <Link href={`/book/${teacher.id}`} className="btn-primary">Book Intro Lesson</Link>
           ) : (
             <button onClick={() => signIn('keycloak')} className="btn-primary">
@@ -205,6 +212,7 @@ function TeacherCard({ teacher }: { teacher: any }) {
         ) : (
           <button disabled className="btn-secondary opacity-50 cursor-not-allowed">Unavailable</button>
         )}
+        </div>
       </div>
     </article>
   );

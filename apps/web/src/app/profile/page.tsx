@@ -6,7 +6,7 @@ import { gql, useQuery, useMutation } from '@apollo/client';
 import {
   User, Mail, MapPin, Music, Globe, Edit3, Save, X,
   Trophy, Flame, GraduationCap, Star, BookOpen, Lock,
-  ExternalLink, CheckCircle, AlertCircle, Phone,
+  ExternalLink, CheckCircle, AlertCircle, Phone, ImagePlus,
 } from 'lucide-react';
 import { externalLinks, keycloakAccountUrl, keycloakAdminUrl, keycloakSigningInUrl } from '@/lib/external-links';
 
@@ -90,6 +90,8 @@ export default function ProfilePage() {
 
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState('');
   const [edit, setEdit] = useState<EditState>({
     displayName: '', bio: '', city: '', country: '', timezone: 'Europe/Zurich',
     instruments: [], musicStyles: '',
@@ -119,6 +121,36 @@ export default function ProfilePage() {
     });
     setEditing(true);
     setSaved(false);
+  }
+
+  async function uploadPhoto(file?: File) {
+    if (!file) return;
+    setPhotoError('');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 500_000) {
+      setPhotoError('Choose a JPEG, PNG, or WebP image smaller than 500 KB.');
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const avatarUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('Could not read the image.'));
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch('/api/profile/avatar', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ avatarUrl }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? 'Photo upload failed.');
+      await refetch();
+    } catch (error) {
+      setPhotoError(error instanceof Error ? error.message : 'Photo upload failed.');
+    } finally {
+      setUploadingPhoto(false);
+    }
   }
 
   function toggleInstrument(inst: string) {
@@ -176,12 +208,19 @@ export default function ProfilePage() {
       <div className="border-b border-gray-200 bg-white px-6 py-8">
         <div className="mx-auto max-w-4xl flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary-100 text-primary-700">
-              {me?.avatarUrl ? (
-                <img src={me.avatarUrl} alt={displayName} className="h-16 w-16 rounded-full object-cover" />
-              ) : (
-                <User className="h-8 w-8" />
-              )}
+            <div className="relative">
+              <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-primary-100 text-primary-700">
+                {me?.avatarUrl ? (
+                  <img src={me.avatarUrl} alt={displayName} className="h-16 w-16 object-cover" />
+                ) : (
+                  <User className="h-8 w-8" />
+                )}
+              </div>
+              <label className="absolute -bottom-1 -right-1 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-primary-600 text-white shadow" title="Upload profile photo">
+                <ImagePlus className="h-4 w-4" />
+                <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={uploadingPhoto}
+                  onChange={event => void uploadPhoto(event.target.files?.[0])} />
+              </label>
             </div>
             <div>
               <h1 className="font-serif text-2xl font-bold text-gray-900">{displayName}</h1>
@@ -221,6 +260,11 @@ export default function ProfilePage() {
       </div>
 
       <div className="mx-auto max-w-4xl px-6 py-8 space-y-6">
+        {photoError && (
+          <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <AlertCircle className="h-4 w-4 shrink-0" /> {photoError}
+          </div>
+        )}
         {(saveError || profileError) && (
           <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <AlertCircle className="h-4 w-4 shrink-0" /> {saveError?.message ?? profileError?.message}

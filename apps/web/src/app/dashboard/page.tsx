@@ -92,13 +92,19 @@ export default function DashboardPage() {
 
   const me = data.me;
   const location = [me.profile?.city, me.profile?.country].filter(Boolean).join(', ');
+  const profileComplete = Boolean(
+    me.displayName &&
+    me.profile?.city &&
+    me.profile?.country &&
+    me.profile?.instruments?.length
+  );
   return (
     <main className="min-h-[calc(100vh-4rem)] bg-gray-50">
       <section className="border-b border-gray-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-6 px-6 py-10">
           <div className="flex items-center gap-4">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-100 text-primary-700">
-              <UserRound className="h-8 w-8" />
+              {me.avatarUrl ? <img src={me.avatarUrl} alt="" className="h-16 w-16 rounded-2xl object-cover" /> : <UserRound className="h-8 w-8" />}
             </div>
             <div>
               <p className="text-sm text-gray-500">{me.role === 'STUDENT' ? 'Learning profile' : me.role === 'TEACHER' ? 'Teaching profile' : 'Platform profile'}</p>
@@ -149,9 +155,11 @@ export default function DashboardPage() {
             <AccountRow label="Email" value={me.email} />
             <AccountRow label="Role" value={roleLabel(me.role)} />
             <AccountRow label="Skill level" value={me.gamification?.skillLevel ?? 'BEGINNER'} />
-            <AccountRow label="Profile" value={me.profile?.onboardingDone ? 'Complete' : 'Ready to complete'} />
+            <AccountRow label="Profile" value={profileComplete ? 'Complete' : 'Ready to complete'} />
           </dl>
-          <Link href="/profile" className="btn-primary mt-6 block rounded-lg px-4 py-2 text-center text-sm">Complete profile</Link>
+          <Link href="/profile" className="btn-primary mt-6 block rounded-lg px-4 py-2 text-center text-sm">
+            {profileComplete ? 'Edit profile' : 'Complete profile'}
+          </Link>
         </aside>
       </div>
     </main>
