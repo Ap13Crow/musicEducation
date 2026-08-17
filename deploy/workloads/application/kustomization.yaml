@@ -5,4 +5,5 @@ namespace: mymusic-coach
 resources:
   - api.yaml
   - web.yaml
+  - worker.yaml
   - network-policy.yaml

@@ -6,6 +6,7 @@ on:
       - '.github/workflows/deploy-application.yml'
       - 'apps/api/**'
       - 'apps/web/**'
+      - 'apps/worker/**'
       - 'packages/database/**'
       - 'packages/graphql-schema/**'
       - 'deploy/workloads/application/**'
@@ -53,6 +54,7 @@ jobs:
           kubectl kustomize deploy/overlays/dev/application-database > "$RUNNER_TEMP/application-database.yaml"
           grep -Fq 'image: mymusiccoach/web:dev' "$RUNNER_TEMP/application.yaml"
           grep -Fq 'image: mymusiccoach/api:dev' "$RUNNER_TEMP/application.yaml"
+          grep -Fq 'image: mymusiccoach/worker:dev' "$RUNNER_TEMP/application.yaml"
           grep -Fq 'kind: Job' "$RUNNER_TEMP/application-database.yaml"
           if grep -Eq '^[[:space:]]*kind:[[:space:]]+Secret[[:space:]]*$' "$RUNNER_TEMP/application.yaml" "$RUNNER_TEMP/application-database.yaml"; then
             echo 'Rendered manifests must not contain Secret resources.' >&2
@@ -89,6 +91,17 @@ jobs:
           --build-arg NEXT_PUBLIC_APP_URL="$PUBLIC_URL"
           --tag mymusiccoach-web:validation
           .
+      - name: Build worker image
+        run: |
+          set -euo pipefail
+          docker build --file apps/worker/Dockerfile --tag mymusiccoach-worker:validation .
+          image_bytes="$(docker image inspect mymusiccoach-worker:validation --format '{{.Size}}')"
+          max_bytes="$((450 * 1024 * 1024))"
+          echo "Worker runtime image size: $((image_bytes / 1024 / 1024)) MiB"
+          if (( image_bytes > max_bytes )); then
+            echo 'Worker runtime image exceeds the 450 MiB development ceiling.' >&2
+            exit 1
+          fi
 
   reconcile:
     name: Reconcile or inspect application
@@ -222,6 +235,7 @@ jobs:
           doctl registries login "$REGISTRY_NAME" --expiry-seconds 1200
           api_image="$REPOSITORY:api-$GITHUB_SHA"
           web_image="$REPOSITORY:web-$GITHUB_SHA"
+          worker_image="$REPOSITORY:worker-$GITHUB_SHA"
           push_failed=0
           docker buildx build --platform linux/amd64 --file apps/api/Dockerfile --tag "$api_image" --push . || push_failed=1
           if (( push_failed == 0 )); then
@@ -231,6 +245,9 @@ jobs:
               --build-arg NEXT_PUBLIC_KEYCLOAK_ISSUER="$OIDC_ISSUER" \
               --build-arg NEXT_PUBLIC_APP_URL="$PUBLIC_URL" \
               --tag "$web_image" --push . || push_failed=1
+          fi
+          if (( push_failed == 0 )); then
+            docker buildx build --platform linux/amd64 --file apps/worker/Dockerfile --tag "$worker_image" --push . || push_failed=1
           fi
           if (( push_failed != 0 )); then
             echo 'The registry rejected an immutable application image.' >&2
@@ -244,6 +261,7 @@ jobs:
           fi
           echo "api=$api_image" >> "$GITHUB_OUTPUT"
           echo "web=$web_image" >> "$GITHUB_OUTPUT"
+          echo "worker=$worker_image" >> "$GITHUB_OUTPUT"
       - name: Integrate the registry with DOKS
         if: inputs.operation == 'deploy'
         shell: bash
@@ -300,23 +318,26 @@ jobs:
           kubectl -n "$NAMESPACE" apply -k deploy/overlays/dev/application-database
           kubectl -n "$NAMESPACE" wait --for=condition=complete --timeout=180s job/application-identity-schema
           kubectl -n "$NAMESPACE" logs job/application-identity-schema
-      - name: Deploy immutable web and API images
+      - name: Deploy immutable web, API, and worker images
         id: rollout
         if: inputs.operation == 'deploy'
         env:
           API_IMAGE: ${{ steps.images.outputs.api }}
           WEB_IMAGE: ${{ steps.images.outputs.web }}
+          WORKER_IMAGE: ${{ steps.images.outputs.worker }}
         shell: bash
         run: |
           set -euo pipefail
           manifest="$RUNNER_TEMP/application.yaml"
           kubectl kustomize deploy/overlays/dev/application > "$manifest"
-          sed -i "s|mymusiccoach/api:dev|$API_IMAGE|g; s|mymusiccoach/web:dev|$WEB_IMAGE|g" "$manifest"
+          sed -i "s|mymusiccoach/api:dev|$API_IMAGE|g; s|mymusiccoach/web:dev|$WEB_IMAGE|g; s|mymusiccoach/worker:dev|$WORKER_IMAGE|g" "$manifest"
           grep -Fq "image: $API_IMAGE" "$manifest"
           grep -Fq "image: $WEB_IMAGE" "$manifest"
+          grep -Fq "image: $WORKER_IMAGE" "$manifest"
           kubectl -n "$NAMESPACE" apply -f "$manifest"
           kubectl -n "$NAMESPACE" rollout status deployment/api --timeout=300s
           kubectl -n "$NAMESPACE" rollout status deployment/web --timeout=300s
+          kubectl -n "$NAMESPACE" rollout status deployment/worker --timeout=300s
       - name: Verify internal services and public web route
         if: inputs.operation == 'deploy'
         shell: bash
@@ -330,10 +351,13 @@ jobs:
           }
           api_pod="$(ready_pod api)"
           web_pod="$(ready_pod web)"
+          worker_pod="$(ready_pod worker)"
           test -n "$api_pod" || { echo 'No Ready API Pod found.' >&2; exit 1; }
           test -n "$web_pod" || { echo 'No Ready web Pod found.' >&2; exit 1; }
+          test -n "$worker_pod" || { echo 'No Ready worker Pod found.' >&2; exit 1; }
           kubectl -n "$NAMESPACE" exec "$api_pod" -- node -e "fetch('http://127.0.0.1:4000/health/ready').then(async r=>{if(!r.ok)throw Error(await r.text())})"
           kubectl -n "$NAMESPACE" exec "$web_pod" -- node -e "fetch('http://127.0.0.1:3000/api/health').then(async r=>{if(!r.ok)throw Error(await r.text())})"
+          kubectl -n "$NAMESPACE" exec "$worker_pod" -- node -e "fetch('http://127.0.0.1:4100/health/ready').then(async r=>{if(!r.ok)throw Error(await r.text())})"
           providers="$RUNNER_TEMP/providers.json"
           for attempt in $(seq 1 60); do
             if curl --fail --silent --show-error "$PUBLIC_URL/api/health" >/dev/null \
@@ -352,7 +376,7 @@ jobs:
         run: |
           set -euo pipefail
           echo 'Current immutable images:'
-          kubectl -n "$NAMESPACE" get deployment api web -o custom-columns='NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image,READY:.status.readyReplicas'
+          kubectl -n "$NAMESPACE" get deployment api web worker -o custom-columns='NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image,READY:.status.readyReplicas'
           echo 'Identity schema objects:'
           db_pod="$(kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name=api -o json | jq -r '.items[] | select(.status.phase == "Running") | .metadata.name' | head -n 1)"
           test -n "$db_pod" || {
@@ -392,4 +416,5 @@ jobs:
           kubectl -n "$NAMESPACE" logs job/application-identity-schema --all-containers=true || true
           kubectl -n "$NAMESPACE" logs deployment/api --tail=150 || true
           kubectl -n "$NAMESPACE" logs deployment/web --tail=150 || true
+          kubectl -n "$NAMESPACE" logs deployment/worker --tail=150 || true
           kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -n 100 || true

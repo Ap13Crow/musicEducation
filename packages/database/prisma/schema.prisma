@@ -8,7 +8,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ── Enums ────────────────────────────────────────────────────────────────────
+// ── Enums ─────────────────────────────────────────────────────────
 
 enum Role {
   STUDENT
@@ -81,7 +81,7 @@ enum EventBookingStatus {
   ATTENDED
 }
 
-// ── Models ───────────────────────────────────────────────────────────────────
+// ── Models ─────────────────────────────────────────────────────────
 
 model User {
   id            String    @id @default(cuid())
@@ -425,20 +425,6 @@ model Event {
   publisher User           @relation(fields: [publisherId], references: [id])
   bookings  EventBooking[]
   reviews   Review[]
-  externalMapping ExternalEventMapping?
-}
-
-model ExternalEventMapping {
-  id                  String   @id @default(cuid())
-  eventId             String   @unique
-  pretixOrganiserSlug String
-  pretixEventSlug     String
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-
-  event Event @relation(fields: [eventId], references: [id])
-
-  @@unique([pretixOrganiserSlug, pretixEventSlug])
 }
 
 model EventBooking {

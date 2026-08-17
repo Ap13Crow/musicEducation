@@ -7,10 +7,10 @@ import { useSession, signIn } from 'next-auth/react';
 import { hasRole } from '@/lib/roles';
 import {
   Users, BookOpen, Calendar, DollarSign, Settings, Shield,
-  Key, Brain, Video, CreditCard, BarChart3, UserCog, ChevronRight,
+  Key, Video, CreditCard, BarChart3, UserCog, ChevronRight,
 } from 'lucide-react';
 
-type Tab = 'overview' | 'users' | 'content' | 'integrations' | 'settings';
+type Tab = 'overview' | 'users' | 'content' | 'settings';
 
 // Identity/config defaults shown in the admin UI. Driven by NEXT_PUBLIC_* env
 // so they reflect the deployment; defaults target the production domain.
@@ -67,22 +67,22 @@ function OverviewTab() {
       <div className="card p-4">
         <h3 className="mb-3 font-semibold">Quick Links</h3>
         <div className="grid gap-2 sm:grid-cols-2">
-          <a href="https://learn.mymusic.coach/admin/" target="_blank" rel="noopener noreferrer"
+          <a href="/dashboard/teacher/content" target="_blank" rel="noopener noreferrer"
              className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm text-left hover:bg-gray-50 transition-colors">
             <BookOpen className="h-4 w-4 text-primary-600" />
-            <span>Moodle — courses &amp; users</span>
+            <span>Course Builder — courses &amp; content</span>
             <ChevronRight className="ml-auto h-4 w-4 text-gray-400" />
           </a>
-          <a href="https://booking.mymusic.coach/Web/" target="_blank" rel="noopener noreferrer"
+          <a href="/dashboard/teacher/availability" target="_blank" rel="noopener noreferrer"
              className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm text-left hover:bg-gray-50 transition-colors">
             <UserCog className="h-4 w-4 text-primary-600" />
-            <span>LibreBooking — resources &amp; schedules</span>
+            <span>Booking — availability &amp; schedules</span>
             <ChevronRight className="ml-auto h-4 w-4 text-gray-400" />
           </a>
-          <a href="https://tickets.mymusic.coach/control/" target="_blank" rel="noopener noreferrer"
+          <a href="/dashboard/teacher/content#performance" target="_blank" rel="noopener noreferrer"
              className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm text-left hover:bg-gray-50 transition-colors">
             <BarChart3 className="h-4 w-4 text-primary-600" />
-            <span>pretix — events &amp; tickets</span>
+            <span>Event Core — events &amp; registrations</span>
             <ChevronRight className="ml-auto h-4 w-4 text-gray-400" />
           </a>
           <a href={KEYCLOAK_USERS_URL} target="_blank" rel="noopener noreferrer"
@@ -262,123 +262,48 @@ function UsersTab() {
   );
 }
 
-function IntegrationsTab() {
-  return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-        <p className="font-medium">Deep Integrations</p>
-        <p className="mt-1">
-          Complex configurations like setting up a complex quiz structure or detailed event parameters.
-          These use secure, SSO-authenticated iframe integrations with custom CSS to strip away native headers and sidebars.
-        </p>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="card p-6">
-          <h3 className="mb-2 font-semibold">Moodle Course Management</h3>
-          <p className="mb-4 text-sm text-gray-600">Advanced quiz and assignment configuration.</p>
-          <div className="h-64 border rounded bg-gray-100 flex items-center justify-center text-sm text-gray-500">
-            [Moodle iframe injected here]
-          </div>
-        </div>
-
-        <div className="card p-6">
-          <h3 className="mb-2 font-semibold">Pretix Event Management</h3>
-          <p className="mb-4 text-sm text-gray-600">Detailed ticketing and quota configuration.</p>
-          <div className="h-64 border rounded bg-gray-100 flex items-center justify-center text-sm text-gray-500">
-            [Pretix iframe injected here]
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const SYNC_MOODLE_COURSES = gql`
-  mutation SyncCoursesFromMoodle {
-    syncCoursesFromMoodle { created skipped total }
-  }
-`;
-
 function ContentTab() {
-  const [syncMoodle, { loading: syncing }] = useMutation(SYNC_MOODLE_COURSES);
-  const [syncResult, setSyncResult] = useState<{ created: number; skipped: number; total: number } | null>(null);
-  const [syncError, setSyncError] = useState<string | null>(null);
-
-  async function handleSyncMoodle() {
-    setSyncResult(null);
-    setSyncError(null);
-    try {
-      const { data } = await syncMoodle();
-      setSyncResult(data?.syncCoursesFromMoodle ?? null);
-    } catch (e: any) {
-      setSyncError(e.message ?? 'Sync failed');
-    }
-  }
-
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
         <p className="font-medium">Content is managed in the native admin interfaces</p>
-        <p className="mt-1">Courses and learning materials → Moodle. Booking resources and schedules → LibreBooking. Events and tickets → pretix. Use the Quick Links above to navigate directly.</p>
+        <p className="mt-1">Courses and learning materials → Course Builder. Booking resources and schedules → Booking. Events and registrations → Event Core. Use the Quick Links above to navigate directly.</p>
       </div>
 
-      {/* Moodle course sync */}
-      <div className="card p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold">Sync Courses from Moodle</p>
-            <p className="text-xs text-gray-500 mt-0.5">Import courses created in Moodle into the platform catalog. New courses are imported as DRAFT — publish them here once ready.</p>
-            {syncResult && (
-              <p className="mt-2 text-xs text-green-700">
-                Done: {syncResult.created} imported, {syncResult.skipped} already synced (of {syncResult.total} Moodle courses).
-              </p>
-            )}
-            {syncError && <p className="mt-2 text-xs text-red-600">{syncError}</p>}
-          </div>
-          <button
-            onClick={handleSyncMoodle}
-            disabled={syncing}
-            className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {syncing ? 'Syncing…' : 'Sync Now'}
-          </button>
-        </div>
-      </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <a href="https://learn.mymusic.coach/course/management.php" target="_blank" rel="noopener noreferrer"
+        <a href="/dashboard/teacher/content" target="_blank" rel="noopener noreferrer"
            className="card flex items-center gap-3 p-4 transition-colors hover:border-primary-300">
           <BookOpen className="h-5 w-5 text-blue-600 shrink-0" />
           <div>
             <p className="text-sm font-medium">Manage Courses</p>
-            <p className="text-xs text-gray-500">Create and edit courses in Moodle</p>
+            <p className="text-xs text-gray-500">Create and edit courses in Course Builder</p>
           </div>
           <ChevronRight className="ml-auto h-4 w-4 text-gray-400 shrink-0" />
         </a>
-        <a href="https://tickets.mymusic.coach/control/" target="_blank" rel="noopener noreferrer"
+        <a href="/dashboard/teacher/content#performance" target="_blank" rel="noopener noreferrer"
            className="card flex items-center gap-3 p-4 transition-colors hover:border-primary-300">
           <Calendar className="h-5 w-5 text-amber-600 shrink-0" />
           <div>
             <p className="text-sm font-medium">Manage Events</p>
-            <p className="text-xs text-gray-500">Create events and ticket categories in pretix</p>
+            <p className="text-xs text-gray-500">Create and publish events in Event Core</p>
           </div>
           <ChevronRight className="ml-auto h-4 w-4 text-gray-400 shrink-0" />
         </a>
-        <a href="https://booking.mymusic.coach/Web/admin/manage_resources.php" target="_blank" rel="noopener noreferrer"
+        <a href="/dashboard/teacher/availability" target="_blank" rel="noopener noreferrer"
            className="card flex items-center gap-3 p-4 transition-colors hover:border-primary-300">
           <UserCog className="h-5 w-5 text-purple-600 shrink-0" />
           <div>
-            <p className="text-sm font-medium">Manage Resources</p>
-            <p className="text-xs text-gray-500">Rooms and instruments in LibreBooking</p>
+            <p className="text-sm font-medium">Manage Availability</p>
+            <p className="text-xs text-gray-500">Teaching slots and resources in Booking</p>
           </div>
           <ChevronRight className="ml-auto h-4 w-4 text-gray-400 shrink-0" />
         </a>
-        <a href="https://booking.mymusic.coach/Web/admin/manage_schedules.php" target="_blank" rel="noopener noreferrer"
+        <a href="/dashboard/availability" target="_blank" rel="noopener noreferrer"
            className="card flex items-center gap-3 p-4 transition-colors hover:border-primary-300">
           <BarChart3 className="h-5 w-5 text-purple-600 shrink-0" />
           <div>
             <p className="text-sm font-medium">Manage Schedules</p>
-            <p className="text-xs text-gray-500">Timetables and availability in LibreBooking</p>
+            <p className="text-xs text-gray-500">Timetables and bookings in Booking</p>
           </div>
           <ChevronRight className="ml-auto h-4 w-4 text-gray-400 shrink-0" />
         </a>
@@ -449,7 +374,6 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
   { id: 'users', label: 'Users', icon: Users },
   { id: 'content', label: 'Content', icon: BookOpen },
-  { id: 'integrations', label: 'Deep Integrations', icon: Brain },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -490,7 +414,7 @@ export default function AdminPage() {
             <Shield className="h-5 w-5 text-primary-600" />
             <h1 className="text-2xl font-bold">Admin Dashboard</h1>
           </div>
-          <p className="text-sm text-gray-500">Manage users, content, integrations, and platform settings. Secrets remain in protected deployment configuration.</p>
+          <p className="text-sm text-gray-500">Manage users, content, and platform settings. Secrets remain in protected deployment configuration.</p>
         </div>
       </div>
 
@@ -521,7 +445,6 @@ export default function AdminPage() {
             {activeTab === 'overview' && <OverviewTab />}
             {activeTab === 'users' && <UsersTab />}
             {activeTab === 'content' && <ContentTab />}
-            {activeTab === 'integrations' && <IntegrationsTab />}
             {activeTab === 'settings' && <SettingsTab />}
           </div>
         </div>
