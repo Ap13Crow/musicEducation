@@ -50,12 +50,12 @@ These are not required for the native Theory, Practice, or Performance workflows
 
 The service-account JSON should be stored as the secret value, not committed as a file.
 
-### Optional external pillar engines
+## Product architecture
 
-Only add these if the corresponding adapter is deliberately activated:
+Theory, Practice, and Performance are native parts of mymusic.coach. Moodle,
+LibreBooking, and pretix are not deployment dependencies and require no URLs,
+tokens, users, passwords, SSO secrets, or webhook secrets.
 
-- Moodle: `MOODLE_WS_TOKEN`
-- LibreBooking: `LIBREBOOKING_API_USER`, `LIBREBOOKING_API_PASSWORD`, `LIBREBOOKING_WEBHOOK_SECRET`
-- pretix: `PRETIX_API_TOKEN`, `PRETIX_SSO_SECRET`, `PRETIX_WEBHOOK_SECRET`
-
-Adding a GitHub secret alone does not expose it to a Pod. The deployment workflow must explicitly synchronize each activated integration into a Kubernetes Secret.
+Stripe and Google are infrastructure integrations that can be activated later.
+Adding a GitHub secret alone does not expose it to a Pod; the deployment workflow
+must explicitly synchronize each activated integration into a Kubernetes Secret.
