@@ -241,7 +241,7 @@ type Course {
   reviews(page: Int, limit: Int): ReviewConnection
 }
 
-type MoodleSyncResult {
+type SyncResult {
   created: Int!
   skipped: Int!
   total: Int!
@@ -776,7 +776,6 @@ type Mutation {
   createLesson(input: CreateLessonInput!): Lesson!
   enrollInCourse(courseId: ID!): Enrollment!
   markLessonComplete(lessonId: ID!): LessonProgress!
-  syncCoursesFromMoodle: MoodleSyncResult!
 
   # Bookings
   bookSession(input: BookSessionInput!): Booking!
@@ -812,5 +811,5 @@ type Mutation {
   updateAdminSetting(key: String!, value: String!): AdminSetting!
   adminBanUser(userId: ID!): User!
   adminSetRole(userId: ID!, role: Role!): User!
-  syncKeycloakRoles: MoodleSyncResult!
+  syncKeycloakRoles: SyncResult!
 }
