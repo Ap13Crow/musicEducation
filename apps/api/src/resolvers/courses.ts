@@ -2,6 +2,13 @@ import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import type { GraphQLContext } from '../types.js';
 
+async function requireOwnedCourse(prisma: any, user: any, courseId: string) {
+  const course = await prisma.course.findUnique({ where: { id: courseId }, include: { teacherProfile: true } });
+  if (!course) throw new GraphQLError('Course not found.', { extensions: { code: 'NOT_FOUND' } });
+  if (user.role !== 'ADMIN' && course.teacherProfile?.userId !== user.id) throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
+  return course;
+}
+
 export const courseResolvers = {
   Query: {
     async courses(_: unknown, { filter, page = 1, limit = 20 }: any, { prisma, user }: GraphQLContext) {
@@ -95,7 +102,10 @@ export const courseResolvers = {
       const teacherProfile = await prisma.teacherProfile.findUnique({ where: { userId: user!.id } });
       if (!teacherProfile) throw new GraphQLError('Teacher profile required.', { extensions: { code: 'BAD_USER_INPUT' } });
 
-      const slug = input.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now();
+      const baseSlug = input.title.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/^-|-$/g, '') || 'course';
+      let slug = baseSlug;
+      let suffix = 2;
+      while (await prisma.course.findUnique({ where: { slug }, select: { id: true } })) slug = `${baseSlug}-${suffix++}`;
       return prisma.course.create({
         data: {
           ...input,
@@ -132,12 +142,52 @@ export const courseResolvers = {
 
     async createSection(_: unknown, { input }: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'TEACHER', 'ADMIN');
+      await requireOwnedCourse(prisma, user!, input.courseId);
       return prisma.courseSection.create({ data: input });
+    },
+
+    async updateSection(_: unknown, { id, input }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'TEACHER', 'ADMIN');
+      const section = await prisma.courseSection.findUnique({ where: { id } });
+      if (!section) throw new GraphQLError('Section not found.', { extensions: { code: 'NOT_FOUND' } });
+      await requireOwnedCourse(prisma, user!, section.courseId);
+      return prisma.courseSection.update({ where: { id }, data: input });
+    },
+
+    async deleteSection(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'TEACHER', 'ADMIN');
+      const section = await prisma.courseSection.findUnique({ where: { id } });
+      if (!section) return true;
+      await requireOwnedCourse(prisma, user!, section.courseId);
+      await prisma.$transaction([prisma.lesson.deleteMany({ where: { sectionId: id } }), prisma.courseSection.delete({ where: { id } })]);
+      return true;
     },
 
     async createLesson(_: unknown, { input }: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'TEACHER', 'ADMIN');
-      return prisma.lesson.create({ data: input });
+      const section = await prisma.courseSection.findUnique({ where: { id: input.sectionId } });
+      if (!section) throw new GraphQLError('Section not found.', { extensions: { code: 'NOT_FOUND' } });
+      await requireOwnedCourse(prisma, user!, section.courseId);
+      const { durationMin, isFreePreview, ...data } = input;
+      return prisma.lesson.create({ data: { ...data, duration: durationMin, isPreview: isFreePreview } });
+    },
+
+    async updateLesson(_: unknown, { id, input }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'TEACHER', 'ADMIN');
+      const lesson = await prisma.lesson.findUnique({ where: { id }, include: { section: true } });
+      if (!lesson) throw new GraphQLError('Lesson not found.', { extensions: { code: 'NOT_FOUND' } });
+      await requireOwnedCourse(prisma, user!, lesson.section.courseId);
+      const { durationMin, isFreePreview, ...data } = input;
+      return prisma.lesson.update({ where: { id }, data: { ...data, ...(durationMin !== undefined ? { duration: durationMin } : {}), ...(isFreePreview !== undefined ? { isPreview: isFreePreview } : {}) } });
+    },
+
+    async deleteLesson(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'TEACHER', 'ADMIN');
+      const lesson = await prisma.lesson.findUnique({ where: { id }, include: { section: true } });
+      if (!lesson) return true;
+      await requireOwnedCourse(prisma, user!, lesson.section.courseId);
+      await prisma.lesson.delete({ where: { id } });
+      return true;
     },
 
     async enrollInCourse(_: unknown, { courseId }: any, { prisma, user }: GraphQLContext) {

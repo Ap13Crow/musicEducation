@@ -228,7 +228,6 @@ type Course {
   thumbnailUrl: String
   categoryId: ID
   teacherProfileId: ID
-  moodleCourseId: Int
   avgRating: Float!
   totalReviews: Int!
   totalEnrollments: Int!
@@ -260,6 +259,7 @@ type Lesson {
   sectionId: ID!
   title: String!
   description: String
+  videoUrl: String
   durationMin: Int!
   isFreePreview: Boolean!
   order: Int!
@@ -528,6 +528,7 @@ input AvailabilitySlotInput {
 input CreateCourseInput {
   title: String!
   description: String
+  shortSummary: String
   level: SkillLevel!
   instruments: [String!]!
   musicStyles: [String!]
@@ -542,6 +543,7 @@ input CreateCourseInput {
 input UpdateCourseInput {
   title: String
   description: String
+  shortSummary: String
   level: SkillLevel
   instruments: [String!]
   musicStyles: [String!]
@@ -562,9 +564,27 @@ input CreateSectionInput {
 input CreateLessonInput {
   sectionId: ID!
   title: String!
-  content: String
+  description: String
+  videoUrl: String
+  durationMin: Int
   order: Int
   xpReward: Int
+  isFreePreview: Boolean
+}
+
+input UpdateSectionInput {
+  title: String
+  order: Int
+}
+
+input UpdateLessonInput {
+  title: String
+  description: String
+  videoUrl: String
+  durationMin: Int
+  order: Int
+  xpReward: Int
+  isFreePreview: Boolean
 }
 
 input BookSessionInput {
@@ -773,7 +793,11 @@ type Mutation {
   publishCourse(id: ID!): Course!
   archiveCourse(id: ID!): Course!
   createSection(input: CreateSectionInput!): CourseSection!
+  updateSection(id: ID!, input: UpdateSectionInput!): CourseSection!
+  deleteSection(id: ID!): Boolean!
   createLesson(input: CreateLessonInput!): Lesson!
+  updateLesson(id: ID!, input: UpdateLessonInput!): Lesson!
+  deleteLesson(id: ID!): Boolean!
   enrollInCourse(courseId: ID!): Enrollment!
   markLessonComplete(lessonId: ID!): LessonProgress!
 

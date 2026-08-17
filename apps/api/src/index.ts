@@ -19,10 +19,9 @@ import { courseResolvers } from './resolvers/courses.js';
 import { eventResolvers } from './resolvers/events.js';
 import { assessmentResolvers } from './resolvers/assessments.js';
 import { feedResolvers } from './resolvers/feed.js';
-import { paymentResolvers } from './resolvers/payments.js';
+import { paymentResolvers, handleStripeWebhook } from './resolvers/payments.js';
 import { adminResolvers } from './resolvers/admin.js';
 import type { GraphQLContext } from './types.js';
-import { createStripeWebhookHandler } from './integrations/webhooks/payment-webhook.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 
@@ -76,11 +75,17 @@ async function main() {
   app.use(cors({ origin: process.env.CORS_ORIGIN ?? 'http://web:3000', credentials: true }));
 
   if (process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET) {
-    app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), createStripeWebhookHandler(
-      prisma,
-      process.env.STRIPE_SECRET_KEY,
-      process.env.STRIPE_WEBHOOK_SECRET,
-    ));
+    app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+      const signature = req.headers['stripe-signature'];
+      if (typeof signature !== 'string') return res.status(400).send('Missing stripe-signature header');
+      try {
+        await handleStripeWebhook(prisma, req.body, signature);
+        return res.json({ received: true });
+      } catch (error) {
+        logger.warn({ error }, 'Stripe webhook rejected');
+        return res.status(400).send('Invalid Stripe webhook');
+      }
+    });
   }
 
   app.use(express.json({ limit: '1mb' }));

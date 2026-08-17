@@ -20,79 +20,6 @@ const RATING_OPTIONS = [
   { label: '4.5+ stars', min: 4.5 },
 ];
 
-const fallbackTeachers = [
-  {
-    id: 't1', userId: 'u1',
-    headline: 'Piano Pedagogue — Romantic repertoire and exam preparation',
-    teachingBio: 'I specialize in helping students develop a deep connection with Romantic-era piano music. My approach combines technical precision with musical expression, drawing from my 12 years of teaching and performing experience.',
-    hourlyRate: 80, currency: 'CHF',
-    instruments: ['Piano'],
-    specializations: ['Romantic repertoire', 'Exam prep', 'Technique'],
-    teachingFormats: ['Online', 'In-Person'],
-    locationCity: 'Zurich', locationCountry: 'Switzerland',
-    isAvailable: true, yearsExperience: 12,
-    avgRating: 4.9, totalReviews: 87,
-    user: { displayName: 'Anna Keller', avatarUrl: null },
-    certifications: [{ id: 'c1', title: 'Diploma in Piano Performance', issuingBody: 'Zurich Conservatory' }],
-  },
-  {
-    id: 't2', userId: 'u2',
-    headline: 'Violin Technique & Orchestral Audition Preparation',
-    teachingBio: 'Former concertmaster with a passion for teaching. I work with students of all levels on intonation, bowing technique, and performance confidence. Specializing in audition preparation.',
-    hourlyRate: 90, currency: 'CHF',
-    instruments: ['Violin', 'Viola'],
-    specializations: ['Technique', 'Audition prep', 'Chamber music'],
-    teachingFormats: ['Online', 'In-Person', 'Hybrid'],
-    locationCity: 'Geneva', locationCountry: 'Switzerland',
-    isAvailable: true, yearsExperience: 9,
-    avgRating: 4.8, totalReviews: 63,
-    user: { displayName: 'Marco De Luca', avatarUrl: null },
-    certifications: [{ id: 'c2', title: 'Master in Violin Performance', issuingBody: 'Geneva HEM' }],
-  },
-  {
-    id: 't3', userId: 'u3',
-    headline: 'Bel Canto Voice Coach & Stage Confidence',
-    teachingBio: '15 years of vocal coaching experience with opera singers, musical theatre performers, and classical vocalists. My holistic approach combines breath work, vocal technique, and performance psychology.',
-    hourlyRate: 100, currency: 'CHF',
-    instruments: ['Voice'],
-    specializations: ['Bel canto', 'Opera', 'Stage coaching', 'Breath work'],
-    teachingFormats: ['Online', 'In-Person'],
-    locationCity: 'Lausanne', locationCountry: 'Switzerland',
-    isAvailable: true, yearsExperience: 15,
-    avgRating: 4.7, totalReviews: 54,
-    user: { displayName: 'Elise Moreau', avatarUrl: null },
-    certifications: [{ id: 'c3', title: 'Diplôme de Chant', issuingBody: 'HEMU Lausanne' }],
-  },
-  {
-    id: 't4', userId: 'u4',
-    headline: 'Classical Guitar — From Renaissance to Contemporary',
-    teachingBio: 'Experienced guitar teacher covering a wide range of classical guitar repertoire. I focus on building strong foundations in technique while exploring the full breadth of guitar literature.',
-    hourlyRate: 70, currency: 'CHF',
-    instruments: ['Guitar'],
-    specializations: ['Classical guitar', 'Fingerstyle', 'Music reading'],
-    teachingFormats: ['Online'],
-    locationCity: 'Bern', locationCountry: 'Switzerland',
-    isAvailable: true, yearsExperience: 8,
-    avgRating: 4.6, totalReviews: 42,
-    user: { displayName: 'David Chen', avatarUrl: null },
-    certifications: [],
-  },
-  {
-    id: 't5', userId: 'u5',
-    headline: 'Flute & Music Theory — Patient and Encouraging',
-    teachingBio: 'I believe every student can learn to play beautifully. With 20 years of teaching, I combine flute instruction with solid music theory education for a well-rounded musical development.',
-    hourlyRate: 75, currency: 'CHF',
-    instruments: ['Flute'],
-    specializations: ['Music theory', 'Beginners', 'Orchestral repertoire'],
-    teachingFormats: ['Online', 'In-Person', 'Hybrid'],
-    locationCity: 'Basel', locationCountry: 'Switzerland',
-    isAvailable: false, yearsExperience: 20,
-    avgRating: 4.9, totalReviews: 98,
-    user: { displayName: 'Sophie Müller', avatarUrl: null },
-    certifications: [{ id: 'c5', title: 'Teaching Diploma', issuingBody: 'Basel Music Academy' }],
-  },
-];
-
 const GET_TEACHERS = gql`
   query GetTeachers($filter: TeacherFilterInput, $page: Int, $limit: Int) {
     teachers(filter: $filter, page: $page, limit: $limit) {
@@ -242,7 +169,7 @@ export default function TeachersPage() {
   });
 
   const filteredTeachers = useMemo(() => {
-    const base = data?.teachers?.nodes ?? fallbackTeachers;
+    const base = data?.teachers?.nodes ?? [];
     return base.filter((t: any) => {
       if (activeInstrument && !t.instruments?.some((i: string) => i.toLowerCase() === activeInstrument.toLowerCase())) return false;
       if (activeFormat && !t.teachingFormats?.some((f: string) => f.toLowerCase() === activeFormat.toLowerCase())) return false;
@@ -438,7 +365,7 @@ export default function TeachersPage() {
           <>
             <p className="mb-4 text-sm text-gray-500">
               {filteredTeachers.length} teacher{filteredTeachers.length !== 1 ? 's' : ''} found
-              {!liveApiEnabled ? ' (sample data)' : ''}
+              
             </p>
 
             {filteredTeachers.length > 0 ? (

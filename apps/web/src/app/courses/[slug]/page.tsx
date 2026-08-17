@@ -4,9 +4,7 @@ import { gql, useQuery, useMutation } from '@apollo/client';
 import { useParams } from 'next/navigation';
 import { useSession, signIn } from 'next-auth/react';
 import Link from 'next/link';
-import { BookOpen, Clock, Star, Users, Play, Lock, ChevronRight, ArrowLeft, CheckCircle, ExternalLink } from 'lucide-react';
-
-const LEARN_URL = process.env.NEXT_PUBLIC_LEARN_URL ?? 'https://learn.mymusic.coach';
+import { BookOpen, Clock, Star, Users, Play, Lock, ArrowLeft, CheckCircle } from 'lucide-react';
 
 const ENROLL_IN_COURSE = gql`
   mutation EnrollInCourse($courseId: ID!) {
@@ -24,7 +22,7 @@ const GET_COURSE = gql`
   query GetCourse($slug: String) {
     course(slug: $slug) {
       id slug title description shortSummary thumbnailUrl
-      price currency level status language moodleCourseId
+      price currency level status language
       instruments musicStyles isFreeTier
       avgRating totalReviews totalEnrollments totalDurationMin
       teacher {
@@ -47,78 +45,6 @@ const GET_COURSE = gql`
   }
 `;
 
-const fallbackCourse = {
-  id: 'fallback-1',
-  slug: 'piano-fundamentals',
-  title: 'Piano Fundamentals for Classical Beginners',
-  description:
-    'This comprehensive course takes you through the essential foundations of classical piano playing. You will learn proper posture, hand positioning, basic music reading, and begin working on your first repertoire pieces with structured guidance from an experienced instructor.\n\nTopics covered include:\n- Correct sitting posture and hand position\n- Reading treble and bass clef\n- Major and minor scales (C, G, D, F)\n- Simple classical pieces from the Baroque and Classical periods\n- Basic pedal technique\n- Practice strategies for efficient learning',
-  shortSummary: 'Build posture, hand position, and first repertoire pieces with structured guidance.',
-  thumbnailUrl: null,
-  price: 0,
-  currency: 'USD',
-  level: 'Beginner',
-  status: 'PUBLISHED',
-  language: 'en',
-  instruments: ['Piano'],
-  musicStyles: ['Classical', 'Baroque'],
-  isFreeTier: true,
-  avgRating: 4.8,
-  totalReviews: 122,
-  totalEnrollments: 1860,
-  totalDurationMin: 280,
-  teacher: {
-    id: 't1',
-    headline: 'Piano Pedagogue — 12 years experience',
-    user: { displayName: 'Anna Keller', avatarUrl: null },
-    avgRating: 4.9,
-    totalReviews: 87,
-    yearsExperience: 12,
-    instruments: ['Piano'],
-  },
-  sections: [
-    {
-      id: 's1',
-      title: 'Getting Started',
-      order: 0,
-      lessons: [
-        { id: 'l1', title: 'Welcome & Course Overview', description: null, durationMin: 8, order: 0, isFreePreview: true, xpReward: 5 },
-        { id: 'l2', title: 'Setting Up Your Practice Space', description: null, durationMin: 12, order: 1, isFreePreview: true, xpReward: 10 },
-        { id: 'l3', title: 'Correct Sitting Posture', description: null, durationMin: 15, order: 2, isFreePreview: false, xpReward: 10 },
-      ],
-    },
-    {
-      id: 's2',
-      title: 'Reading Music',
-      order: 1,
-      lessons: [
-        { id: 'l4', title: 'Introduction to the Staff', description: null, durationMin: 20, order: 0, isFreePreview: false, xpReward: 15 },
-        { id: 'l5', title: 'Treble Clef Note Reading', description: null, durationMin: 25, order: 1, isFreePreview: false, xpReward: 15 },
-        { id: 'l6', title: 'Bass Clef Note Reading', description: null, durationMin: 25, order: 2, isFreePreview: false, xpReward: 15 },
-        { id: 'l7', title: 'Rhythm Basics', description: null, durationMin: 18, order: 3, isFreePreview: false, xpReward: 15 },
-      ],
-    },
-    {
-      id: 's3',
-      title: 'First Scales & Exercises',
-      order: 2,
-      lessons: [
-        { id: 'l8', title: 'C Major Scale — Right Hand', description: null, durationMin: 20, order: 0, isFreePreview: false, xpReward: 20 },
-        { id: 'l9', title: 'C Major Scale — Left Hand', description: null, durationMin: 20, order: 1, isFreePreview: false, xpReward: 20 },
-        { id: 'l10', title: 'Hands Together Practice', description: null, durationMin: 25, order: 2, isFreePreview: false, xpReward: 25 },
-      ],
-    },
-  ],
-  reviews: {
-    nodes: [
-      { id: 'r1', rating: 5, comment: 'Excellent course! Clear explanations and great pacing for beginners.', createdAt: '2024-12-01', author: { displayName: 'Sarah K.', avatarUrl: null } },
-      { id: 'r2', rating: 5, comment: 'Finally understood proper hand position after struggling for months.', createdAt: '2024-11-15', author: { displayName: 'Thomas M.', avatarUrl: null } },
-      { id: 'r3', rating: 4, comment: 'Very thorough. Would love more repertoire pieces in future updates.', createdAt: '2024-11-01', author: { displayName: 'Luisa G.', avatarUrl: null } },
-    ],
-    pageInfo: { totalCount: 122 },
-  },
-};
-
 export default function CourseDetailPage() {
   const params = useParams();
   const slug = params.slug as string;
@@ -139,9 +65,6 @@ export default function CourseDetailPage() {
   );
   const enrolled = enrolledFromDb || !!enrollData?.enrollInCourse;
 
-  const moodleUrl = data?.course?.moodleCourseId
-    ? `${LEARN_URL}/course/view.php?id=${data.course.moodleCourseId}`
-    : null;
 
   async function handleEnroll() {
     if (!course?.id || !liveApiEnabled) return;
@@ -157,13 +80,7 @@ export default function CourseDetailPage() {
     }
   }
 
-  function getFallbackCourse(courseSlug: string) {
-    if (courseSlug === fallbackCourse.slug) return fallbackCourse;
-    const title = courseSlug.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
-    return { ...fallbackCourse, slug: courseSlug, title };
-  }
-
-  const course = data?.course ?? getFallbackCourse(slug);
+  const course = data?.course;
 
   if (loading) {
     return (
@@ -177,6 +94,10 @@ export default function CourseDetailPage() {
         </div>
       </div>
     );
+  }
+
+  if (error || !course) {
+    return <main className="mx-auto max-w-3xl px-6 py-16 text-center"><h1 className="font-serif text-3xl font-bold">Course not found</h1><p className="mt-3 text-gray-600">This course is unavailable or has not been published yet.</p><Link href="/courses" className="btn-primary mt-6 inline-block rounded-lg px-5 py-3">Back to courses</Link></main>;
   }
 
   const totalLessons = course.sections?.reduce((acc: number, s: any) => acc + (s.lessons?.length ?? 0), 0) ?? 0;
@@ -249,7 +170,7 @@ export default function CourseDetailPage() {
                     </div>
                     <ul className="divide-y divide-gray-100">
                       {section.lessons?.map((lesson: any) => (
-                        <li key={lesson.id} className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-gray-50 cursor-pointer" onClick={() => alert('Next.js course player/quiz form opens here (submits to Moodle REST API)')}>
+                        <li key={lesson.id} className="flex items-center gap-3 px-4 py-3 text-sm">
                           {lesson.isFreePreview ? (
                             <Play className="h-4 w-4 shrink-0 text-primary-600" />
                           ) : (
@@ -310,16 +231,6 @@ export default function CourseDetailPage() {
                     <div className="flex items-center justify-center gap-2 text-sm font-semibold text-green-600">
                       <CheckCircle className="h-5 w-5" /> Enrolled
                     </div>
-                    {moodleUrl && (
-                      <a
-                        href={moodleUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-base font-semibold text-white hover:bg-green-700"
-                      >
-                        Go to Course <ExternalLink className="h-4 w-4" />
-                      </a>
-                    )}
                   </div>
                 ) : (
                   <button

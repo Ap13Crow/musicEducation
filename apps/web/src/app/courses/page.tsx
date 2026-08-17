@@ -9,70 +9,13 @@ import Link from 'next/link';
 const INSTRUMENTS = ['Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute', 'Clarinet', 'Oboe', 'Trumpet', 'Organ', 'Harp', 'Percussion', 'Composition', 'Theory'];
 const LEVELS = ['All', 'Beginner', 'Intermediate', 'Advanced', 'Professional'];
 
-const fallbackCourses = [
-  {
-    id: 'fallback-1', slug: 'piano-fundamentals',
-    title: 'Piano Fundamentals for Classical Beginners',
-    shortSummary: 'Build posture, hand position, and first repertoire pieces with structured guidance.',
-    thumbnailUrl: null, price: 0, currency: 'USD', level: 'Beginner',
-    avgRating: 4.8, totalReviews: 122, totalEnrollments: 1860, totalDurationMin: 280,
-    instruments: ['Piano'], isFreeTier: true,
-    teacher: { id: 't1', headline: 'Piano Pedagogue', user: { displayName: 'Anna Keller', avatarUrl: null } },
-  },
-  {
-    id: 'fallback-2', slug: 'ear-training-core',
-    title: 'Ear Training Core: Intervals, Chords, and Dictation',
-    shortSummary: 'Strengthen your listening for auditions, improvisation, and confident ensemble playing.',
-    thumbnailUrl: null, price: 29, currency: 'USD', level: 'Intermediate',
-    avgRating: 4.7, totalReviews: 94, totalEnrollments: 1304, totalDurationMin: 360,
-    instruments: ['All'], isFreeTier: false,
-    teacher: { id: 't2', headline: 'Theory Specialist', user: { displayName: 'Marco De Luca', avatarUrl: null } },
-  },
-  {
-    id: 'fallback-3', slug: 'baroque-performance-practice',
-    title: 'Baroque Performance Practice for Modern Musicians',
-    shortSummary: 'Learn articulation, ornamentation, and historical style to shape informed interpretations.',
-    thumbnailUrl: null, price: 39, currency: 'USD', level: 'Advanced',
-    avgRating: 4.9, totalReviews: 77, totalEnrollments: 742, totalDurationMin: 410,
-    instruments: ['Strings', 'Keyboard'], isFreeTier: false,
-    teacher: { id: 't3', headline: 'Historically Informed Performance', user: { displayName: 'Elise Moreau', avatarUrl: null } },
-  },
-  {
-    id: 'fallback-4', slug: 'violin-technique-mastery',
-    title: 'Violin Technique Mastery: From Scales to Concerto',
-    shortSummary: 'Master bowing, intonation and vibrato through progressive exercises and repertoire.',
-    thumbnailUrl: null, price: 49, currency: 'USD', level: 'Intermediate',
-    avgRating: 4.8, totalReviews: 63, totalEnrollments: 890, totalDurationMin: 420,
-    instruments: ['Violin'], isFreeTier: false,
-    teacher: { id: 't4', headline: 'Concertmaster & Teacher', user: { displayName: 'Marco De Luca', avatarUrl: null } },
-  },
-  {
-    id: 'fallback-5', slug: 'voice-classical-singing',
-    title: 'Classical Singing: Breath, Tone & Expression',
-    shortSummary: 'Develop your vocal technique with bel canto exercises and aria study.',
-    thumbnailUrl: null, price: 0, currency: 'USD', level: 'Beginner',
-    avgRating: 4.6, totalReviews: 88, totalEnrollments: 1450, totalDurationMin: 300,
-    instruments: ['Voice'], isFreeTier: true,
-    teacher: { id: 't5', headline: 'Opera & Vocal Coach', user: { displayName: 'Elise Moreau', avatarUrl: null } },
-  },
-  {
-    id: 'fallback-6', slug: 'music-theory-harmony',
-    title: 'Music Theory: Harmony and Counterpoint',
-    shortSummary: 'Understand harmonic progressions, voice leading, and counterpoint from Bach to Debussy.',
-    thumbnailUrl: null, price: 35, currency: 'USD', level: 'Advanced',
-    avgRating: 4.9, totalReviews: 112, totalEnrollments: 1680, totalDurationMin: 480,
-    instruments: ['Theory', 'Composition'], isFreeTier: false,
-    teacher: { id: 't2', headline: 'Theory Specialist', user: { displayName: 'Marco De Luca', avatarUrl: null } },
-  },
-];
-
 const GET_COURSES = gql`
   query GetCourses($filter: CourseFilterInput, $page: Int, $limit: Int) {
     courses(filter: $filter, page: $page, limit: $limit) {
       nodes {
         id slug title shortSummary thumbnailUrl price currency
         level avgRating totalReviews totalEnrollments totalDurationMin
-        instruments isFreeTier moodleCourseId
+        instruments isFreeTier
         teacher { id headline user { displayName avatarUrl } }
       }
       pageInfo { totalCount hasNextPage }
@@ -83,13 +26,7 @@ const GET_COURSES = gql`
   }
 `;
 
-const LEARN_URL = process.env.NEXT_PUBLIC_LEARN_URL ?? 'https://learn.mymusic.coach';
-
 function CourseCard({ course, isEnrolled }: { course: any; isEnrolled: boolean }) {
-  const moodleUrl = course.moodleCourseId
-    ? `${LEARN_URL}/course/view.php?id=${course.moodleCourseId}`
-    : null;
-
   return (
     <div className="card group hover:border-primary-300 transition-colors flex flex-col">
       <Link href={`/courses/${course.slug}`} className="block">
@@ -136,17 +73,6 @@ function CourseCard({ course, isEnrolled }: { course: any; isEnrolled: boolean }
             <span className="text-xs text-gray-500 truncate ml-2">{course.teacher.user?.displayName}</span>
           )}
         </div>
-        {isEnrolled && moodleUrl && (
-          <a
-            href={moodleUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-3 flex items-center justify-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
-            onClick={(e) => e.stopPropagation()}
-          >
-            Go to Course →
-          </a>
-        )}
       </div>
     </div>
   );
@@ -179,7 +105,7 @@ export default function CoursesPage() {
 
   // Client-side filtering for fallback data
   const filteredCourses = useMemo(() => {
-    const base = data?.courses?.nodes ?? fallbackCourses;
+    const base = data?.courses?.nodes ?? [];
     return base.filter((c: any) => {
       if (activeLevel !== 'All' && c.level?.toUpperCase() !== activeLevel.toUpperCase()) return false;
       if (activeInstrument && !c.instruments?.some((i: string) => i.toLowerCase() === activeInstrument.toLowerCase())) return false;
@@ -193,7 +119,7 @@ export default function CoursesPage() {
   }, [data, activeLevel, activeInstrument, searchQuery, freeOnly]);
 
   const totalCount = data?.courses?.pageInfo?.totalCount ?? filteredCourses.length;
-  const usingFallback = !liveApiEnabled || Boolean(error) || !data;
+  const usingFallback = false;
   const hasActiveFilters = activeLevel !== 'All' || !!activeInstrument || !!searchQuery || freeOnly;
 
   function clearFilters() {
