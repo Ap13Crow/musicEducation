@@ -27,10 +27,11 @@ spec:
       containers:
         - name: psql
           image: postgres:17.10-alpine3.23
-          command: [psql]
+          command: [sh, -ec]
           args:
-            - --set=ON_ERROR_STOP=1
-            - --file=/schema/001-identity.sql
+            - |
+              psql --set=ON_ERROR_STOP=1 --file=/schema/001-identity.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/002-practice.sql
           envFrom:
             - secretRef:
                 name: postgres-mymusiccoach

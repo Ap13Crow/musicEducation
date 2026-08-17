@@ -6,3 +6,4 @@ configMapGenerator:
   - name: application-identity-schema
     files:
       - 001-identity.sql
+      - 002-practice.sql
