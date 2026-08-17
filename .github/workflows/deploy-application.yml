@@ -187,9 +187,14 @@ jobs:
           else
             echo "Removed $deleted failed bootstrap tag(s)."
           fi
-          doctl registry garbage-collection start "$REGISTRY_NAME" \
-            --include-untagged-manifests --force >/dev/null
-          for attempt in $(seq 1 60); do
+          if doctl registry garbage-collection get-active "$REGISTRY_NAME" \
+            --format Status --no-header >/dev/null 2>&1; then
+            echo 'A registry garbage collection is already active; waiting for it.'
+          else
+            doctl registry garbage-collection start "$REGISTRY_NAME" \
+              --include-untagged-manifests --force >/dev/null
+          fi
+          for attempt in $(seq 1 240); do
             if ! doctl registry garbage-collection get-active "$REGISTRY_NAME" \
               --format Status --no-header >/dev/null 2>&1; then
               echo 'Registry garbage collection completed.'
@@ -197,7 +202,7 @@ jobs:
             fi
             sleep 5
           done
-          echo 'Timed out waiting for registry garbage collection.' >&2
+          echo 'Timed out after 20 minutes waiting for registry garbage collection.' >&2
           exit 1
       - name: Build and push immutable application images
         id: images
