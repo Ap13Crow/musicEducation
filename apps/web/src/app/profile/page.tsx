@@ -26,7 +26,7 @@ const GET_PROFILE = gql`
       }
       teacherProfile {
         headline teachingBio hourlyRate currency
-        instruments isAvailable avgRating totalStudents
+        instruments isAvailable avgRating
       }
       gamification {
         level xp totalPoints currentStreak skillLevel
@@ -81,7 +81,11 @@ export default function ProfilePage() {
     }
   }, [status]);
 
-  const { data, loading, refetch } = useQuery(GET_PROFILE, { skip: !liveApiEnabled });
+  const { data, loading, error: profileError, refetch } = useQuery(GET_PROFILE, {
+    skip: !liveApiEnabled,
+    fetchPolicy: 'network-only',
+    nextFetchPolicy: 'cache-first',
+  });
   const [updateProfile, { loading: saving, error: saveError }] = useMutation(UPDATE_PROFILE);
 
   const [editing, setEditing] = useState(false);
@@ -128,26 +132,26 @@ export default function ProfilePage() {
 
   async function handleSave() {
     try {
-      await updateProfile({
+      const musicStyles = edit.musicStyles.split(',').map(s => s.trim()).filter(Boolean);
+      const result = await updateProfile({
         variables: {
           input: {
-            displayName: edit.displayName || undefined,
-            bio: edit.bio || undefined,
-            city: edit.city || undefined,
-            country: edit.country || undefined,
-            timezone: edit.timezone || undefined,
-            instruments: edit.instruments.length > 0 ? edit.instruments : undefined,
-            musicStyles: edit.musicStyles
-              ? edit.musicStyles.split(',').map(s => s.trim()).filter(Boolean)
-              : undefined,
+            displayName: edit.displayName.trim() || null,
+            bio: edit.bio.trim() || null,
+            city: edit.city.trim() || null,
+            country: edit.country.trim() || null,
+            timezone: edit.timezone,
+            instruments: edit.instruments,
+            musicStyles,
           },
         },
       });
-      // The mutation is the source of truth. Exit edit mode immediately; a
-      // secondary dashboard query must never make a successful save look failed.
+      const persisted = result.data?.updateProfile;
+      if (!persisted?.profile) throw new Error('The API did not confirm the profile update.');
+
       setEditing(false);
       setSaved(true);
-      void refetch().catch(() => undefined);
+      await refetch();
       setTimeout(() => setSaved(false), 3000);
     } catch {
       // saveError is shown inline
@@ -217,9 +221,9 @@ export default function ProfilePage() {
       </div>
 
       <div className="mx-auto max-w-4xl px-6 py-8 space-y-6">
-        {saveError && (
+        {(saveError || profileError) && (
           <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            <AlertCircle className="h-4 w-4 shrink-0" /> {saveError.message}
+            <AlertCircle className="h-4 w-4 shrink-0" /> {saveError?.message ?? profileError?.message}
           </div>
         )}
 
