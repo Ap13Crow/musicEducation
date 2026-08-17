@@ -197,7 +197,7 @@ jobs:
         run: |
           set -euo pipefail
           kubectl -n "$NAMESPACE" delete job application-identity-schema --ignore-not-found --wait=true
-          kubectl apply -k deploy/overlays/dev/application-database
+          kubectl -n "$NAMESPACE" apply -k deploy/overlays/dev/application-database
           kubectl -n "$NAMESPACE" wait --for=condition=complete --timeout=180s job/application-identity-schema
           kubectl -n "$NAMESPACE" logs job/application-identity-schema
       - name: Deploy immutable web and API images
@@ -214,7 +214,7 @@ jobs:
           sed -i "s|mymusiccoach/api:dev|$API_IMAGE|g; s|mymusiccoach/web:dev|$WEB_IMAGE|g" "$manifest"
           grep -Fq "image: $API_IMAGE" "$manifest"
           grep -Fq "image: $WEB_IMAGE" "$manifest"
-          kubectl apply -f "$manifest"
+          kubectl -n "$NAMESPACE" apply -f "$manifest"
           kubectl -n "$NAMESPACE" rollout status deployment/api --timeout=300s
           kubectl -n "$NAMESPACE" rollout status deployment/web --timeout=300s
       - name: Verify internal services and public web route
