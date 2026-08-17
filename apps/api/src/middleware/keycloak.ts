@@ -10,6 +10,13 @@ import type { PrismaClient, User } from '@my-music-coach/database';
  */
 
 /** Claims we rely on from a Keycloak access token. */
+export interface KeycloakAuthDiagnostic {
+  stage: 'configuration' | 'jwks' | 'signature' | 'claims';
+  reason: string;
+  tokenIssuer?: string;
+  tokenClientId?: string;
+}
+
 export interface KeycloakClaims {
   sub: string;
   email?: string;
@@ -55,19 +62,41 @@ export function isKeycloakConfigured(): boolean {
  * Returns the decoded claims, or null when the token is missing/invalid or
  * Keycloak is not configured.
  */
-export async function verifyKeycloakToken(token: string): Promise<KeycloakClaims | null> {
+export async function verifyKeycloakToken(
+  token: string,
+  report?: (diagnostic: KeycloakAuthDiagnostic) => void,
+): Promise<KeycloakClaims | null> {
   const client = getJwksClient();
-  if (!client || !KEYCLOAK_ISSUER) return null;
+  if (!client || !KEYCLOAK_ISSUER) {
+    report?.({ stage: 'configuration', reason: 'Keycloak issuer is not configured' });
+    return null;
+  }
+
+  const unverified = jwt.decode(token) as ({ iss?: string; azp?: string } | null);
 
   const getKey: jwt.GetPublicKeyOrSecret = (header, callback) => {
     if (!header.kid) {
+      report?.({
+        stage: 'jwks',
+        reason: 'Access token has no key id',
+        tokenIssuer: unverified?.iss,
+        tokenClientId: unverified?.azp,
+      });
       callback(new Error('Missing key id'));
       return;
     }
     client
       .getSigningKey(header.kid)
       .then((key) => callback(null, key.getPublicKey()))
-      .catch((err) => callback(err as Error));
+      .catch((err) => {
+        report?.({
+          stage: 'jwks',
+          reason: err instanceof Error ? err.message : 'JWKS signing key lookup failed',
+          tokenIssuer: unverified?.iss,
+          tokenClientId: unverified?.azp,
+        });
+        callback(err as Error);
+      });
   };
 
   return new Promise((resolve) => {
@@ -77,11 +106,23 @@ export async function verifyKeycloakToken(token: string): Promise<KeycloakClaims
       { algorithms: ['RS256'], issuer: KEYCLOAK_ISSUER },
       (err, decoded) => {
         if (err || !decoded || typeof decoded === 'string' || !decoded.sub) {
+          report?.({
+            stage: 'signature',
+            reason: err?.message ?? 'Verified token is missing required subject claims',
+            tokenIssuer: unverified?.iss,
+            tokenClientId: unverified?.azp,
+          });
           resolve(null);
           return;
         }
         const claims = decoded as unknown as KeycloakClaims;
         if (KEYCLOAK_CLIENT_ID && claims.azp && claims.azp !== KEYCLOAK_CLIENT_ID) {
+          report?.({
+            stage: 'claims',
+            reason: 'Access token was issued to another client',
+            tokenIssuer: unverified?.iss,
+            tokenClientId: claims.azp,
+          });
           resolve(null);
           return;
         }
