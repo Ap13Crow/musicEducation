@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { gql, useMutation, useQuery } from '@apollo/client';
-import { keycloakAdminUrl } from '@/lib/external-links';
+import { keycloakAdminUrl, keycloakIssuer } from '@/lib/external-links';
 import { useSession, signIn } from 'next-auth/react';
 import { hasRole } from '@/lib/roles';
 import {
@@ -15,8 +15,7 @@ type Tab = 'overview' | 'users' | 'content' | 'integrations' | 'settings';
 // Identity/config defaults shown in the admin UI. Driven by NEXT_PUBLIC_* env
 // so they reflect the deployment; defaults target the production domain.
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.mymusic.coach';
-const KEYCLOAK_ISSUER_URL =
-  process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? 'https://auth.mymusic.coach/realms/mymusic-coach';
+const KEYCLOAK_ISSUER_URL = keycloakIssuer;
 const KEYCLOAK_CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ?? 'mymusic-coach-web';
 const KEYCLOAK_REDIRECT_URIS = `${APP_URL}/*`;
 

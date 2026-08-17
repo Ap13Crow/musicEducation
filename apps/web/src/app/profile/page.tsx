@@ -8,7 +8,7 @@ import {
   Trophy, Flame, GraduationCap, Star, BookOpen, Lock,
   ExternalLink, CheckCircle, AlertCircle, Phone,
 } from 'lucide-react';
-import { externalLinks } from '@/lib/external-links';
+import { externalLinks, keycloakAccountUrl, keycloakAdminUrl, keycloakSigningInUrl } from '@/lib/external-links';
 
 const INSTRUMENTS = [
   'Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute',
@@ -152,8 +152,6 @@ export default function ProfilePage() {
     }
   }
 
-  // keycloakAccountUrl is unused — links use hardcoded production URL directly
-
   if (status === 'loading' || (liveApiEnabled && loading)) {
     return <ProfileSkeleton />;
   }
@@ -163,7 +161,7 @@ export default function ProfilePage() {
 
   const displayName = me?.displayName ?? session?.user?.name ?? 'Musician';
   const email = me?.email ?? session?.user?.email ?? '';
-  const role = me?.role ?? (session as any)?.roles?.[0] ?? 'STUDENT';
+  const role = me?.role ?? session?.roles?.[0] ?? 'STUDENT';
   const gamification = me?.gamification;
 
   return (
@@ -419,7 +417,7 @@ export default function ProfilePage() {
               </h2>
               <div className="space-y-3">
                 <a
-                  href={`https://auth.mymusic.coach/realms/mymusic-coach/account/#/security/signingIn`}
+                  href={keycloakSigningInUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex w-full items-center justify-between rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-700 transition-colors hover:bg-gray-50"
@@ -430,7 +428,7 @@ export default function ProfilePage() {
                   <ExternalLink className="h-4 w-4 text-gray-400" />
                 </a>
                 <a
-                  href={`https://auth.mymusic.coach/realms/mymusic-coach/account/`}
+                  href={keycloakAccountUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex w-full items-center justify-between rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-700 transition-colors hover:bg-gray-50"
@@ -440,6 +438,19 @@ export default function ProfilePage() {
                   </span>
                   <ExternalLink className="h-4 w-4 text-gray-400" />
                 </a>
+                {role === 'ADMIN' && (
+                  <a
+                    href={keycloakAdminUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex w-full items-center justify-between rounded-lg border border-primary-200 bg-primary-50 px-4 py-3 text-sm font-medium text-primary-700 transition-colors hover:bg-primary-100"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Lock className="h-4 w-4" /> Keycloak realm administration
+                    </span>
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                )}
               </div>
               <p className="mt-3 text-xs text-gray-400">
                 Password, MFA, and linked accounts are managed via your identity provider.

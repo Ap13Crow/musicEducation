@@ -26,9 +26,11 @@ export const liveApiEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_API === 'true'
  * Keycloak admin console URL. Derived from NEXT_PUBLIC_KEYCLOAK_ISSUER if set,
  * otherwise falls back to the production default.
  */
-const issuer =
+export const keycloakIssuer =
   process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? 'https://auth.mymusic.coach/realms/mymusic-coach';
-export const keycloakAdminUrl = issuer.replace(
+export const keycloakAccountUrl = `${keycloakIssuer}/account`;
+export const keycloakSigningInUrl = `${keycloakAccountUrl}/#/security/signingIn`;
+export const keycloakAdminUrl = keycloakIssuer.replace(
   /\/realms\/([^/]+)$/,
   (_match, realm) => `/admin/${realm}/console`,
 );

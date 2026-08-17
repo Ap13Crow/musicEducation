@@ -62,6 +62,12 @@ jobs:
             echo 'Rendered manifests must not use latest image tags.' >&2
             exit 1
           fi
+          if grep -R -F 'https://auth.mymusic.coach' apps/web/src \
+            --include='*.ts' --include='*.tsx' \
+            --exclude='external-links.ts'; then
+            echo 'Frontend components must derive Keycloak URLs from the configured issuer.' >&2
+            exit 1
+          fi
       - name: Build API image
         run: |
           set -euo pipefail
