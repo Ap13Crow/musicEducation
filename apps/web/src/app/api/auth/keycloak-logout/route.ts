@@ -24,5 +24,16 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true });
+  const response = NextResponse.json({ ok: true });
+  for (const name of [
+    'next-auth.session-token',
+    '__Secure-next-auth.session-token',
+    'next-auth.callback-url',
+    '__Secure-next-auth.callback-url',
+    'next-auth.csrf-token',
+    '__Host-next-auth.csrf-token',
+  ]) {
+    response.cookies.set(name, '', { path: '/', maxAge: 0 });
+  }
+  return response;
 }
