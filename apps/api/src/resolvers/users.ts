@@ -1,6 +1,33 @@
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import type { GraphQLContext } from '../types.js';
 
+type AvailabilitySlot = {
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  timezone?: string;
+};
+
+const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+
+function validateAvailabilitySlots(slots: AvailabilitySlot[]) {
+  if (!Array.isArray(slots) || slots.length > 50) {
+    throw new Error('Availability must contain at most 50 slots.');
+  }
+
+  for (const slot of slots) {
+    if (!Number.isInteger(slot.dayOfWeek) || slot.dayOfWeek < 0 || slot.dayOfWeek > 6) {
+      throw new Error('Availability dayOfWeek must be between 0 and 6.');
+    }
+    if (!TIME_PATTERN.test(slot.startTime) || !TIME_PATTERN.test(slot.endTime) || slot.startTime >= slot.endTime) {
+      throw new Error('Availability times must use HH:MM and end after start.');
+    }
+    if (slot.timezone && slot.timezone.length > 64) {
+      throw new Error('Availability timezone is invalid.');
+    }
+  }
+}
+
 export const userResolvers = {
   Query: {
     async me(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
@@ -43,7 +70,13 @@ export const userResolvers = {
       }
       const skip = (page - 1) * limit;
       const [nodes, totalCount] = await Promise.all([
-        prisma.teacherProfile.findMany({ where, skip, take: limit, orderBy: { avgRating: 'desc' } }),
+        prisma.teacherProfile.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { avgRating: 'desc' },
+          include: { user: { include: { profile: true } }, certifications: true, availability: true },
+        }),
         prisma.teacherProfile.count({ where }),
       ]);
       return { nodes, pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount } };
@@ -78,16 +111,14 @@ export const userResolvers = {
     },
 
     async applyAsTeacher(_: unknown, _input: any, { prisma, user }: GraphQLContext) {
-      requireAuth(user);
-      const [teacherProfile] = await prisma.$transaction([
-        prisma.teacherProfile.upsert({
-          where: { userId: user.id },
-          create: { userId: user.id, instruments: [], musicStyles: [], languages: [] },
-          update: {},
-        }),
-        prisma.user.update({ where: { id: user.id }, data: { role: 'TEACHER' } }),
-      ]);
-      return teacherProfile;
+      // Keycloak is the authority for roles. This mutation provisions the local
+      // Practice profile only after the access token already contains TEACHER/ADMIN.
+      requireRole(user, 'TEACHER', 'ADMIN');
+      return prisma.teacherProfile.upsert({
+        where: { userId: user!.id },
+        create: { userId: user!.id, instruments: [], musicStyles: [], languages: [] },
+        update: {},
+      });
     },
 
     async updateTeacherProfile(_: unknown, args: any, { prisma, user }: GraphQLContext) {
@@ -108,8 +139,9 @@ export const userResolvers = {
       });
     },
 
-    async setAvailability(_: unknown, { slots }: any, { prisma, user }: GraphQLContext) {
+    async setAvailability(_: unknown, { slots }: { slots: AvailabilitySlot[] }, { prisma, user }: GraphQLContext) {
       requireRole(user, 'TEACHER', 'ADMIN');
+      validateAvailabilitySlots(slots);
       const teacherProfile = await prisma.teacherProfile.findUnique({ where: { userId: user!.id } });
       if (!teacherProfile) throw new Error('Teacher profile not found.');
       await prisma.teacherAvailability.deleteMany({ where: { teacherProfileId: teacherProfile.id } });
@@ -119,8 +151,9 @@ export const userResolvers = {
       return prisma.teacherAvailability.findMany({ where: { teacherProfileId: teacherProfile.id } });
     },
 
-    async setStudentAvailability(_: unknown, { slots }: any, { prisma, user }: GraphQLContext) {
+    async setStudentAvailability(_: unknown, { slots }: { slots: AvailabilitySlot[] }, { prisma, user }: GraphQLContext) {
       requireAuth(user);
+      validateAvailabilitySlots(slots);
       await prisma.studentAvailability.deleteMany({ where: { userId: user!.id } });
       if (slots.length > 0) {
         await prisma.studentAvailability.createMany({
@@ -206,6 +239,44 @@ export const userResolvers = {
         prisma.feedPost.count({ where }),
       ]);
       return { nodes, pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount } };
+    },
+  },
+  TeacherProfile: {
+    teachingBio(profile: any) {
+      return profile.bio ?? null;
+    },
+    headline(profile: any) {
+      return profile.bio ? profile.bio.split(/\r?\n/, 1)[0].slice(0, 120) : null;
+    },
+    specializations(profile: any) {
+      return profile.musicStyles ?? [];
+    },
+    teachingFormats() {
+      return [];
+    },
+    yearsExperience() {
+      return null;
+    },
+    locationCity(profile: any) {
+      return profile.user?.profile?.city ?? null;
+    },
+    locationCountry(profile: any) {
+      return profile.user?.profile?.country ?? null;
+    },
+    async user(profile: any, _: unknown, { prisma }: GraphQLContext) {
+      if (profile.user) return profile.user;
+      return prisma.user.findUnique({ where: { id: profile.userId }, include: { profile: true } });
+    },
+    async certifications(profile: any, _: unknown, { prisma }: GraphQLContext) {
+      if (profile.certifications) return profile.certifications;
+      return prisma.teacherCertification.findMany({ where: { teacherProfileId: profile.id } });
+    },
+    async availability(profile: any, _: unknown, { prisma }: GraphQLContext) {
+      if (profile.availability) return profile.availability;
+      return prisma.teacherAvailability.findMany({
+        where: { teacherProfileId: profile.id },
+        orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+      });
     },
   },
   GamificationProfile: {
