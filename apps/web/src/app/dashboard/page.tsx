@@ -5,6 +5,7 @@ import { gql, useQuery } from '@apollo/client';
 import { useEffect } from 'react';
 import { signIn, useSession } from 'next-auth/react';
 import { BookOpen, CalendarDays, CheckCircle2, Music2, ShieldCheck, UserRound } from 'lucide-react';
+import { roleLabel } from '@/lib/roles';
 
 const GET_PROFILE = gql`
   query GetProfileDashboard {
@@ -100,7 +101,7 @@ export default function DashboardPage() {
               <UserRound className="h-8 w-8" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Learning profile</p>
+              <p className="text-sm text-gray-500">{me.role === 'STUDENT' ? 'Learning profile' : me.role === 'TEACHER' ? 'Teaching profile' : 'Platform profile'}</p>
               <h1 className="font-serif text-3xl font-bold text-gray-900">{me.displayName}</h1>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                 <span className="rounded-full bg-primary-50 px-3 py-1 font-semibold text-primary-700">{roleLabel(me.role)}</span>
@@ -120,6 +121,11 @@ export default function DashboardPage() {
         <section>
           <h2 className="font-serif text-2xl font-semibold text-gray-900">Your learning space</h2>
           <p className="mt-1 text-sm text-gray-600">The three pillars will meet here as your activity grows.</p>
+          {(me.role === 'TEACHER' || me.role === 'ADMIN') && (
+            <Link href="/dashboard/teacher" className="mt-4 inline-flex text-sm font-semibold text-primary-700 hover:underline">
+              Open teacher workspace →
+            </Link>
+          )}
           <div className="mt-5 grid gap-4 md:grid-cols-3">
             <Pillar href="/teachers" icon={<Music2 />} title="Book a teacher" text="Find the right teacher and reserve a lesson." />
             <Pillar href="/courses" icon={<BookOpen />} title="Online courses" text="Learn at your pace and track progress." />
@@ -173,9 +179,4 @@ function CenteredMessage({ children }: { children: React.ReactNode }) {
 }
 function DashboardLoading() {
   return <div className="mx-auto max-w-6xl px-6 py-12"><div className="h-10 w-72 animate-pulse rounded bg-gray-200" /><div className="mt-8 grid gap-4 md:grid-cols-3">{[1,2,3].map((item) => <div key={item} className="h-40 animate-pulse rounded-2xl bg-gray-100" />)}</div></div>;
-}
-function roleLabel(role: string) {
-  if (role === 'ADMIN') return 'Administrator';
-  if (role === 'TEACHER') return 'Teacher';
-  return 'Student';
 }
