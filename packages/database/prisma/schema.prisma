@@ -133,7 +133,9 @@ model UserProfile {
   city           String?
   country        String?
   language       String     @default("en")
+  timezone       String     @default("Europe/Zurich")
   onboardingDone Boolean    @default(false)
+  onboardingStep Int        @default(0)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 

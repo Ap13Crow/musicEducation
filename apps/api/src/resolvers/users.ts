@@ -95,14 +95,22 @@ export const userResolvers = {
   Mutation: {
     async updateProfile(_: unknown, { input }: any, { prisma, user }: GraphQLContext) {
       requireAuth(user);
-      const { displayName, bio, city, country, instruments, musicStyles } = input;
+      const { displayName, bio, city, country, timezone, instruments, musicStyles } = input;
       return prisma.user.update({
         where: { id: user.id },
         data: {
           profile: {
             upsert: {
-              create: { displayName, bio, city, country, instruments: instruments ?? [], musicStyles: musicStyles ?? [] },
-              update: { displayName, bio, city, country, instruments, musicStyles },
+              create: {
+                displayName,
+                bio,
+                city,
+                country,
+                timezone: timezone ?? 'Europe/Zurich',
+                instruments: instruments ?? [],
+                musicStyles: musicStyles ?? [],
+              },
+              update: { displayName, bio, city, country, timezone, instruments, musicStyles },
             },
           },
         },
@@ -239,6 +247,14 @@ export const userResolvers = {
         prisma.feedPost.count({ where }),
       ]);
       return { nodes, pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount } };
+    },
+  },
+  UserProfile: {
+    timezone(profile: any) {
+      return profile.timezone ?? 'Europe/Zurich';
+    },
+    onboardingStep(profile: any) {
+      return profile.onboardingStep ?? 0;
     },
   },
   TeacherProfile: {
