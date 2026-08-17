@@ -56,6 +56,25 @@ export const userResolvers = {
     },
 
     async teachers(_: unknown, { filter, page = 1, limit = 20 }: any, { prisma }: GraphQLContext) {
+      // Repair previously promoted teachers that predate automatic profile provisioning.
+      const missingProfiles = await prisma.user.findMany({
+        where: { role: 'TEACHER', teacherProfile: null },
+        include: { profile: true },
+      });
+      for (const candidate of missingProfiles) {
+        await prisma.teacherProfile.upsert({
+          where: { userId: candidate.id },
+          create: {
+            userId: candidate.id,
+            instruments: candidate.profile?.instruments ?? [],
+            musicStyles: candidate.profile?.musicStyles ?? [],
+            languages: [],
+            isAvailable: true,
+          },
+          update: {},
+        });
+      }
+
       const where: any = { isAvailable: true };
       if (filter) {
         if (filter.instrument) where.instruments = { has: filter.instrument };
