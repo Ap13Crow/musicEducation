@@ -7,3 +7,4 @@ configMapGenerator:
     files:
       - 001-identity.sql
       - 002-practice.sql
+      - 003-profile-contract.sql
