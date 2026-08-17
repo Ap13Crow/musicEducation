@@ -49,6 +49,39 @@ These are not required for the native Theory, Practice, or Performance workflows
 - `GOOGLE_STUDENTS_CALENDAR_OWNER`
 
 The service-account JSON should be stored as the secret value, not committed as a file.
+Calendar-owner addresses do not need passwords. Domain-wide delegation lets the service
+account impersonate the configured Workspace users after an administrator authorizes
+the required Calendar scopes.
+
+### Transactional email / Keycloak SMTP
+
+Secrets:
+
+- `SMTP_PASSWORD`
+- `SMTP_USER` when the provider treats the username as confidential
+
+Variables:
+
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_FROM`
+- `SMTP_FROM_DISPLAY_NAME`
+- `SMTP_REPLY_TO`
+- `SMTP_SSL`
+- `SMTP_STARTTLS`
+
+SMTP is required before production email verification, password recovery, booking
+confirmations, reminders, receipts, and teacher/student notifications can be trusted.
+
+### AI-assisted performance assessment
+
+- `DEEPSEEK_API_KEY`
+- `DEEPSEEK_API_URL` (variable)
+- `DEEPSEEK_MODEL` (variable)
+
+Audio files must be stored privately and passed to an analysis pipeline. The API key
+must never be exposed through a `NEXT_PUBLIC_*` variable. AI output supplements a
+structured teacher-readable assessment; it is not the assessment itself.
 
 ## Product architecture
 
