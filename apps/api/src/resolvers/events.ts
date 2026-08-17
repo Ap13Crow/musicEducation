@@ -1,5 +1,5 @@
 import { GraphQLError } from 'graphql';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import type { GraphQLContext } from '../types.js';
 
 export const eventResolvers = {
@@ -76,6 +76,17 @@ export const eventResolvers = {
       return { nodes, pageInfo: { hasNextPage: nodes.length === limit, hasPreviousPage: page > 1, totalCount: nodes.length } };
     },
 
+    async myEvents(_: unknown, { page = 1, limit = 20 }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'TEACHER', 'ADMIN');
+      const skip = (page - 1) * limit;
+      const where = user!.role === 'ADMIN' ? {} : { publisherId: user!.id };
+      const [nodes, totalCount] = await Promise.all([
+        prisma.event.findMany({ where, skip, take: limit, orderBy: { startsAt: 'desc' } }),
+        prisma.event.count({ where }),
+      ]);
+      return { nodes, pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount } };
+    },
+
     async myEventBookings(_: unknown, { page = 1, limit = 20 }: any, { prisma, user }: GraphQLContext) {
       requireAuth(user);
       const skip = (page - 1) * limit;
@@ -91,10 +102,10 @@ export const eventResolvers = {
 
   Mutation: {
     async createEvent(_: unknown, { input }: any, { prisma, user }: GraphQLContext) {
-      requireAuth(user);
+      requireRole(user, 'TEACHER', 'ADMIN');
       const slug = input.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now();
       return prisma.event.create({
-        data: { ...input, publisherId: user.id, slug },
+        data: { ...input, publisherId: user!.id, slug },
       });
     },
 

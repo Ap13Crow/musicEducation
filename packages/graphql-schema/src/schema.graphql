@@ -522,6 +522,7 @@ input AvailabilitySlotInput {
   endTime: String
   startDate: DateTime
   endDate: DateTime
+  timezone: String
 }
 
 input CreateCourseInput {
@@ -709,6 +710,7 @@ type Query {
   event(id: ID, slug: String): Event
   nearbyEvents(latitude: Float!, longitude: Float!, radiusKm: Float!, page: Int, limit: Int): EventConnection!
   myEventBookings(page: Int, limit: Int): [EventBooking!]!
+  myEvents(page: Int, limit: Int): EventConnection!
 
   # Assessments
   assessmentQuestions(category: String, difficulty: String, instrument: String, limit: Int): [AssessmentQuestion!]!
