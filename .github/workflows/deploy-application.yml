@@ -183,11 +183,10 @@ jobs:
             fi
           done
           if (( deleted == 0 )); then
-            echo 'No failed bootstrap tags require cleanup.'
-            exit 0
+            echo 'No completed bootstrap tags found; reclaiming orphaned push layers.'
+          else
+            echo "Removed $deleted failed bootstrap tag(s)."
           fi
-
-          echo "Removed $deleted failed bootstrap tag(s); reclaiming their unreferenced blobs."
           doctl registry garbage-collection start "$REGISTRY_NAME" \
             --include-untagged-manifests --force >/dev/null
           for attempt in $(seq 1 60); do
