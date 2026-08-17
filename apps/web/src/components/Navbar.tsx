@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { useSession, signIn, signOut } from 'next-auth/react';
 import { useState } from 'react';
-import { Menu, X, User, LogOut, Settings, BookOpen, Music, Calendar, ChevronDown } from 'lucide-react';
+import { Menu, X, User, LogOut, Settings, BookOpen, Music, Calendar, ChevronDown, GraduationCap } from 'lucide-react';
+import { hasRole } from '@/lib/roles';
 
 export default function Navbar() {
   const { data: session, status } = useSession();
@@ -110,7 +111,16 @@ export default function Navbar() {
                       >
                         <User className="h-4 w-4" /> My Profile
                       </Link>
-                      {(session as any)?.roles?.includes('ADMIN') && (
+                      {hasRole(session?.roles, 'TEACHER', 'ADMIN') && (
+                        <Link
+                          href="/dashboard/teacher"
+                          className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                          onClick={() => setProfileOpen(false)}
+                        >
+                          <GraduationCap className="h-4 w-4" /> Teacher Workspace
+                        </Link>
+                      )}
+                      {hasRole(session?.roles, 'ADMIN') && (
                         <Link
                           href="/admin"
                           className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
@@ -190,7 +200,16 @@ export default function Navbar() {
                 >
                   <User className="h-4 w-4" /> My Profile
                 </Link>
-                {(session as any)?.roles?.includes('ADMIN') && (
+                {hasRole(session?.roles, 'TEACHER', 'ADMIN') && (
+                  <Link
+                    href="/dashboard/teacher"
+                    className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    <GraduationCap className="h-4 w-4" /> Teacher Workspace
+                  </Link>
+                )}
+                {hasRole(session?.roles, 'ADMIN') && (
                   <Link
                     href="/admin"
                     className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"

@@ -22,7 +22,7 @@ const httpLink = createHttpLink({
 async function resolveAuthToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
   try {
-    const session = (await getSession()) as { accessToken?: string } | null;
+    const session = await getSession();
     if (session?.accessToken) return session.accessToken;
   } catch {
     /* fall through to localStorage */

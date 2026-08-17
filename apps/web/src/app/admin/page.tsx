@@ -4,13 +4,13 @@ import { useState } from 'react';
 import { gql, useMutation, useQuery } from '@apollo/client';
 import { keycloakAdminUrl } from '@/lib/external-links';
 import { useSession, signIn } from 'next-auth/react';
+import { hasRole } from '@/lib/roles';
 import {
   Users, BookOpen, Calendar, DollarSign, Settings, Shield,
   Key, Brain, Video, CreditCard, BarChart3, UserCog, ChevronRight,
-  Eye, EyeOff, AlertTriangle,
 } from 'lucide-react';
 
-type Tab = 'overview' | 'users' | 'content' | 'integrations' | 'api-keys' | 'settings';
+type Tab = 'overview' | 'users' | 'content' | 'integrations' | 'settings';
 
 // Identity/config defaults shown in the admin UI. Driven by NEXT_PUBLIC_* env
 // so they reflect the deployment; defaults target the production domain.
@@ -35,15 +35,6 @@ const SAMPLE_STATS = {
 };
 
 
-const API_KEY_FIELDS = [
-  { key: 'OPENAI_API_KEY', label: 'OpenAI API Key', icon: Brain, description: 'For AI-powered assessment reports' },
-  { key: 'CLAUDE_API_KEY', label: 'Claude/Anthropic API Key', icon: Brain, description: 'Alternative AI provider for analysis' },
-  { key: 'DEEPSEEK_API_KEY', label: 'DeepSeek API Key', icon: Brain, description: 'AI model for music analysis' },
-  { key: 'STRIPE_SECRET_KEY', label: 'Stripe Secret Key', icon: CreditCard, description: 'Payment processing' },
-  { key: 'STRIPE_WEBHOOK_SECRET', label: 'Stripe Webhook Secret', icon: CreditCard, description: 'Stripe webhook verification' },
-  { key: 'ZOOM_API_KEY', label: 'Zoom API Key', icon: Video, description: 'Video lesson integration' },
-  { key: 'ZOOM_API_SECRET', label: 'Zoom API Secret', icon: Video, description: 'Zoom authentication' },
-];
 
 function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string | number; color: string }) {
   return (
@@ -397,65 +388,6 @@ function ContentTab() {
   );
 }
 
-function ApiKeysTab() {
-  const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
-  const [keyValues, setKeyValues] = useState<Record<string, string>>({});
-
-  function toggleVisibility(key: string) {
-    setVisibleKeys((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-        <div className="flex items-start gap-2">
-          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-          <div>
-            <p className="font-medium">Security Notice</p>
-            <p className="mt-1">API keys are stored securely as environment variables. Changes here update the configuration and require a service restart to take effect. Never share API keys publicly.</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        {API_KEY_FIELDS.map(({ key, label, icon: Icon, description }) => (
-          <div key={key} className="card p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100">
-                <Icon className="h-4 w-4 text-gray-600" />
-              </div>
-              <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-900">{label}</label>
-                <p className="text-xs text-gray-500 mb-2">{description}</p>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type={visibleKeys[key] ? 'text' : 'password'}
-                      placeholder={`Enter ${label}...`}
-                      value={keyValues[key] ?? ''}
-                      onChange={(e) => setKeyValues((prev) => ({ ...prev, [key]: e.target.value }))}
-                      className="input w-full pr-10 text-sm"
-                      autoComplete="off"
-                    />
-                    <button
-                      onClick={() => toggleVisibility(key)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      type="button"
-                      aria-label={visibleKeys[key] ? 'Hide' : 'Show'}
-                    >
-                      {visibleKeys[key] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function SettingsTab() {
   return (
     <div className="space-y-6">
@@ -519,14 +451,13 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'users', label: 'Users', icon: Users },
   { id: 'content', label: 'Content', icon: BookOpen },
   { id: 'integrations', label: 'Deep Integrations', icon: Brain },
-  { id: 'api-keys', label: 'API Keys', icon: Key },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
 export default function AdminPage() {
   const { data: session, status } = useSession();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
-  const isAdmin = (session as any)?.roles?.includes('ADMIN');
+  const isAdmin = hasRole(session?.roles, 'ADMIN');
 
   if (status === 'loading') {
     return (
@@ -560,7 +491,7 @@ export default function AdminPage() {
             <Shield className="h-5 w-5 text-primary-600" />
             <h1 className="text-2xl font-bold">Admin Dashboard</h1>
           </div>
-          <p className="text-sm text-gray-500">Manage users, content, API integrations, and platform settings.</p>
+          <p className="text-sm text-gray-500">Manage users, content, integrations, and platform settings. Secrets remain in protected deployment configuration.</p>
         </div>
       </div>
 
@@ -592,7 +523,6 @@ export default function AdminPage() {
             {activeTab === 'users' && <UsersTab />}
             {activeTab === 'content' && <ContentTab />}
             {activeTab === 'integrations' && <IntegrationsTab />}
-            {activeTab === 'api-keys' && <ApiKeysTab />}
             {activeTab === 'settings' && <SettingsTab />}
           </div>
         </div>

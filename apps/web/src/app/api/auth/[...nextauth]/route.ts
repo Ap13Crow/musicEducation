@@ -1,13 +1,14 @@
 import type { Account, NextAuthOptions } from 'next-auth';
 import NextAuth from 'next-auth';
 import KeycloakProvider from 'next-auth/providers/keycloak';
+import { normalizeRoles, type AppRole } from '@/lib/roles';
 
 type AuthToken = {
   accessToken?: string;
   accessTokenExpires?: number;
   idToken?: string;
   refreshToken?: string;
-  roles?: string[];
+  roles?: AppRole[];
   error?: 'RefreshAccessTokenError';
 };
 
@@ -15,11 +16,11 @@ const issuer = process.env.KEYCLOAK_ISSUER ?? '';
 const clientId = process.env.KEYCLOAK_CLIENT_ID ?? '';
 const clientSecret = process.env.KEYCLOAK_CLIENT_SECRET ?? '';
 
-function rolesFromAccessToken(accessToken?: string): string[] {
+function rolesFromAccessToken(accessToken?: string): AppRole[] {
   if (!accessToken) return [];
   try {
     const payload = JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64url').toString('utf8'));
-    return Array.isArray(payload.realm_access?.roles) ? payload.realm_access.roles : [];
+    return normalizeRoles(payload.realm_access?.roles);
   } catch {
     return [];
   }
