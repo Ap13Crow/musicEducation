@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import type { PrismaClient, User } from '@my-music-coach/database';
 import { verifyKeycloakToken, provisionKeycloakUser } from './keycloak.js';
+import type { KeycloakAuthDiagnostic } from './keycloak.js';
 
 /** Lightweight user stub attached to every authenticated request */
 export interface AuthUser {
@@ -93,6 +94,7 @@ export function extractBearerToken(req: Request): string | null {
 export async function resolveRequestUser(
   req: Request,
   prisma: PrismaClient,
+  report?: (diagnostic: KeycloakAuthDiagnostic) => void,
 ): Promise<AuthUser | null> {
   const token = extractBearerToken(req);
   if (!token) return null;
@@ -104,7 +106,7 @@ export async function resolveRequestUser(
   }
 
   // 2. SSO path: a Keycloak access token forwarded by the web app.
-  const claims = await verifyKeycloakToken(token);
+  const claims = await verifyKeycloakToken(token, report);
   if (claims) {
     const user = await provisionKeycloakUser(prisma, claims);
     return { id: user.id, role: user.role };
