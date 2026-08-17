@@ -272,6 +272,24 @@ jobs:
             unset jwt_secret nextauth_secret
             echo 'Created application runtime secrets inside Kubernetes.'
           fi
+      - name: Synchronize configured payment secrets
+        if: inputs.operation == 'deploy'
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          if [[ -z "$STRIPE_SECRET_KEY" || -z "$STRIPE_WEBHOOK_SECRET" ]]; then
+            echo 'Stripe remains disabled because one or both Stripe secrets are absent.'
+            exit 0
+          fi
+          kubectl -n "$NAMESPACE" create secret generic application-integrations \
+            --from-literal=STRIPE_SECRET_KEY="$STRIPE_SECRET_KEY" \
+            --from-literal=STRIPE_WEBHOOK_SECRET="$STRIPE_WEBHOOK_SECRET" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo 'Synchronized Stripe credentials without printing their values.'
       - name: Apply the identity schema
         id: schema
         if: inputs.operation == 'deploy'
