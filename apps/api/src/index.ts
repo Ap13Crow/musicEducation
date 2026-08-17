@@ -83,9 +83,23 @@ async function main() {
     ));
   }
 
-  app.use(express.json());
+  app.use(express.json({ limit: '1mb' }));
 
   app.use(authMiddleware);
+  app.post('/profile/avatar', async (req, res) => {
+    const auth = await resolveRequestUser(req, prisma);
+    if (!auth) return res.status(401).json({ error: 'Authentication required.' });
+    const avatarUrl = typeof req.body?.avatarUrl === 'string' ? req.body.avatarUrl : '';
+    if (!/^data:image\/(?:jpeg|png|webp);base64,/.test(avatarUrl) || avatarUrl.length > 750_000) {
+      return res.status(400).json({ error: 'Use a JPEG, PNG, or WebP image smaller than 500 KB.' });
+    }
+    await prisma.userProfile.upsert({
+      where: { userId: auth.id },
+      create: { userId: auth.id, avatarUrl, instruments: [], musicStyles: [] },
+      update: { avatarUrl },
+    });
+    return res.json({ avatarUrl });
+  });
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
   app.get('/health/ready', async (_req, res) => {
     try {
