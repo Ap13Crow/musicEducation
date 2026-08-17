@@ -135,3 +135,28 @@ user password.
 GitHub Environment secrets are the source for this development phase. The workflow creates the Kubernetes Secrets idempotently on every `deploy-and-test` run. Secrets are never rendered by Kustomize and are never committed.
 
 Rotate every credential that has previously appeared in chat, shell history, screenshots, or repository history before production use. After rotation, update the GitHub Environment secret and run `deploy-and-test` again. Kubernetes will receive the new value without changing a manifest.
+
+
+## Role-aware acceptance users
+
+Keycloak realm roles are the source of truth for application access. The web
+shell uses the roles in the signed-in access token to show the appropriate
+workspace, and the API independently enforces the same roles on protected
+GraphQL operations.
+
+Use self-registration to create a student acceptance account. To test teacher
+or administrator functions, open the realm-specific Keycloak Admin Console,
+select the user, and assign the `TEACHER` or `ADMIN` realm role. Sign out of
+My Music Coach and sign in again after every role change so Keycloak issues a
+fresh access token. The first authenticated GraphQL request creates the local
+identity and synchronizes its application role.
+
+Keep acceptance-user passwords out of GitHub, workflow inputs, issue comments,
+and chat. Do not add API tokens or provider keys through the browser. External
+integration credentials belong in protected GitHub Environment or Kubernetes
+Secrets and should be exposed to workloads only when that integration is
+implemented.
+
+Realm changes made after bootstrap are live Keycloak state. The
+`KeycloakRealmImport` remains creation-only and must not be rerun to manage
+individual users or roles.
