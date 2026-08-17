@@ -46,8 +46,6 @@ spec:
                 secretKeyRef:
                   name: application-runtime
                   key: JWT_SECRET
-            - name: ENABLE_LEGACY_SCHEDULER
-              value: 'false'
           volumeMounts:
             - name: postgres-ca
               mountPath: /etc/postgres-ca
