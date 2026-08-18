@@ -22,6 +22,13 @@ on:
         default: plan
         type: choice
         options: [plan, deploy, status, diagnose]
+      lookupTeacherProfileId:
+        description: >-
+          diagnose only: TeacherProfile id to print name/role data for (e.g.
+          from a "wrong name" report). Read-only, no secrets printed.
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -426,6 +433,8 @@ jobs:
       - name: Diagnose authenticated profile provisioning
         if: inputs.operation == 'diagnose'
         shell: bash
+        env:
+          LOOKUP_TEACHER_PROFILE_ID: ${{ inputs.lookupTeacherProfileId }}
         run: |
           set -euo pipefail
           echo 'Current immutable images:'
@@ -467,6 +476,16 @@ jobs:
           echo 'External event projection row count (Ticketmaster ingestion output):'
           kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
             "const{PrismaClient}=require('@prisma/client');const p=new PrismaClient();p.externalEventProjection.count().then(n=>{console.log('rows='+n);return p.\$disconnect()}).catch(e=>{console.error(e.message);process.exit(1)})"
+
+          if [[ -n "${LOOKUP_TEACHER_PROFILE_ID:-}" ]]; then
+            if [[ ! "$LOOKUP_TEACHER_PROFILE_ID" =~ ^[a-zA-Z0-9]+$ ]]; then
+              echo "lookupTeacherProfileId must be alphanumeric; got: $LOOKUP_TEACHER_PROFILE_ID" >&2
+              exit 1
+            fi
+            echo 'Teacher profile name lookup (email/role/stored displayName only):'
+            kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
+              "const{PrismaClient}=require('@prisma/client');const p=new PrismaClient();p.teacherProfile.findUnique({where:{id:'$LOOKUP_TEACHER_PROFILE_ID'},include:{user:{include:{profile:true}}}}).then(tp=>{console.log(tp?JSON.stringify({email:tp.user.email,role:tp.user.role,storedDisplayName:tp.user.profile?.displayName??null}):'not found');return p.\$disconnect()}).catch(e=>{console.error(e.message);process.exit(1)})"
+          fi
 
       - name: Report application status
         if: always()

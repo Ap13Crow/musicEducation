@@ -11,3 +11,4 @@ configMapGenerator:
       - 004-native-pillars.sql
       - 005-external-events.sql
       - 006-community-commerce.sql
+      - 007-stripe-connect.sql
