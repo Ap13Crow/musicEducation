@@ -133,6 +133,7 @@ model User {
   publishedEvents     Event[]
   studentAvailability StudentAvailability[]
   quizAttempts        QuizAttempt[]
+  xpAwards            XpAward[]
 }
 
 model UserCredential {
@@ -216,6 +217,11 @@ model TeacherApplication {
   bio             String?
   instruments     String[]
   experienceYears Int?
+  // Verified server-side (applyForTeacher rejects under-18) - self-employed
+  // teachers on the platform must be adults; full identity verification is a
+  // later phase, this is the quality/legal floor for now.
+  address         String?
+  birthdate       DateTime?                 @db.Date
   status          TeacherApplicationStatus  @default(PENDING)
   reviewedBy      String?
   reviewedAt      DateTime?
@@ -261,6 +267,38 @@ model GamificationProfile {
   updatedAt   DateTime   @updatedAt
 
   user User @relation(fields: [userId], references: [id])
+}
+
+enum XpAwardReason {
+  PROFILE_COMPLETED
+  TEACHER_FOUND
+  EVENT_ATTENDED
+  COURSE_BONUS
+}
+
+// Audit ledger for every XP grant outside per-lesson (Lesson.xpReward) and
+// assessment (Assessment.xpAwarded) completion, which already increment
+// GamificationProfile directly. refId is the idempotency key for the
+// automatic one-time reasons (PROFILE_COMPLETED/TEACHER_FOUND use the
+// sentinel 'self'; EVENT_ATTENDED uses the event id) - the unique
+// constraint below relies on Postgres treating NULL <> NULL, so
+// COURSE_BONUS (refId always null) is deliberately exempt and stays
+// repeatable, since a teacher/admin may award it more than once.
+model XpAward {
+  id           String        @id @default(cuid())
+  userId       String
+  reason       XpAwardReason
+  refId        String?
+  enrollmentId String?
+  amount       Int
+  note         String?
+  awardedBy    String?
+  createdAt    DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, reason, refId])
+  @@index([userId])
 }
 
 model UserExternalIdentity {
@@ -473,6 +511,12 @@ model AssessmentAnswer {
 
   assessment Assessment         @relation(fields: [assessmentId], references: [id])
   question   AssessmentQuestion @relation(fields: [questionId], references: [id])
+
+  // Revisiting a question (e.g. going back a step) must update the existing
+  // answer, not add a second row - completeAssessment scores off
+  // assessment.answers.length, so a duplicate would inflate totalAnswered
+  // and silently skew the resulting score/skill level.
+  @@unique([assessmentId, questionId])
 }
 
 model Booking {
@@ -674,7 +718,7 @@ model ExternalEventProjection {
   minPrice        Decimal?              @db.Decimal(10, 2)
   maxPrice        Decimal?              @db.Decimal(10, 2)
   currency        String?
-  classifications String[] // normalized genres/styles
+  classifications String[] // normalized genres/styles, as provided by the source
   attribution     String // required provider attribution string
   raw             Json? // raw payload for debugging; not shown to users
   fetchedAt       DateTime
@@ -682,7 +726,20 @@ model ExternalEventProjection {
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
+  // Provider genre tags (`classifications`) aren't aligned to this
+  // platform's taxonomy - a Ticketmaster "Classical" tag says nothing about
+  // instrument or skill level. These are populated by the DeepSeek
+  // event-classification worker job from title/description/classifications,
+  // matching the same dimensions used to filter/recommend native Events.
+  // classifiedAt is null until the job has processed a row at least once
+  // (empty tag arrays are a valid classification outcome, not "unprocessed").
+  instruments  String[] @default([])
+  musicStyles  String[] @default([])
+  skillLevels  String[] @default([])
+  classifiedAt DateTime?
+
   @@unique([provider, providerId])
   @@index([startsAt])
   @@index([city])
+  @@index([classifiedAt])
 }

@@ -4,6 +4,7 @@ import { userResolvers } from './users.js';
 import { courseResolvers } from './courses.js';
 import { bookingResolvers } from './bookings.js';
 import { eventResolvers } from './events.js';
+import { discoveryResolvers } from './discovery.js';
 import { paymentResolvers } from './payments.js';
 import { assessmentResolvers } from './assessments.js';
 import { feedResolvers } from './feed.js';
@@ -12,6 +13,7 @@ import { recommendationResolvers } from './recommendations.js';
 import { adminResolvers } from './admin.js';
 import { teacherApplicationResolvers } from './teacherApplications.js';
 import { quizResolvers } from './quizzes.js';
+import { xpResolvers } from './xp.js';
 import { DateTimeResolver, JSONResolver } from 'graphql-scalars';
 
 const scalarResolvers = {
@@ -31,6 +33,7 @@ export const resolvers = mergeResolvers([
   courseResolvers,
   bookingResolvers,
   eventResolvers,
+  discoveryResolvers,
   paymentResolvers,
   assessmentResolvers,
   feedResolvers,
@@ -39,4 +42,5 @@ export const resolvers = mergeResolvers([
   adminResolvers,
   teacherApplicationResolvers,
   quizResolvers,
+  xpResolvers,
 ]);

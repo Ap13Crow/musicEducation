@@ -3,7 +3,7 @@
 process.env.JWT_SECRET = 'test-secret-key-for-unit-tests';
 
 import { requireAuth, requireRole } from '../middleware/auth';
-import { calculateApplicationFee, PLATFORM_FEE_BPS } from '../resolvers/payments';
+import { calculateApplicationFee, getFrontendUrl, PLATFORM_FEE_BPS } from '../resolvers/payments';
 
 describe('Stripe Connect onboarding permission checks', () => {
   it('allows TEACHER to start onboarding', () => {
@@ -26,6 +26,30 @@ describe('Stripe Connect onboarding permission checks', () => {
 describe('createCheckoutSession auth', () => {
   it('requires an authenticated user', () => {
     expect(() => requireAuth(null)).toThrow();
+  });
+});
+
+// Regression test for the bug where an unset FRONTEND_URL silently produced
+// "undefined/payment/success..." and Stripe rejected the session with
+// "Invalid URL: An explicit scheme (such as https) must be provided" - the
+// enroll button did nothing but log an opaque ApolloError. Now it fails
+// loudly and specifically instead, and deploy/workloads/application/api.yaml
+// sets FRONTEND_URL so this never fires in the deployed environment.
+describe('getFrontendUrl', () => {
+  const original = process.env.FRONTEND_URL;
+  afterEach(() => {
+    if (original === undefined) delete process.env.FRONTEND_URL;
+    else process.env.FRONTEND_URL = original;
+  });
+
+  it('throws a clear, specific error when FRONTEND_URL is unset', () => {
+    delete process.env.FRONTEND_URL;
+    expect(() => getFrontendUrl()).toThrow('FRONTEND_URL');
+  });
+
+  it('returns the configured value when set', () => {
+    process.env.FRONTEND_URL = 'https://dev.mymusic.coach';
+    expect(getFrontendUrl()).toBe('https://dev.mymusic.coach');
   });
 });
 

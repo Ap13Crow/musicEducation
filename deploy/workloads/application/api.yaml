@@ -37,6 +37,12 @@ spec:
               value: '4000'
             - name: CORS_ORIGIN
               value: http://web:3000
+            # createCheckoutSession builds Stripe's success_url/cancel_url from
+            # this - unset here, it resolved to "undefined/payment/success..."
+            # and Stripe rejected the whole session with "Invalid URL: An
+            # explicit scheme (such as https) must be provided."
+            - name: FRONTEND_URL
+              value: https://dev.mymusic.coach
             - name: KEYCLOAK_ISSUER
               value: https://auth-dev.mymusic.coach/realms/mymusic-coach
             - name: KEYCLOAK_CLIENT_ID

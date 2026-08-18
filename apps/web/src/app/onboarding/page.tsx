@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useMutation, gql } from '@apollo/client';
+import { useMutation, useQuery, gql } from '@apollo/client';
 import { useRouter } from 'next/navigation';
 import { signIn, useSession } from 'next-auth/react';
 import { BookOpen, Mic, Globe, Music } from 'lucide-react';
@@ -9,6 +9,20 @@ import { BookOpen, Mic, Globe, Music } from 'lucide-react';
 const START_ASSESSMENT = gql`
   mutation StartAssessment {
     startAssessment { id startedAt }
+  }
+`;
+
+const GET_QUESTIONS = gql`
+  query OnboardingAssessmentQuestions($category: String, $limit: Int) {
+    assessmentQuestions(category: $category, limit: $limit) {
+      id category difficulty instrument question options
+    }
+  }
+`;
+
+const SUBMIT_ANSWER = gql`
+  mutation SubmitOnboardingAnswer($input: SubmitAssessmentAnswerInput!) {
+    submitAssessmentAnswer(input: $input) { id }
   }
 `;
 
@@ -40,42 +54,6 @@ const steps = [
   { id: 'preferences', title: 'Your Preferences', icon: Music },
 ];
 
-const theoryQuestions = [
-  {
-    id: 'q1',
-    prompt: 'How many semitones are in a perfect fifth?',
-    options: [
-      { id: 'a', text: '5', isCorrect: false },
-      { id: 'b', text: '7', isCorrect: true },
-      { id: 'c', text: '12', isCorrect: false },
-      { id: 'd', text: '4', isCorrect: false },
-    ],
-  },
-  {
-    id: 'q2',
-    prompt: 'Which clef is typically used for cello music?',
-    options: [
-      { id: 'a', text: 'Treble clef', isCorrect: false },
-      { id: 'b', text: 'Alto clef', isCorrect: false },
-      { id: 'c', text: 'Bass clef', isCorrect: true },
-      { id: 'd', text: 'Soprano clef', isCorrect: false },
-    ],
-  },
-];
-
-const cultureQuestions = [
-  {
-    id: 'c1',
-    prompt: 'During which period did Ludwig van Beethoven primarily compose?',
-    options: [
-      { id: 'a', text: 'Baroque', isCorrect: false },
-      { id: 'b', text: 'Classical / Early Romantic', isCorrect: true },
-      { id: 'c', text: 'Modern', isCorrect: false },
-      { id: 'd', text: 'Renaissance', isCorrect: false },
-    ],
-  },
-];
-
 const instruments = ['Piano', 'Violin', 'Viola', 'Cello', 'Double Bass', 'Flute', 'Oboe', 'Clarinet', 'Bassoon', 'Horn', 'Trumpet', 'Trombone', 'Guitar', 'Harp', 'Voice'];
 const styles = ['Baroque', 'Classical', 'Romantic', 'Contemporary', 'Opera', 'Chamber Music', 'Orchestral', 'Solo Piano', 'Early Music'];
 
@@ -90,9 +68,20 @@ export default function OnboardingPage() {
   const [result, setResult] = useState<any>(null);
 
   const [startAssessment] = useMutation(START_ASSESSMENT);
+  const [submitAnswer] = useMutation(SUBMIT_ANSWER);
   const [updatePreferences] = useMutation(UPDATE_PREFERENCES);
   const [completeOnboarding] = useMutation(COMPLETE_ONBOARDING);
   const [completeAssessment, { loading: completing }] = useMutation(COMPLETE_ASSESSMENT);
+
+  // Real question bank, not a hardcoded 2-question array - assessmentQuestions
+  // existed on the backend but nothing ever called it, so the "evaluation"
+  // was never actually evaluating anything (every submission scored 0
+  // answers -> always BEGINNER, always 0 XP). Only fetched once account +
+  // assessment exist, so a signed-out visitor never pays for this query.
+  const { data: theoryData } = useQuery(GET_QUESTIONS, { variables: { category: 'THEORY', limit: 6 }, skip: !assessmentId });
+  const { data: cultureData } = useQuery(GET_QUESTIONS, { variables: { category: 'CULTURE', limit: 6 }, skip: !assessmentId });
+  const theoryQuestions = theoryData?.assessmentQuestions ?? [];
+  const cultureQuestions = cultureData?.assessmentQuestions ?? [];
 
   async function handleStart() {
     // startAssessment (and completeOnboarding at the end) require an account.
@@ -114,8 +103,15 @@ export default function OnboardingPage() {
     }
   }
 
+  // Submits immediately (not just local state) so an abandoned assessment
+  // still has partial answers recorded, and upserts server-side, so
+  // reconsidering an answer after going back a step safely replaces it
+  // rather than double-counting toward the final score.
   function selectAnswer(questionId: string, optionId: string) {
     setAnswers((prev) => ({ ...prev, [questionId]: optionId }));
+    if (assessmentId) {
+      void submitAnswer({ variables: { input: { assessmentId, questionId, selectedOption: optionId } } });
+    }
   }
 
   function toggleItem(list: string[], setList: (v: string[]) => void, item: string) {
@@ -142,6 +138,7 @@ export default function OnboardingPage() {
 
   const currentStep = steps[step];
   const progress = (step / (steps.length - 1)) * 100;
+  const feedback = result?.aiReport ? JSON.parse(result.aiReport).feedback : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white px-4 py-12">
@@ -184,11 +181,12 @@ export default function OnboardingPage() {
           <div className="card p-8">
             <h2 className="mb-6 text-2xl font-bold">Music Theory</h2>
             <div className="space-y-8">
-              {theoryQuestions.map((q) => (
+              {theoryQuestions.length === 0 && <p className="text-sm text-gray-500">Loading questions…</p>}
+              {theoryQuestions.map((q: any) => (
                 <div key={q.id}>
-                  <p className="mb-3 font-medium text-gray-800">{q.prompt}</p>
+                  <p className="mb-3 font-medium text-gray-800">{q.question}</p>
                   <div className="grid grid-cols-2 gap-2">
-                    {q.options.map((opt) => (
+                    {q.options.map((opt: any) => (
                       <button
                         key={opt.id}
                         onClick={() => selectAnswer(q.id, opt.id)}
@@ -235,11 +233,12 @@ export default function OnboardingPage() {
           <div className="card p-8">
             <h2 className="mb-6 text-2xl font-bold">Musical Culture</h2>
             <div className="space-y-8">
-              {cultureQuestions.map((q) => (
+              {cultureQuestions.length === 0 && <p className="text-sm text-gray-500">Loading questions…</p>}
+              {cultureQuestions.map((q: any) => (
                 <div key={q.id}>
-                  <p className="mb-3 font-medium text-gray-800">{q.prompt}</p>
+                  <p className="mb-3 font-medium text-gray-800">{q.question}</p>
                   <div className="grid grid-cols-2 gap-2">
-                    {q.options.map((opt) => (
+                    {q.options.map((opt: any) => (
                       <button
                         key={opt.id}
                         onClick={() => selectAnswer(q.id, opt.id)}
@@ -326,6 +325,7 @@ export default function OnboardingPage() {
                   {result.skillLevel}
                 </span>
                 <p className="mt-3 text-sm text-gray-500">+{result.xpAwarded} XP earned!</p>
+                {feedback && <p className="mx-auto mt-4 max-w-md text-sm text-gray-600">{feedback}</p>}
               </div>
             )}
             <p className="mb-8 text-gray-600">

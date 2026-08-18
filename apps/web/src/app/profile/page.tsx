@@ -513,12 +513,12 @@ export default function ProfilePage() {
             {/* Quick links to pillars */}
             <section className="card p-6">
               <h2 className="mb-4 flex items-center gap-2 font-semibold text-gray-900">
-                <Phone className="h-4 w-4 text-gray-500" /> My accounts
+                <Phone className="h-4 w-4 text-gray-500" /> Quick links
               </h2>
               <div className="space-y-2">
-                <PillarLink href={externalLinks.learn} label="Moodle — courses" color="text-blue-600" />
-                <PillarLink href={externalLinks.booking} label="LibreBooking — lessons" color="text-purple-600" />
-                <PillarLink href={externalLinks.tickets} label="Pretix — tickets" color="text-amber-600" />
+                <PillarLink href={externalLinks.learn} label="Browse courses" color="text-blue-600" />
+                <PillarLink href={externalLinks.booking} label="Find a teacher" color="text-purple-600" />
+                <PillarLink href={externalLinks.tickets} label="Upcoming events" color="text-amber-600" />
               </div>
             </section>
           </div>

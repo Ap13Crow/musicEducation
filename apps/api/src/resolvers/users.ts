@@ -1,5 +1,12 @@
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { awardXpOnce } from './xp.js';
 import type { GraphQLContext } from '../types.js';
+
+const PROFILE_COMPLETED_XP = 50;
+
+function isProfileComplete(profile: { displayName?: string | null; bio?: string | null; instruments?: string[] } | null | undefined): boolean {
+  return Boolean(profile?.displayName?.trim() && profile?.bio?.trim() && (profile?.instruments?.length ?? 0) > 0);
+}
 
 type AvailabilitySlot = {
   dayOfWeek: number;
@@ -124,7 +131,7 @@ export const userResolvers = {
     async updateProfile(_: unknown, { input }: any, { prisma, user }: GraphQLContext) {
       requireAuth(user);
       const { displayName, bio, city, country, timezone, instruments, musicStyles } = input;
-      return prisma.user.update({
+      const updated = await prisma.user.update({
         where: { id: user.id },
         data: {
           profile: {
@@ -144,6 +151,13 @@ export const userResolvers = {
         },
         include: { profile: true, teacherProfile: true, gamification: true },
       });
+      // One-time XP for a filled-out profile - awardXpOnce's unique ledger key
+      // ('self' per user) makes every save after the first a no-op, so it's
+      // safe to just check completeness again on every update.
+      if (isProfileComplete(updated.profile)) {
+        await awardXpOnce(prisma, user.id, 'PROFILE_COMPLETED', 'self', PROFILE_COMPLETED_XP);
+      }
+      return updated;
     },
 
     async applyAsTeacher(_: unknown, _input: any, { prisma, user }: GraphQLContext) {

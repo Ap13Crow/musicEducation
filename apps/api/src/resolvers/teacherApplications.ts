@@ -2,6 +2,21 @@ import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import type { GraphQLContext } from '../types.js';
 
+const MIN_TEACHER_AGE_YEARS = 18;
+
+// Full identity verification is a later phase; this is the quality/legal
+// floor for a self-employed teacher applying now - exact age, not just
+// "born 18 years ago or earlier" (accounts for the birthday not having
+// happened yet this year).
+export function calculateAge(birthdate: Date, asOf: Date = new Date()): number {
+  let age = asOf.getFullYear() - birthdate.getFullYear();
+  const monthDiff = asOf.getMonth() - birthdate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && asOf.getDate() < birthdate.getDate())) {
+    age -= 1;
+  }
+  return age;
+}
+
 export const teacherApplicationResolvers = {
   Query: {
     async myTeacherApplication(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
@@ -35,6 +50,18 @@ export const teacherApplicationResolvers = {
       if (existing?.status === 'PENDING') {
         throw new GraphQLError('Your application is already pending review.', { extensions: { code: 'BAD_USER_INPUT' } });
       }
+
+      if (!input.birthdate) {
+        throw new GraphQLError('Date of birth is required to apply.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      const birthdate = new Date(input.birthdate);
+      if (Number.isNaN(birthdate.getTime())) {
+        throw new GraphQLError('Date of birth is invalid.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      if (calculateAge(birthdate) < MIN_TEACHER_AGE_YEARS) {
+        throw new GraphQLError(`You must be at least ${MIN_TEACHER_AGE_YEARS} years old to apply as a teacher.`, { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+
       // Upsert rather than create-only: a previously rejected applicant can
       // resubmit, which resets status to PENDING and clears the prior review.
       return prisma.teacherApplication.upsert({
@@ -45,12 +72,16 @@ export const teacherApplicationResolvers = {
           bio: input.bio ?? null,
           instruments: input.instruments ?? [],
           experienceYears: input.experienceYears ?? null,
+          address: input.address ?? null,
+          birthdate,
         },
         update: {
           headline: input.headline ?? null,
           bio: input.bio ?? null,
           instruments: input.instruments ?? [],
           experienceYears: input.experienceYears ?? null,
+          address: input.address ?? null,
+          birthdate,
           status: 'PENDING',
           reviewedBy: null,
           reviewedAt: null,

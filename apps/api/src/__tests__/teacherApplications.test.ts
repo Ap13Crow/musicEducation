@@ -3,6 +3,7 @@
 process.env.JWT_SECRET = 'test-secret-key-for-unit-tests';
 
 import { requireAuth, requireRole } from '../middleware/auth';
+import { calculateAge } from '../resolvers/teacherApplications';
 
 describe('applyForTeacher permission checks', () => {
   it('allows an authenticated STUDENT to apply', () => {
@@ -38,5 +39,27 @@ describe('applyForTeacher: already-a-teacher guard logic', () => {
     expect(alreadyHasAccess('TEACHER')).toBe(true);
     expect(alreadyHasAccess('ADMIN')).toBe(true);
     expect(alreadyHasAccess('STUDENT')).toBe(false);
+  });
+});
+
+// Minor-exclusion age gate (WP25): full identity verification is a later
+// phase, this is the quality/legal floor for now.
+describe('calculateAge', () => {
+  const asOf = new Date('2026-08-18T00:00:00Z');
+
+  it('counts a birthday that already happened this year', () => {
+    expect(calculateAge(new Date('2008-01-01'), asOf)).toBe(18);
+  });
+
+  it('does not count a birthday that has not happened yet this year', () => {
+    expect(calculateAge(new Date('2008-12-31'), asOf)).toBe(17);
+  });
+
+  it('handles the birthday falling exactly today', () => {
+    expect(calculateAge(new Date('2008-08-18'), asOf)).toBe(18);
+  });
+
+  it('handles the day just before the birthday this year', () => {
+    expect(calculateAge(new Date('2008-08-19'), asOf)).toBe(17);
   });
 });
