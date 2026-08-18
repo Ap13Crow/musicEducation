@@ -37,9 +37,9 @@ const GET_ADMIN_STATS = gql`
   }
 `;
 
-function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string | number; color: string }) {
+function StatCard({ icon: Icon, label, value, color, testId }: { icon: any; label: string; value: string | number; color: string; testId: string }) {
   return (
-    <div className="card p-4">
+    <div className="card p-4" data-testid={testId}>
       <div className="flex items-center gap-3">
         <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${color}`}>
           <Icon className="h-5 w-5" />
@@ -64,12 +64,12 @@ function OverviewTab() {
         </div>
       )}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <StatCard icon={Users} label="Total Users" value={loading && !stats ? '…' : stats?.totalUsers ?? 0} color="bg-blue-100 text-blue-600" />
-        <StatCard icon={UserCog} label="Teachers" value={loading && !stats ? '…' : stats?.totalTeachers ?? 0} color="bg-purple-100 text-purple-600" />
-        <StatCard icon={BookOpen} label="Courses" value={loading && !stats ? '…' : stats?.totalCourses ?? 0} color="bg-green-100 text-green-600" />
-        <StatCard icon={Calendar} label="Events" value={loading && !stats ? '…' : stats?.totalEvents ?? 0} color="bg-amber-100 text-amber-600" />
-        <StatCard icon={BarChart3} label="Bookings" value={loading && !stats ? '…' : stats?.totalBookings ?? 0} color="bg-pink-100 text-pink-600" />
-        <StatCard icon={DollarSign} label="Revenue" value={loading && !stats ? '…' : `CHF ${(stats?.totalRevenue ?? 0).toLocaleString()}`} color="bg-emerald-100 text-emerald-600" />
+        <StatCard testId="stat-total-users" icon={Users} label="Total Users" value={loading && !stats ? '…' : stats?.totalUsers ?? 0} color="bg-blue-100 text-blue-600" />
+        <StatCard testId="stat-teachers" icon={UserCog} label="Teachers" value={loading && !stats ? '…' : stats?.totalTeachers ?? 0} color="bg-purple-100 text-purple-600" />
+        <StatCard testId="stat-courses" icon={BookOpen} label="Courses" value={loading && !stats ? '…' : stats?.totalCourses ?? 0} color="bg-green-100 text-green-600" />
+        <StatCard testId="stat-events" icon={Calendar} label="Events" value={loading && !stats ? '…' : stats?.totalEvents ?? 0} color="bg-amber-100 text-amber-600" />
+        <StatCard testId="stat-bookings" icon={BarChart3} label="Bookings" value={loading && !stats ? '…' : stats?.totalBookings ?? 0} color="bg-pink-100 text-pink-600" />
+        <StatCard testId="stat-revenue" icon={DollarSign} label="Revenue" value={loading && !stats ? '…' : `CHF ${(stats?.totalRevenue ?? 0).toLocaleString()}`} color="bg-emerald-100 text-emerald-600" />
       </div>
 
       <div className="card p-4">

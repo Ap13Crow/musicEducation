@@ -10,6 +10,8 @@ import type { GraphQLContext } from '../types.js';
 export const discoveryResolvers = {
   Query: {
     async externalEvents(_: unknown, { filter, page = 1, limit = 20 }: any, { prisma }: GraphQLContext) {
+      const safeLimit = Math.max(1, Math.min(limit, 100));
+      const safePage = Math.max(1, page);
       const where: any = {};
       if (filter?.city) where.city = { contains: filter.city, mode: 'insensitive' };
       if (filter?.country) where.country = filter.country;
@@ -23,19 +25,19 @@ export const discoveryResolvers = {
       // Don't resurface a cached row past the provider's own cache guidance.
       where.OR = [{ expiresAt: null }, { expiresAt: { gte: new Date() } }];
 
-      const skip = (page - 1) * limit;
+      const skip = (safePage - 1) * safeLimit;
       const [nodes, totalCount] = await Promise.all([
         prisma.externalEventProjection.findMany({
           where,
           skip,
-          take: Math.min(limit, 100),
+          take: safeLimit,
           orderBy: { startsAt: 'asc' },
         }),
         prisma.externalEventProjection.count({ where }),
       ]);
       return {
         nodes,
-        pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount },
+        pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: safePage > 1, totalCount },
       };
     },
   },

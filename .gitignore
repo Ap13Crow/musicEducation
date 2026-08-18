@@ -51,6 +51,8 @@ out/
 .turbo/
 coverage/
 test-results/
+playwright-report/
+blob-report/
 *.tsbuildinfo
 next-env.d.ts
 

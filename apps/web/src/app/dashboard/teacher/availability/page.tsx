@@ -16,11 +16,11 @@ function oneHourAfter(start:string){const [h,m]=start.split(':').map(Number);con
 export default function TeacherAvailabilityPage(){
  const {data,loading,refetch}=useQuery(GET);const [slots,setSlots]=useState<Slot[]|null>(null);
  const [provision,{loading:provisioning}]=useMutation(PROVISION);const [save,{loading:saving,error}]=useMutation(SAVE);
- const current=slots??(data?.me?.teacherProfile?.availability??[]).map((s:any)=>({...s,timezone:'Europe/Zurich'}));
+ const current=slots??(data?.me?.teacherProfile?.availability??[]).map((s:any)=>({dayOfWeek:s.dayOfWeek,startTime:s.startTime,endTime:s.endTime,timezone:'Europe/Zurich'}));
  async function ensureProfile(){await provision();await refetch();}
  function add(){setSlots([...current,{dayOfWeek:1,startTime:'09:00',endTime:'10:00',timezone:'Europe/Zurich'}]);}
  function change(i:number,key:'dayOfWeek'|'startTime',value:string|number){setSlots(current.map((slot:Slot,n:number)=>n===i?{...slot,[key]:value,...(key==='startTime'?{endTime:oneHourAfter(String(value))}:{})}:slot));}
- async function persist(){await save({variables:{slots:current.map((slot:Slot)=>({...slot,endTime:oneHourAfter(slot.startTime)}))}});setSlots(null);await refetch();}
+ async function persist(){await save({variables:{slots:current.map((slot:Slot)=>({dayOfWeek:slot.dayOfWeek,startTime:slot.startTime,endTime:oneHourAfter(slot.startTime),timezone:slot.timezone}))}});setSlots(null);await refetch();}
  return <RoleGate allow={['TEACHER','ADMIN']} callbackUrl="/dashboard/teacher/availability"><main className="mx-auto max-w-4xl px-6 py-10">
   <Link href="/dashboard/teacher" className="text-sm text-primary-700">← Teacher workspace</Link><h1 className="mt-4 font-serif text-3xl font-bold">Lesson availability</h1>
   <p className="mt-2 text-sm text-gray-600">Publish the exact recurring one-hour lessons students may request. Start times use clear 15-minute increments.</p>

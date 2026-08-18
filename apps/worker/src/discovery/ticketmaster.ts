@@ -32,10 +32,28 @@ function pickImage(images: Array<{ url: string; width: number; height: number }>
   return [...images].sort((a, b) => b.width - a.width)[0]?.url ?? null;
 }
 
+function normalizeUrl(url: unknown): string | null {
+  if (typeof url !== 'string') return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function parseCoordinate(value: unknown): number | null {
+  if (value == null) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function normalizeEvent(raw: any, fetchedAt: Date): NormalizedExternalEvent | null {
   const id: string | undefined = raw?.id;
   const startsAtRaw: string | undefined = raw?.dates?.start?.dateTime;
-  if (!id || !raw?.name || !raw?.url || !startsAtRaw) return null;
+  const normalizedUrl = normalizeUrl(raw?.url);
+  if (!id || !raw?.name || !normalizedUrl || !startsAtRaw) return null;
 
   const venue = raw?._embedded?.venues?.[0];
   const priceRange = raw?.priceRanges?.[0];
@@ -48,7 +66,7 @@ export function normalizeEvent(raw: any, fetchedAt: Date): NormalizedExternalEve
     providerId: id,
     title: raw.name,
     description: raw.info ?? raw.pleaseNote ?? null,
-    url: raw.url,
+    url: normalizedUrl,
     imageUrl: pickImage(raw.images),
     startsAt: new Date(startsAtRaw),
     endsAt: raw?.dates?.end?.dateTime ? new Date(raw.dates.end.dateTime) : null,
@@ -56,8 +74,8 @@ export function normalizeEvent(raw: any, fetchedAt: Date): NormalizedExternalEve
     venueName: venue?.name ?? null,
     city: venue?.city?.name ?? null,
     country: venue?.country?.countryCode ?? null,
-    latitude: venue?.location?.latitude ? Number(venue.location.latitude) : null,
-    longitude: venue?.location?.longitude ? Number(venue.location.longitude) : null,
+    latitude: parseCoordinate(venue?.location?.latitude),
+    longitude: parseCoordinate(venue?.location?.longitude),
     minPrice: priceRange?.min ?? null,
     maxPrice: priceRange?.max ?? null,
     currency: priceRange?.currency ?? null,

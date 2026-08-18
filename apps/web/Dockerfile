@@ -8,6 +8,11 @@ COPY apps/web/package.json ./apps/web/package.json
 COPY packages/database/package.json ./packages/database/package.json
 COPY packages/graphql-schema/package.json ./packages/graphql-schema/package.json
 COPY packages/mcp-server/package.json ./packages/mcp-server/package.json
+# Browser binaries are irrelevant to this production build (e2e/ isn't part
+# of it — see apps/web/tsconfig.json's exclude — and the Playwright CI job
+# installs its own browser), so skip that download entirely rather than pay
+# for it on every image build.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN npm ci --workspace @my-music-coach/web --include-workspace-root
 
 FROM deps AS builder

@@ -103,9 +103,32 @@ jobs:
             exit 1
           fi
 
+  e2e-web:
+    name: Web end-to-end tests (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install Playwright's Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run the Playwright suite
+        run: npm run test:e2e --workspace @my-music-coach/web
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 14
+
   reconcile:
     name: Reconcile or inspect application
-    needs: validate
+    needs: [validate, e2e-web]
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.operation != 'plan'
     runs-on: ubuntu-latest
     environment: development
