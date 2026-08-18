@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { gql, useMutation, useQuery } from '@apollo/client';
 import { keycloakAdminUrl, keycloakIssuer } from '@/lib/external-links';
 import { useSession, signIn } from 'next-auth/react';
@@ -87,7 +88,7 @@ function OverviewTab() {
             <span>Booking — availability &amp; schedules</span>
             <ChevronRight className="ml-auto h-4 w-4 text-gray-400" />
           </a>
-          <a href="/dashboard/teacher/content#performance" target="_blank" rel="noopener noreferrer"
+          <a href="/dashboard/teacher/content/performance" target="_blank" rel="noopener noreferrer"
              className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm text-left hover:bg-gray-50 transition-colors">
             <BarChart3 className="h-4 w-4 text-primary-600" />
             <span>Event Core — events &amp; registrations</span>
@@ -126,40 +127,19 @@ const SET_USER_ROLE = gql`
   }
 `;
 
-const SYNC_KEYCLOAK_ROLES = gql`
-  mutation SyncKeycloakRoles {
-    syncKeycloakRoles { created skipped total }
-  }
-`;
-
 function UsersTab() {
   const [roleFilter, setRoleFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [changingRole, setChangingRole] = useState<string | null>(null);
 
-  const { data, loading, error, refetch } = useQuery(GET_ADMIN_USERS, {
+  const { data, loading, error } = useQuery(GET_ADMIN_USERS, {
     variables: { role: roleFilter || undefined, search: searchQuery || undefined },
     fetchPolicy: 'cache-and-network',
   });
   const [setRole] = useMutation(SET_USER_ROLE, { refetchQueries: [{ query: GET_ADMIN_USERS, variables: { role: roleFilter || undefined, search: searchQuery || undefined } }] });
-  const [syncRoles, { loading: syncing }] = useMutation(SYNC_KEYCLOAK_ROLES);
 
   const users: { id: string; displayName: string; email: string; role: string; createdAt: string }[] =
     data?.adminUsers ?? [];
-
-  async function handleSyncKeycloak() {
-    setSyncMsg(null);
-    try {
-      const { data: d } = await syncRoles();
-      const r = d?.syncKeycloakRoles;
-      setSyncMsg(`Keycloak sync: ${r?.created ?? 0} roles updated, ${r?.total ?? 0} users scanned.`);
-      refetch();
-      setTimeout(() => setSyncMsg(null), 6000);
-    } catch (e: any) {
-      setSyncMsg(`Sync failed: ${e.message}`);
-    }
-  }
 
   async function handleRoleChange(userId: string, role: string) {
     setChangingRole(userId);
@@ -190,19 +170,7 @@ function UsersTab() {
           <option value="TEACHER">Teachers</option>
           <option value="ADMIN">Admins</option>
         </select>
-        <button
-          onClick={handleSyncKeycloak}
-          disabled={syncing}
-          title="Pull role changes made in Keycloak into the platform database"
-          className="shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-        >
-          {syncing ? 'Syncing…' : 'Sync Keycloak roles'}
-        </button>
       </div>
-
-      {syncMsg && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-xs text-green-800">{syncMsg}</div>
-      )}
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -288,7 +256,7 @@ function ContentTab() {
           </div>
           <ChevronRight className="ml-auto h-4 w-4 text-gray-400 shrink-0" />
         </a>
-        <a href="/dashboard/teacher/content#performance" target="_blank" rel="noopener noreferrer"
+        <a href="/dashboard/teacher/content/performance" target="_blank" rel="noopener noreferrer"
            className="card flex items-center gap-3 p-4 transition-colors hover:border-primary-300">
           <Calendar className="h-5 w-5 text-amber-600 shrink-0" />
           <div>
@@ -418,7 +386,8 @@ export default function AdminPage() {
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-6">
         <div className="mx-auto max-w-6xl">
-          <div className="flex items-center gap-2 mb-1">
+          <Link href="/dashboard" className="text-sm text-primary-700">← Dashboard</Link>
+          <div className="mt-4 flex items-center gap-2 mb-1">
             <Shield className="h-5 w-5 text-primary-600" />
             <h1 className="text-2xl font-bold">Admin Dashboard</h1>
           </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useSession, signIn } from 'next-auth/react';
 import { gql, useQuery, useMutation } from '@apollo/client';
 import {
@@ -228,7 +229,9 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="border-b border-gray-200 bg-white px-6 py-8">
-        <div className="mx-auto max-w-4xl flex flex-wrap items-center justify-between gap-4">
+        <div className="mx-auto max-w-4xl">
+        <Link href="/dashboard" className="text-sm text-primary-700">← Dashboard</Link>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="relative">
               <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-primary-100 text-primary-700">
@@ -278,6 +281,7 @@ export default function ProfilePage() {
               </div>
             )}
           </div>
+        </div>
         </div>
       </div>
 

@@ -71,7 +71,8 @@ export default function TeacherWorkspacePage() {
       <main className="min-h-[calc(100vh-4rem)] bg-gray-50">
         <section className="border-b border-gray-200 bg-white">
           <div className="mx-auto max-w-6xl px-6 py-10">
-            <p className="text-sm font-semibold uppercase tracking-wide text-primary-600">Teacher workspace</p>
+            <Link href="/dashboard" className="text-sm text-primary-700">← Dashboard</Link>
+            <p className="mt-4 text-sm font-semibold uppercase tracking-wide text-primary-600">Teacher workspace</p>
             <h1 className="mt-2 font-serif text-3xl font-bold text-gray-900">Build your teaching practice</h1>
             <p className="mt-2 max-w-2xl text-gray-600">
               Set up the profile and availability that will power lessons, courses and events as each pillar comes online.
@@ -82,7 +83,7 @@ export default function TeacherWorkspacePage() {
           <WorkspaceCard href="/dashboard/profile" icon={<UserRoundCheck />} title="Teacher profile" text="Complete your public teaching profile and instruments." />
           <WorkspaceCard href="/dashboard/teacher/availability" icon={<CalendarClock />} title="Lesson availability" text="Publish the recurring times students can book." />
           <WorkspaceCard href="/dashboard/teacher/content" icon={<BookOpen />} title="Theory studio" text="Create and publish native courses." />
-          <WorkspaceCard href="/dashboard/teacher/content#performance" icon={<CalendarPlus />} title="Performance studio" text="Create and publish events." />
+          <WorkspaceCard href="/dashboard/teacher/content/performance" icon={<CalendarPlus />} title="Performance studio" text="Create and publish events." />
         </div>
         <div className="mx-auto max-w-6xl px-6 pb-10">
           <UpcomingSessions />
