@@ -473,9 +473,17 @@ jobs:
               | sed -E 's/Bearer[[:space:]]+[A-Za-z0-9._~-]+/Bearer [REDACTED]/g; s/apikey=[A-Za-z0-9]+/apikey=[REDACTED]/g' \
               || true
           fi
+          # `kubectl exec` spawns a fresh `node -e` process that only inherits the
+          # Pod's actual container env (PG* pieces via envFrom) — DATABASE_URL is
+          # assembled from those in-process by the running server's own startup
+          # code (see apps/api and apps/worker configureDatabaseUrl()) and never
+          # exists as a container-level env var, so a fresh PrismaClient() here
+          # needs the same assembly or it fails with "DATABASE_URL not found".
+          db_url_js="const u=encodeURIComponent(process.env.PGUSER),pw=encodeURIComponent(process.env.PGPASSWORD),d=encodeURIComponent(process.env.PGDATABASE);process.env.DATABASE_URL=\`postgresql://\${u}:\${pw}@\${process.env.PGHOST}:\${process.env.PGPORT}/\${d}?schema=public&sslmode=\${process.env.PGSSLMODE||'verify-full'}&sslrootcert=\${process.env.PGSSLROOTCERT||'/etc/postgres-ca/ca.crt'}\`;"
+
           echo 'External event projection row count (Ticketmaster ingestion output):'
           kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
-            "const{PrismaClient}=require('@prisma/client');const p=new PrismaClient();p.externalEventProjection.count().then(n=>{console.log('rows='+n);return p.\$disconnect()}).catch(e=>{console.error(e.message);process.exit(1)})"
+            "${db_url_js}const{PrismaClient}=require('@prisma/client');const p=new PrismaClient();p.externalEventProjection.count().then(n=>{console.log('rows='+n);return p.\$disconnect()}).catch(e=>{console.error(e.message);process.exit(1)})"
 
           if [[ -n "${LOOKUP_TEACHER_PROFILE_ID:-}" ]]; then
             if [[ ! "$LOOKUP_TEACHER_PROFILE_ID" =~ ^[a-zA-Z0-9]+$ ]]; then
@@ -484,7 +492,7 @@ jobs:
             fi
             echo 'Teacher profile name lookup (email/role/stored displayName only):'
             kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
-              "const{PrismaClient}=require('@prisma/client');const p=new PrismaClient();p.teacherProfile.findUnique({where:{id:'$LOOKUP_TEACHER_PROFILE_ID'},include:{user:{include:{profile:true}}}}).then(tp=>{console.log(tp?JSON.stringify({email:tp.user.email,role:tp.user.role,storedDisplayName:tp.user.profile?.displayName??null}):'not found');return p.\$disconnect()}).catch(e=>{console.error(e.message);process.exit(1)})"
+              "${db_url_js}const{PrismaClient}=require('@prisma/client');const p=new PrismaClient();p.teacherProfile.findUnique({where:{id:'$LOOKUP_TEACHER_PROFILE_ID'},include:{user:{include:{profile:true}}}}).then(tp=>{console.log(tp?JSON.stringify({email:tp.user.email,role:tp.user.role,storedDisplayName:tp.user.profile?.displayName??null}):'not found');return p.\$disconnect()}).catch(e=>{console.error(e.message);process.exit(1)})"
           fi
 
       - name: Report application status
