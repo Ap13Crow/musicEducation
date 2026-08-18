@@ -18,3 +18,4 @@ configMapGenerator:
       - 011-xp-awards.sql
       - 012-assessment-answer-unique.sql
       - 013-assessment-question-seed.sql
+      - 014-external-event-classification.sql

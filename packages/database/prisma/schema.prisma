@@ -713,7 +713,7 @@ model ExternalEventProjection {
   minPrice        Decimal?              @db.Decimal(10, 2)
   maxPrice        Decimal?              @db.Decimal(10, 2)
   currency        String?
-  classifications String[] // normalized genres/styles
+  classifications String[] // normalized genres/styles, as provided by the source
   attribution     String // required provider attribution string
   raw             Json? // raw payload for debugging; not shown to users
   fetchedAt       DateTime
@@ -721,7 +721,20 @@ model ExternalEventProjection {
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
+  // Provider genre tags (`classifications`) aren't aligned to this
+  // platform's taxonomy - a Ticketmaster "Classical" tag says nothing about
+  // instrument or skill level. These are populated by the DeepSeek
+  // event-classification worker job from title/description/classifications,
+  // matching the same dimensions used to filter/recommend native Events.
+  // classifiedAt is null until the job has processed a row at least once
+  // (empty tag arrays are a valid classification outcome, not "unprocessed").
+  instruments  String[] @default([])
+  musicStyles  String[] @default([])
+  skillLevels  String[] @default([])
+  classifiedAt DateTime?
+
   @@unique([provider, providerId])
   @@index([startsAt])
   @@index([city])
+  @@index([classifiedAt])
 }

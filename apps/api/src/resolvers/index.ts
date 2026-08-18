@@ -4,6 +4,7 @@ import { userResolvers } from './users.js';
 import { courseResolvers } from './courses.js';
 import { bookingResolvers } from './bookings.js';
 import { eventResolvers } from './events.js';
+import { discoveryResolvers } from './discovery.js';
 import { paymentResolvers } from './payments.js';
 import { assessmentResolvers } from './assessments.js';
 import { feedResolvers } from './feed.js';
@@ -32,6 +33,7 @@ export const resolvers = mergeResolvers([
   courseResolvers,
   bookingResolvers,
   eventResolvers,
+  discoveryResolvers,
   paymentResolvers,
   assessmentResolvers,
   feedResolvers,
