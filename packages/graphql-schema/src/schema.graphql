@@ -24,6 +24,12 @@ enum CourseStatus {
   ARCHIVED
 }
 
+enum LessonContentType {
+  VIDEO
+  YOUTUBE
+  AUDIO
+}
+
 enum BookingStatus {
   PENDING
   CONFIRMED
@@ -287,6 +293,7 @@ type Lesson {
   title: String!
   description: String
   videoUrl: String
+  contentType: LessonContentType!
   durationMin: Int!
   isFreePreview: Boolean!
   order: Int!
@@ -640,6 +647,7 @@ input CreateLessonInput {
   title: String!
   description: String
   videoUrl: String
+  contentType: LessonContentType
   durationMin: Int
   order: Int
   xpReward: Int
@@ -655,6 +663,7 @@ input UpdateLessonInput {
   title: String
   description: String
   videoUrl: String
+  contentType: LessonContentType
   durationMin: Int
   order: Int
   xpReward: Int

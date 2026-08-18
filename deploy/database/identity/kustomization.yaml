@@ -13,3 +13,4 @@ configMapGenerator:
       - 006-community-commerce.sql
       - 007-stripe-connect.sql
       - 008-teacher-applications.sql
+      - 009-lesson-content-type.sql

@@ -30,6 +30,12 @@ enum CourseStatus {
   ARCHIVED
 }
 
+enum LessonContentType {
+  VIDEO
+  YOUTUBE
+  AUDIO
+}
+
 enum BookingStatus {
   PENDING
   CONFIRMED
@@ -315,6 +321,7 @@ model Lesson {
   title       String
   description String?
   videoUrl    String?
+  contentType LessonContentType @default(VIDEO)
   duration    Int?
   order       Int      @default(0)
   xpReward    Int      @default(10)

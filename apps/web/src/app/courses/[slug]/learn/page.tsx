@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { signIn, useSession } from 'next-auth/react';
 import { ArrowLeft, CheckCircle, Circle, Lock, PlayCircle } from 'lucide-react';
+import { toYouTubeEmbedUrl } from '@/lib/youtube';
 
 const GET_COURSE = gql`
   query GetCourseForLearning($slug: String) {
@@ -17,7 +18,7 @@ const GET_COURSE = gql`
         id
         title
         order
-        lessons { id title description videoUrl durationMin isFreePreview order xpReward }
+        lessons { id title description videoUrl contentType durationMin isFreePreview order xpReward }
       }
     }
   }
@@ -170,7 +171,30 @@ export default function CourseLearnPage() {
                 <h1 className="text-2xl font-bold">{currentLesson.title}</h1>
 
                 <div className="mt-4 overflow-hidden rounded-xl bg-gray-900">
-                  {canWatchCurrent && currentLesson.videoUrl ? (
+                  {canWatchCurrent && currentLesson.videoUrl && currentLesson.contentType === 'YOUTUBE' ? (
+                    (() => {
+                      const embedUrl = toYouTubeEmbedUrl(currentLesson.videoUrl);
+                      return embedUrl ? (
+                        <iframe
+                          key={currentLesson.id}
+                          className="aspect-video w-full"
+                          src={embedUrl}
+                          title={currentLesson.title}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      ) : (
+                        <div className="flex aspect-video items-center justify-center text-sm text-gray-400">
+                          This YouTube link couldn&rsquo;t be read — see the notes below.
+                        </div>
+                      );
+                    })()
+                  ) : canWatchCurrent && currentLesson.videoUrl && currentLesson.contentType === 'AUDIO' ? (
+                    <div className="flex aspect-video flex-col items-center justify-center gap-4 px-8">
+                      <PlayCircle className="h-10 w-10 text-gray-500" />
+                      <audio key={currentLesson.id} controls className="w-full" src={currentLesson.videoUrl} />
+                    </div>
+                  ) : canWatchCurrent && currentLesson.videoUrl ? (
                     <video key={currentLesson.id} controls className="aspect-video w-full" src={currentLesson.videoUrl} />
                   ) : canWatchCurrent ? (
                     <div className="flex aspect-video items-center justify-center text-sm text-gray-400">
