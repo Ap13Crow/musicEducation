@@ -14,3 +14,4 @@ configMapGenerator:
       - 007-stripe-connect.sql
       - 008-teacher-applications.sql
       - 009-lesson-content-type.sql
+      - 010-lesson-quizzes.sql

@@ -2,11 +2,81 @@ import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import type { GraphQLContext } from '../types.js';
 
-async function requireOwnedCourse(prisma: any, user: any, courseId: string) {
+export async function requireOwnedCourse(prisma: any, user: any, courseId: string) {
   const course = await prisma.course.findUnique({ where: { id: courseId }, include: { teacherProfile: true } });
   if (!course) throw new GraphQLError('Course not found.', { extensions: { code: 'NOT_FOUND' } });
   if (user.role !== 'ADMIN' && course.teacherProfile?.userId !== user.id) throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
   return course;
+}
+
+// Shared by Lesson.videoUrl, Lesson.quizQuestions, and QuizQuestion.correctOptionIds:
+// a lesson is viewable if it's a free preview, the caller owns (or admins) the
+// course, or the caller is enrolled. `isOwner` additionally gates content only
+// the course's teacher/an admin should see, such as a quiz's answer key.
+export async function resolveLessonAccess(
+  prisma: any,
+  user: any,
+  lesson: any,
+): Promise<{ allowed: boolean; isOwner: boolean }> {
+  if (user?.role === 'ADMIN') return { allowed: true, isOwner: true };
+
+  let section: any = null;
+  if (user) {
+    section = await prisma.courseSection.findUnique({
+      where: { id: lesson.sectionId },
+      include: { course: { include: { teacherProfile: true } } },
+    });
+    if (section?.course.teacherProfile?.userId === user.id) return { allowed: true, isOwner: true };
+  }
+
+  if (lesson.isPreview) return { allowed: true, isOwner: false };
+  if (!user || !section) return { allowed: false, isOwner: false };
+
+  const enrollment = await prisma.enrollment.findUnique({
+    where: { userId_courseId: { userId: user.id, courseId: section.courseId } },
+  });
+  return { allowed: Boolean(enrollment), isOwner: false };
+}
+
+// Shared by markLessonComplete and completeQuizAttempt: recomputes course
+// progress and awards XP. XP is only granted the first time a lesson is
+// completed, so retaking a quiz (or re-marking a video watched) can't
+// inflate a student's XP on every attempt.
+export async function completeLessonForUser(prisma: any, userId: string, lessonId: string) {
+  const lesson = await prisma.lesson.findUnique({ where: { id: lessonId }, include: { section: { include: { course: true } } } });
+  if (!lesson) throw new GraphQLError('Lesson not found.', { extensions: { code: 'NOT_FOUND' } });
+
+  const enrollment = await prisma.enrollment.findUnique({
+    where: { userId_courseId: { userId, courseId: lesson.section.courseId } },
+  });
+  if (!enrollment) throw new GraphQLError('Not enrolled in this course.', { extensions: { code: 'FORBIDDEN' } });
+
+  const existing = await prisma.lessonProgress.findUnique({
+    where: { enrollmentId_lessonId: { enrollmentId: enrollment.id, lessonId } },
+  });
+  const alreadyCompleted = Boolean(existing?.completedAt);
+
+  const progress = await prisma.lessonProgress.upsert({
+    where: { enrollmentId_lessonId: { enrollmentId: enrollment.id, lessonId } },
+    update: { completedAt: new Date() },
+    create: { enrollmentId: enrollment.id, lessonId, completedAt: new Date() },
+  });
+
+  const totalLessons = await prisma.lesson.count({ where: { section: { courseId: lesson.section.courseId } } });
+  const completedLessons = await prisma.lessonProgress.count({
+    where: { enrollmentId: enrollment.id, completedAt: { not: null } },
+  });
+  const progressPct = totalLessons > 0 ? completedLessons / totalLessons : 0;
+  await prisma.enrollment.update({ where: { id: enrollment.id }, data: { progress: progressPct, completedAt: progressPct >= 1 ? new Date() : null } });
+
+  if (!alreadyCompleted) {
+    await prisma.gamificationProfile.update({
+      where: { userId },
+      data: { xp: { increment: lesson.xpReward }, totalPoints: { increment: lesson.xpReward } },
+    });
+  }
+
+  return progress;
 }
 
 export const courseResolvers = {
@@ -207,36 +277,7 @@ export const courseResolvers = {
 
     async markLessonComplete(_: unknown, { lessonId }: any, { prisma, user }: GraphQLContext) {
       requireAuth(user);
-      // Find enrollment for this lesson
-      const lesson = await prisma.lesson.findUnique({ where: { id: lessonId }, include: { section: { include: { course: true } } } });
-      if (!lesson) throw new GraphQLError('Lesson not found.', { extensions: { code: 'NOT_FOUND' } });
-
-      const enrollment = await prisma.enrollment.findUnique({
-        where: { userId_courseId: { userId: user.id, courseId: lesson.section.courseId } },
-      });
-      if (!enrollment) throw new GraphQLError('Not enrolled in this course.', { extensions: { code: 'FORBIDDEN' } });
-
-      const progress = await prisma.lessonProgress.upsert({
-        where: { enrollmentId_lessonId: { enrollmentId: enrollment.id, lessonId } },
-        update: { completedAt: new Date() },
-        create: { enrollmentId: enrollment.id, lessonId, completedAt: new Date() },
-      });
-
-      // Recalculate course progress
-      const totalLessons = await prisma.lesson.count({ where: { section: { courseId: lesson.section.courseId } } });
-      const completedLessons = await prisma.lessonProgress.count({
-        where: { enrollmentId: enrollment.id, completedAt: { not: null } },
-      });
-      const progressPct = totalLessons > 0 ? completedLessons / totalLessons : 0;
-      await prisma.enrollment.update({ where: { id: enrollment.id }, data: { progress: progressPct, completedAt: progressPct >= 1 ? new Date() : null } });
-
-      // Award XP
-      await prisma.gamificationProfile.update({
-        where: { userId: user.id },
-        data: { xp: { increment: lesson.xpReward }, totalPoints: { increment: lesson.xpReward } },
-      });
-
-      return progress;
+      return completeLessonForUser(prisma, user.id, lessonId);
     },
   },
 
@@ -289,19 +330,16 @@ export const courseResolvers = {
     // the UI showing a lock icon, not by the API. Preview lessons stay
     // open; everything else requires enrollment, course ownership, or admin.
     async videoUrl(lesson: any, _: unknown, { prisma, user }: GraphQLContext) {
-      if (lesson.isPreview) return lesson.videoUrl;
-      if (!user) return null;
-      if (user.role === 'ADMIN') return lesson.videoUrl;
-      const section = await prisma.courseSection.findUnique({
-        where: { id: lesson.sectionId },
-        include: { course: { include: { teacherProfile: true } } },
-      });
-      if (!section) return null;
-      if (section.course.teacherProfile?.userId === user.id) return lesson.videoUrl;
-      const enrollment = await prisma.enrollment.findUnique({
-        where: { userId_courseId: { userId: user.id, courseId: section.courseId } },
-      });
-      return enrollment ? lesson.videoUrl : null;
+      const { allowed } = await resolveLessonAccess(prisma, user, lesson);
+      return allowed ? lesson.videoUrl : null;
+    },
+    // Same gating as videoUrl - a locked lesson's quiz questions (and,
+    // separately, their correct answers via QuizQuestion.correctOptionIds)
+    // shouldn't be visible before enrollment either.
+    async quizQuestions(lesson: any, _: unknown, { prisma, user }: GraphQLContext) {
+      const { allowed } = await resolveLessonAccess(prisma, user, lesson);
+      if (!allowed) return [];
+      return prisma.quizQuestion.findMany({ where: { lessonId: lesson.id }, orderBy: { order: 'asc' } });
     },
   },
 

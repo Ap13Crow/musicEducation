@@ -18,7 +18,10 @@ const GET_COURSE = gql`
         id
         title
         order
-        lessons { id title description videoUrl contentType durationMin isFreePreview order xpReward }
+        lessons {
+          id title description videoUrl contentType durationMin isFreePreview order xpReward feedbackMode
+          quizQuestions { id text type points order options { id text } }
+        }
       }
     }
   }
@@ -40,6 +43,38 @@ const GET_ENROLLMENT = gql`
 const MARK_COMPLETE = gql`
   mutation MarkLessonCompleteFromLearn($lessonId: ID!) {
     markLessonComplete(lessonId: $lessonId) { id completedAt }
+  }
+`;
+
+// Quiz-taking: myQuizAttempt is only queried once a lesson with questions
+// is actually selected and the viewer is enrolled (see skip below).
+const GET_QUIZ_ATTEMPT = gql`
+  query MyQuizAttemptForLearning($lessonId: ID!) {
+    myQuizAttempt(lessonId: $lessonId) {
+      id
+      score
+      maxScore
+      completedAt
+      answers { id questionId selectedOptionIds isCorrect pointsAwarded }
+    }
+  }
+`;
+const START_QUIZ_ATTEMPT = gql`
+  mutation StartQuizAttemptFromLearn($lessonId: ID!) {
+    startQuizAttempt(lessonId: $lessonId) { id score maxScore completedAt }
+  }
+`;
+const SUBMIT_QUIZ_ANSWER = gql`
+  mutation SubmitQuizAnswerFromLearn($input: SubmitQuizAnswerInput!) {
+    submitQuizAnswer(input: $input) { id questionId selectedOptionIds isCorrect pointsAwarded }
+  }
+`;
+const COMPLETE_QUIZ_ATTEMPT = gql`
+  mutation CompleteQuizAttemptFromLearn($attemptId: ID!) {
+    completeQuizAttempt(attemptId: $attemptId) {
+      id score maxScore completedAt
+      answers { id questionId selectedOptionIds isCorrect pointsAwarded }
+    }
   }
 `;
 
@@ -78,6 +113,7 @@ export default function CourseLearnPage() {
   }, [lessons]);
 
   const currentLesson = lessons.find((l: any) => l.id === selectedLessonId) ?? lessons[0];
+  const hasQuiz = (currentLesson?.quizQuestions?.length ?? 0) > 0;
 
   const completedLessonIds = new Set<string>(
     (enrollment?.lessonProgress ?? []).filter((p: any) => p.completedAt).map((p: any) => p.lessonId),
@@ -88,6 +124,52 @@ export default function CourseLearnPage() {
   async function handleMarkComplete() {
     if (!currentLesson) return;
     await markComplete({ variables: { lessonId: currentLesson.id } });
+    await refetchEnrollment();
+  }
+
+  const { data: attemptData, refetch: refetchAttempt } = useQuery(GET_QUIZ_ATTEMPT, {
+    variables: { lessonId: currentLesson?.id },
+    skip: !liveApiEnabled || !hasQuiz || !currentLesson?.id || !enrolled,
+  });
+  const attempt = attemptData?.myQuizAttempt;
+  const [startQuizAttempt, { loading: startingQuiz }] = useMutation(START_QUIZ_ATTEMPT);
+  const [submitQuizAnswer, { loading: submittingAnswer }] = useMutation(SUBMIT_QUIZ_ANSWER);
+  const [completeQuizAttempt, { loading: completingQuiz }] = useMutation(COMPLETE_QUIZ_ATTEMPT);
+  // Local in-progress picks, keyed by question id, before a question is submitted.
+  const [quizSelections, setQuizSelections] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    setQuizSelections({});
+  }, [currentLesson?.id]);
+
+  function toggleOption(question: any, optionId: string) {
+    setQuizSelections((prev) => {
+      const current = prev[question.id] ?? [];
+      if (question.type === 'SINGLE_CHOICE') return { ...prev, [question.id]: [optionId] };
+      const next = current.includes(optionId) ? current.filter((id) => id !== optionId) : [...current, optionId];
+      return { ...prev, [question.id]: next };
+    });
+  }
+
+  async function handleStartQuiz() {
+    if (!currentLesson) return;
+    await startQuizAttempt({ variables: { lessonId: currentLesson.id } });
+    setQuizSelections({});
+    await refetchAttempt();
+  }
+
+  async function handleSubmitAnswer(question: any) {
+    if (!attempt) return;
+    const selectedOptionIds = quizSelections[question.id] ?? [];
+    if (selectedOptionIds.length === 0) return;
+    await submitQuizAnswer({ variables: { input: { attemptId: attempt.id, questionId: question.id, selectedOptionIds } } });
+    await refetchAttempt();
+  }
+
+  async function handleFinishQuiz() {
+    if (!attempt) return;
+    await completeQuizAttempt({ variables: { attemptId: attempt.id } });
+    await refetchAttempt();
     await refetchEnrollment();
   }
 
@@ -105,6 +187,8 @@ export default function CourseLearnPage() {
   }
 
   const progressPct = Math.round((enrollment?.progress ?? 0) * 100);
+  const allQuestionsAnswered =
+    hasQuiz && attempt && currentLesson.quizQuestions.every((q: any) => attempt.answers.some((a: any) => a.questionId === q.id));
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -223,7 +307,7 @@ export default function CourseLearnPage() {
                   <p className="mt-4 whitespace-pre-line text-sm text-gray-600">{currentLesson.description}</p>
                 )}
 
-                {enrolled && (
+                {enrolled && !hasQuiz && (
                   <div className="mt-6 flex items-center gap-3">
                     {isCurrentComplete ? (
                       <span className="flex items-center gap-2 text-sm font-medium text-green-600">
@@ -233,6 +317,84 @@ export default function CourseLearnPage() {
                       <button onClick={handleMarkComplete} disabled={completing} className="btn-primary flex items-center gap-2 rounded-lg px-4 py-2 text-sm">
                         <PlayCircle className="h-4 w-4" /> {completing ? 'Saving…' : `Mark complete (+${currentLesson.xpReward} XP)`}
                       </button>
+                    )}
+                  </div>
+                )}
+
+                {enrolled && hasQuiz && (
+                  <div className="mt-6 border-t border-gray-100 pt-6">
+                    <h2 className="text-lg font-semibold">Quiz</h2>
+                    {!attempt ? (
+                      <button onClick={handleStartQuiz} disabled={startingQuiz} className="btn-primary mt-3 rounded-lg px-4 py-2 text-sm">
+                        {startingQuiz ? 'Starting…' : 'Start quiz'}
+                      </button>
+                    ) : (
+                      <div className="mt-3 space-y-4">
+                        {attempt.completedAt && (
+                          <p className="text-sm font-medium text-green-700">
+                            Score: {attempt.score} / {attempt.maxScore}
+                          </p>
+                        )}
+                        {currentLesson.quizQuestions.map((question: any) => {
+                          const answer = attempt.answers.find((a: any) => a.questionId === question.id);
+                          const selections = quizSelections[question.id] ?? answer?.selectedOptionIds ?? [];
+                          const locked = Boolean(answer) || Boolean(attempt.completedAt);
+                          return (
+                            <div key={question.id} className="rounded-lg border border-gray-200 p-3">
+                              <p className="text-sm font-medium">
+                                {question.text}{' '}
+                                <span className="text-xs font-normal text-gray-400">
+                                  ({question.points} pt{question.points === 1 ? '' : 's'}
+                                  {question.type === 'MULTIPLE_CHOICE' ? ' · select all that apply' : ''})
+                                </span>
+                              </p>
+                              <div className="mt-2 space-y-1">
+                                {question.options.map((option: any) => (
+                                  <label key={option.id} className="flex items-center gap-2 text-sm text-gray-700">
+                                    <input
+                                      type={question.type === 'SINGLE_CHOICE' ? 'radio' : 'checkbox'}
+                                      name={`quiz-question-${question.id}`}
+                                      checked={selections.includes(option.id)}
+                                      disabled={locked}
+                                      onChange={() => toggleOption(question, option.id)}
+                                    />
+                                    {option.text}
+                                  </label>
+                                ))}
+                              </div>
+                              {answer ? (
+                                answer.isCorrect === null || answer.isCorrect === undefined ? (
+                                  <p className="mt-2 text-xs text-gray-500">
+                                    Answer saved — you&rsquo;ll see whether it was right once you finish the quiz.
+                                  </p>
+                                ) : (
+                                  <p className={`mt-2 text-xs font-medium ${answer.isCorrect ? 'text-green-600' : 'text-red-600'}`}>
+                                    {answer.isCorrect ? `Correct (+${answer.pointsAwarded} pt)` : 'Incorrect'}
+                                  </p>
+                                )
+                              ) : (
+                                <button
+                                  onClick={() => handleSubmitAnswer(question)}
+                                  disabled={submittingAnswer || selections.length === 0}
+                                  className="btn-secondary mt-2 rounded-lg px-3 py-1 text-xs"
+                                >
+                                  Submit answer
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {!attempt.completedAt && allQuestionsAnswered && (
+                          <button onClick={handleFinishQuiz} disabled={completingQuiz} className="btn-primary rounded-lg px-4 py-2 text-sm">
+                            {completingQuiz ? 'Finishing…' : 'Finish quiz'}
+                          </button>
+                        )}
+                        {attempt.completedAt && (
+                          <button onClick={handleStartQuiz} disabled={startingQuiz} className="btn-secondary rounded-lg px-4 py-2 text-sm">
+                            {startingQuiz ? 'Resetting…' : 'Retake quiz'}
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}

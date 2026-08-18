@@ -30,6 +30,16 @@ enum LessonContentType {
   AUDIO
 }
 
+enum QuizQuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+}
+
+enum QuizFeedbackMode {
+  IMMEDIATE
+  AT_END
+}
+
 enum BookingStatus {
   PENDING
   CONFIRMED
@@ -298,6 +308,46 @@ type Lesson {
   isFreePreview: Boolean!
   order: Int!
   xpReward: Int!
+  feedbackMode: QuizFeedbackMode!
+  quizQuestions: [QuizQuestion!]!
+}
+
+type QuizOption {
+  id: ID!
+  text: String!
+}
+
+type QuizQuestion {
+  id: ID!
+  lessonId: ID!
+  text: String!
+  type: QuizQuestionType!
+  points: Int!
+  order: Int!
+  options: [QuizOption!]!
+  # Populated only for the owning teacher or an admin (authoring view) -
+  # empty for anyone taking the quiz, so the answer key never ships to a student.
+  correctOptionIds: [ID!]!
+}
+
+type QuizAnswer {
+  id: ID!
+  questionId: ID!
+  selectedOptionIds: [ID!]!
+  # Null until the reveal condition is met: immediately for an IMMEDIATE-
+  # feedback lesson, or once the attempt is completed for AT_END.
+  isCorrect: Boolean
+  pointsAwarded: Int
+}
+
+type QuizAttempt {
+  id: ID!
+  lessonId: ID!
+  score: Int!
+  maxScore: Int!
+  completedAt: DateTime
+  createdAt: DateTime!
+  answers: [QuizAnswer!]!
 }
 
 type Enrollment {
@@ -652,6 +702,7 @@ input CreateLessonInput {
   order: Int
   xpReward: Int
   isFreePreview: Boolean
+  feedbackMode: QuizFeedbackMode
 }
 
 input UpdateSectionInput {
@@ -668,6 +719,36 @@ input UpdateLessonInput {
   order: Int
   xpReward: Int
   isFreePreview: Boolean
+  feedbackMode: QuizFeedbackMode
+}
+
+input QuizOptionInput {
+  text: String!
+  isCorrect: Boolean
+}
+
+input CreateQuizQuestionInput {
+  lessonId: ID!
+  text: String!
+  type: QuizQuestionType
+  points: Int
+  order: Int
+  options: [QuizOptionInput!]!
+}
+
+input UpdateQuizQuestionInput {
+  text: String
+  type: QuizQuestionType
+  points: Int
+  order: Int
+  # When provided, fully replaces the question's option list.
+  options: [QuizOptionInput!]
+}
+
+input SubmitQuizAnswerInput {
+  attemptId: ID!
+  questionId: ID!
+  selectedOptionIds: [ID!]!
 }
 
 input BookSessionInput {
@@ -805,6 +886,7 @@ type Query {
   myCourses(page: Int, limit: Int): CourseConnection!
   myEnrollments(page: Int, limit: Int): EnrollmentConnection!
   myEnrollment(courseId: ID!): Enrollment
+  myQuizAttempt(lessonId: ID!): QuizAttempt
   categories: [Category!]!
 
   # Bookings
@@ -895,6 +977,12 @@ type Mutation {
   deleteLesson(id: ID!): Boolean!
   enrollInCourse(courseId: ID!): Enrollment!
   markLessonComplete(lessonId: ID!): LessonProgress!
+  createQuizQuestion(input: CreateQuizQuestionInput!): QuizQuestion!
+  updateQuizQuestion(id: ID!, input: UpdateQuizQuestionInput!): QuizQuestion!
+  deleteQuizQuestion(id: ID!): Boolean!
+  startQuizAttempt(lessonId: ID!): QuizAttempt!
+  submitQuizAnswer(input: SubmitQuizAnswerInput!): QuizAnswer!
+  completeQuizAttempt(attemptId: ID!): QuizAttempt!
 
   # Bookings
   bookSession(input: BookSessionInput!): Booking!
