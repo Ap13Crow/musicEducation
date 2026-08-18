@@ -38,14 +38,26 @@ export function isValidCourseBonusAmount(amount: unknown, min: number, max: numb
   return Number.isInteger(amount) && (amount as number) >= min && (amount as number) <= max;
 }
 
+// AdminSetting values are free-text (see updateAdminSetting) - normalize
+// each bound to a non-negative integer, falling back to the default on
+// anything unparseable, and finally clamp max >= min. Without this, a
+// misconfigured pair (e.g. min=200, max=5) would make isValidCourseBonusAmount
+// reject every possible amount, silently locking teachers/admins out of
+// awarding course bonus XP at all.
+function normalizeBound(raw: string | undefined, fallback: number): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.round(parsed));
+}
+
 async function courseBonusBounds(prisma: GraphQLContext['prisma']) {
   const rows = await prisma.adminSetting.findMany({
     where: { key: { in: [COURSE_BONUS_MIN_KEY, COURSE_BONUS_MAX_KEY] } },
   });
   const byKey = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  const min = Number(byKey[COURSE_BONUS_MIN_KEY] ?? DEFAULT_COURSE_BONUS_MIN);
-  const max = Number(byKey[COURSE_BONUS_MAX_KEY] ?? DEFAULT_COURSE_BONUS_MAX);
-  return { min: Number.isFinite(min) ? min : DEFAULT_COURSE_BONUS_MIN, max: Number.isFinite(max) ? max : DEFAULT_COURSE_BONUS_MAX };
+  const min = normalizeBound(byKey[COURSE_BONUS_MIN_KEY], DEFAULT_COURSE_BONUS_MIN);
+  const max = normalizeBound(byKey[COURSE_BONUS_MAX_KEY], DEFAULT_COURSE_BONUS_MAX);
+  return { min, max: Math.max(min, max) };
 }
 
 export const xpResolvers = {

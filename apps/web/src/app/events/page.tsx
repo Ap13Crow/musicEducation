@@ -141,9 +141,13 @@ export default function EventsPage() {
   const [skillLevel, setSkillLevel] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  // Computed once per page load, not on every render: `new Date()` differs
+  // by milliseconds each call, which Apollo would otherwise see as changed
+  // query variables on every render and refetch accordingly.
+  const [now] = useState(() => new Date().toISOString());
 
   const hasActiveFilters = Boolean(search || instrument || musicStyle || skillLevel || fromDate);
-  const minDate = fromDate ? new Date(fromDate).toISOString() : new Date().toISOString();
+  const minDate = fromDate ? new Date(fromDate).toISOString() : now;
   const sharedFilter = {
     search: search || undefined,
     instrument: instrument || undefined,

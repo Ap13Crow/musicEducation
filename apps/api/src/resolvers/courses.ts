@@ -169,17 +169,22 @@ export const courseResolvers = {
     async courseEnrollments(_: unknown, { courseId, page = 1, limit = 50 }: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'TEACHER', 'ADMIN');
       await requireOwnedCourse(prisma, user!, courseId);
-      const skip = (page - 1) * limit;
+      // Same clamping as externalEvents in discovery.ts: an unbounded limit
+      // (or a negative/zero page) turned directly into skip/take is an easy
+      // way to force an expensive query.
+      const safeLimit = Math.max(1, Math.min(limit, 100));
+      const safePage = Math.max(1, page);
+      const skip = (safePage - 1) * safeLimit;
       const where = { courseId };
       const [nodes, totalCount] = await Promise.all([
         prisma.enrollment.findMany({
-          where, skip, take: limit,
+          where, skip, take: safeLimit,
           orderBy: { createdAt: 'asc' },
           include: { user: { include: { profile: true } } },
         }),
         prisma.enrollment.count({ where }),
       ]);
-      return { nodes, pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount } };
+      return { nodes, pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: safePage > 1, totalCount } };
     },
 
     async categories(_: unknown, __: unknown, { prisma }: GraphQLContext) {
