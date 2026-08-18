@@ -23,19 +23,25 @@ export const discoveryResolvers = {
       // Don't resurface a cached row past the provider's own cache guidance.
       where.OR = [{ expiresAt: null }, { expiresAt: { gte: new Date() } }];
 
-      const skip = (page - 1) * limit;
+      const effectivePage = Math.max(1, page);
+      const effectiveLimit = Math.min(Math.max(1, limit), 100);
+      const skip = (effectivePage - 1) * effectiveLimit;
       const [nodes, totalCount] = await Promise.all([
         prisma.externalEventProjection.findMany({
           where,
           skip,
-          take: Math.min(limit, 100),
+          take: effectiveLimit,
           orderBy: { startsAt: 'asc' },
         }),
         prisma.externalEventProjection.count({ where }),
       ]);
       return {
         nodes,
-        pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount },
+        pageInfo: {
+          hasNextPage: skip + nodes.length < totalCount,
+          hasPreviousPage: effectivePage > 1,
+          totalCount,
+        },
       };
     },
   },
