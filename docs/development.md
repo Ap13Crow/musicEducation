@@ -56,6 +56,32 @@ npm run build --workspace @my-music-coach/web
 npx prettier --check .
 ```
 
+## Web end-to-end tests (Playwright)
+
+`apps/web/e2e` is a Playwright suite that drives real pages in a browser against a `next dev`
+server with no live API, Keycloak, or database behind it:
+
+- `apps/web/e2e/fixtures/auth.ts` mints a NextAuth session cookie directly (the same
+  `next-auth/jwt` encoding NextAuth itself uses), so a test can act as a signed-in user of a given
+  role without a real Keycloak login redirect.
+- `page.route('**/graphql', ...)` intercepts Apollo's requests, so a test can assert exactly what
+  the browser sent (`e2e/availability-save.spec.ts` — the regression test for a real bug where the
+  save button leaked Apollo's `__typename`/`id` into a mutation input) or control exactly what it
+  receives back (`e2e/admin-stats.spec.ts` — pins the admin overview to whatever `adminStats`
+  returns, and never the demo numbers that used to be hardcoded there).
+
+This intentionally does not cover the real Keycloak OIDC redirect or live API/database behavior —
+that needs the full stack running (the Compose reference stack below). Run it locally:
+
+```bash
+npm install --workspace @my-music-coach/web
+npx --workspace @my-music-coach/web playwright install --with-deps chromium
+npm run test:e2e --workspace @my-music-coach/web
+```
+
+CI runs this suite (`e2e-web` in `.github/workflows/deploy-application.yml`) on every pull request
+that touches `apps/web`, and it gates the `deploy` operation alongside `validate`.
+
 Database commands:
 
 ```bash
