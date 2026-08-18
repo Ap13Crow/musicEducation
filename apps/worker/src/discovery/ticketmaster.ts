@@ -35,7 +35,17 @@ function pickImage(images: Array<{ url: string; width: number; height: number }>
 export function normalizeEvent(raw: any, fetchedAt: Date): NormalizedExternalEvent | null {
   const id: string | undefined = raw?.id;
   const startsAtRaw: string | undefined = raw?.dates?.start?.dateTime;
-  if (!id || !raw?.name || !raw?.url || !startsAtRaw) return null;
+  const urlRaw: string | undefined = raw?.url;
+  if (!id || !raw?.name || !urlRaw || !startsAtRaw) return null;
+
+  let url: string;
+  try {
+    const parsed = new URL(urlRaw);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    url = parsed.toString();
+  } catch {
+    return null;
+  }
 
   const venue = raw?._embedded?.venues?.[0];
   const priceRange = raw?.priceRanges?.[0];
@@ -48,7 +58,7 @@ export function normalizeEvent(raw: any, fetchedAt: Date): NormalizedExternalEve
     providerId: id,
     title: raw.name,
     description: raw.info ?? raw.pleaseNote ?? null,
-    url: raw.url,
+    url,
     imageUrl: pickImage(raw.images),
     startsAt: new Date(startsAtRaw),
     endsAt: raw?.dates?.end?.dateTime ? new Date(raw.dates.end.dateTime) : null,
