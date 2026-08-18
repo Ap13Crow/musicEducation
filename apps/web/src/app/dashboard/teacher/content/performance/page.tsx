@@ -13,7 +13,13 @@ export default function PerformanceStudio(){
  const {data,refetch,error}=useQuery(GET,{errorPolicy:'all'});
  const [createEvent,{loading:eventSaving}]=useMutation(CREATE_EVENT); const [publishEvent]=useMutation(PUBLISH_EVENT);
  const [event,setEvent]=useState({title:'',description:'',type:'WORKSHOP',format:'IN_PERSON',startsAt:'',city:'',price:'0'});
- async function addEvent(e:React.FormEvent){e.preventDefault();await createEvent({variables:{input:{title:event.title,description:event.description,type:event.type,format:event.format,startsAt:new Date(event.startsAt).toISOString(),timezone:'Europe/Zurich',city:event.city||undefined,instruments:[],musicStyles:[],skillLevels:[],price:Number(event.price),currency:'CHF'}}});setEvent({...event,title:'',description:'',startsAt:''});await refetch();}
+ async function addEvent(e:React.FormEvent){e.preventDefault();
+  // event.startsAt is a `datetime-local` value with no timezone of its own —
+  // the browser's Date parser reads it as wall-clock time in the browser's
+  // own zone, so the timezone we report to the API must be that same zone
+  // (not a hardcoded one) or the stored UTC instant and its label disagree.
+  const timezone=Intl.DateTimeFormat().resolvedOptions().timeZone;
+  await createEvent({variables:{input:{title:event.title,description:event.description,type:event.type,format:event.format,startsAt:new Date(event.startsAt).toISOString(),timezone,city:event.city||undefined,instruments:[],musicStyles:[],skillLevels:[],price:Number(event.price),currency:'CHF'}}});setEvent({...event,title:'',description:'',startsAt:''});await refetch();}
  return <RoleGate allow={['TEACHER','ADMIN']} callbackUrl="/dashboard/teacher/content/performance"><main className="mx-auto max-w-3xl px-6 py-10">
   <Link href="/dashboard/teacher" className="text-sm text-primary-700">← Teacher workspace</Link>
   <p className="mt-4 inline-block rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Performance pillar</p>
