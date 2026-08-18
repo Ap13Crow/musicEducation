@@ -217,6 +217,11 @@ model TeacherApplication {
   bio             String?
   instruments     String[]
   experienceYears Int?
+  // Verified server-side (applyForTeacher rejects under-18) - self-employed
+  // teachers on the platform must be adults; full identity verification is a
+  // later phase, this is the quality/legal floor for now.
+  address         String?
+  birthdate       DateTime?                 @db.Date
   status          TeacherApplicationStatus  @default(PENDING)
   reviewedBy      String?
   reviewedAt      DateTime?

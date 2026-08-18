@@ -44,6 +44,7 @@ spec:
               psql --set=ON_ERROR_STOP=1 --file=/schema/012-assessment-answer-unique.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/013-assessment-question-seed.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/014-external-event-classification.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/015-teacher-application-address-birthdate.sql
           envFrom:
             - secretRef:
                 name: postgres-mymusiccoach

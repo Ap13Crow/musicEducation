@@ -7,9 +7,21 @@ import { hasRole } from '@/lib/roles';
 
 const GET = gql`
   query MyTeacherApplicationStatus {
-    myTeacherApplication { id status headline bio instruments experienceYears }
+    myTeacherApplication { id status headline bio instruments experienceYears address birthdate }
   }
 `;
+
+const MIN_TEACHER_AGE_YEARS = 18;
+
+function calculateAge(birthdate: string): number | null {
+  const dob = new Date(birthdate);
+  if (Number.isNaN(dob.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - dob.getFullYear();
+  const monthDiff = now.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < dob.getDate())) age -= 1;
+  return age;
+}
 const APPLY = gql`
   mutation ApplyForTeacher($input: TeacherApplicationInput!) {
     applyForTeacher(input: $input) { id status }
@@ -34,8 +46,9 @@ export default function BecomeTeacherPage() {
 
   const { data, loading, refetch } = useQuery(GET, { skip: status !== 'authenticated' || alreadyTeacher });
   const [apply, { loading: applying, error }] = useMutation(APPLY);
-  const [form, setForm] = useState({ headline: '', bio: '', experienceYears: '' });
+  const [form, setForm] = useState({ headline: '', bio: '', experienceYears: '', address: '', birthdate: '' });
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>([]);
+  const [ageError, setAgeError] = useState<string | null>(null);
 
   const application = data?.myTeacherApplication;
 
@@ -45,6 +58,18 @@ export default function BecomeTeacherPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    setAgeError(null);
+    // Server enforces this too (the real check) - client-side only saves a
+    // round trip for the common case of someone just under the line.
+    const age = form.birthdate ? calculateAge(form.birthdate) : null;
+    if (age === null) {
+      setAgeError('Enter your date of birth.');
+      return;
+    }
+    if (age < MIN_TEACHER_AGE_YEARS) {
+      setAgeError(`You must be at least ${MIN_TEACHER_AGE_YEARS} to apply as a teacher.`);
+      return;
+    }
     await apply({
       variables: {
         input: {
@@ -54,6 +79,8 @@ export default function BecomeTeacherPage() {
           // GraphQL Int rejects a fractional value like "2.5" that a plain
           // number input can otherwise produce — round down to a whole year.
           experienceYears: form.experienceYears ? Math.trunc(Number(form.experienceYears)) : null,
+          address: form.address.trim() || null,
+          birthdate: form.birthdate,
         },
       },
     });
@@ -109,6 +136,29 @@ export default function BecomeTeacherPage() {
                 </p>
               )}
               {error && <p className="text-sm text-red-600">{error.message}</p>}
+              {ageError && <p className="text-sm text-red-600">{ageError}</p>}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block text-sm font-medium">
+                  Date of birth
+                  <input
+                    type="date"
+                    required
+                    className="input mt-1 w-full"
+                    value={form.birthdate}
+                    onChange={(e) => setForm({ ...form, birthdate: e.target.value })}
+                  />
+                  <span className="mt-1 block text-xs text-gray-400">Applicants must be 18 or older. Not shown publicly.</span>
+                </label>
+                <label className="block text-sm font-medium">
+                  Address
+                  <input
+                    className="input mt-1 w-full"
+                    placeholder="Street, city, country"
+                    value={form.address}
+                    onChange={(e) => setForm({ ...form, address: e.target.value })}
+                  />
+                </label>
+              </div>
               <label className="block text-sm font-medium">
                 Headline
                 <input
@@ -158,6 +208,10 @@ export default function BecomeTeacherPage() {
                   ))}
                 </div>
               </div>
+              <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                Uploading a CV, a recording, and supporting documents will be added soon — for now our team follows up by
+                email if we need anything beyond what&rsquo;s here. A verified-identity step is also planned for a later phase.
+              </p>
               <button disabled={applying} className="btn-primary px-8 py-3">
                 {applying ? 'Submitting…' : 'Submit application'}
               </button>

@@ -25,6 +25,10 @@ export default function Navbar() {
     { name: 'Teachers', href: '/teachers', icon: Music },
     { name: 'Events', href: '/events', icon: Calendar },
   ];
+  // Previously only linked from a small text link in the homepage footer -
+  // easy to miss entirely on any other page. Shown for guests and students;
+  // hidden once already a teacher/admin (who see Teacher Workspace instead).
+  const showBecomeTeacher = !hasRole(session?.roles, 'TEACHER', 'ADMIN');
 
   return (
     <nav className="sticky top-0 z-50 border-b border-gray-200 bg-white/95 backdrop-blur">
@@ -51,6 +55,14 @@ export default function Navbar() {
 
           {/* Auth buttons */}
           <div className="hidden items-center gap-3 md:flex">
+            {showBecomeTeacher && (
+              <Link
+                href="/become-teacher"
+                className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+              >
+                <GraduationCap className="h-4 w-4" /> Teach with us
+              </Link>
+            )}
             {status === 'loading' && (
               <div className="h-8 w-20 animate-pulse rounded-lg bg-gray-200" />
             )}
@@ -165,6 +177,15 @@ export default function Navbar() {
               {item.name}
             </Link>
           ))}
+          {showBecomeTeacher && (
+            <Link
+              href="/become-teacher"
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
+              onClick={() => setMobileOpen(false)}
+            >
+              <GraduationCap className="h-4 w-4" /> Teach with us
+            </Link>
+          )}
           <div className="mt-3 border-t border-gray-200 pt-3">
             {status === 'unauthenticated' ? (
               <div className="flex flex-col gap-2">

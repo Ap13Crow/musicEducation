@@ -258,6 +258,8 @@ type TeacherApplication {
   bio: String
   instruments: [String!]!
   experienceYears: Int
+  address: String
+  birthdate: DateTime
   status: TeacherApplicationStatus!
   createdAt: DateTime!
   updatedAt: DateTime!
@@ -269,6 +271,10 @@ input TeacherApplicationInput {
   bio: String
   instruments: [String!]
   experienceYears: Int
+  address: String
+  # Required - applyForTeacher rejects an application without one, or from
+  # someone under 18.
+  birthdate: DateTime
 }
 
 # ── Courses ────────────────────────

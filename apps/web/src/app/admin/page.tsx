@@ -241,11 +241,21 @@ function UsersTab() {
 const GET_TEACHER_APPLICATIONS = gql`
   query TeacherApplicationsQueue($status: TeacherApplicationStatus) {
     teacherApplications(status: $status) {
-      id headline bio instruments experienceYears status createdAt
+      id headline bio instruments experienceYears status createdAt address birthdate
       user { id displayName email }
     }
   }
 `;
+
+function ageFromBirthdate(birthdate: string): number | null {
+  const dob = new Date(birthdate);
+  if (Number.isNaN(dob.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - dob.getFullYear();
+  const monthDiff = now.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < dob.getDate())) age -= 1;
+  return age;
+}
 const REVIEW_APPLICATION = gql`
   mutation ReviewTeacherApplication($id: ID!, $approve: Boolean!) {
     reviewTeacherApplication(id: $id, approve: $approve) { id status }
@@ -307,8 +317,10 @@ function ApplicationsTab() {
                 <p className="mt-2 text-xs text-gray-400">
                   {app.instruments?.join(', ') || 'No instruments listed'}
                   {app.experienceYears != null ? ` · ${app.experienceYears} yr experience` : ''}
+                  {app.birthdate ? ` · age ${ageFromBirthdate(app.birthdate)}` : ' · no date of birth on file'}
                   {' · applied '}{new Date(app.createdAt).toLocaleDateString()}
                 </p>
+                {app.address && <p className="mt-1 text-xs text-gray-400">{app.address}</p>}
               </div>
               {app.status === 'PENDING' && (
                 <div className="flex shrink-0 gap-2">
