@@ -81,6 +81,12 @@ enum EventBookingStatus {
   ATTENDED
 }
 
+enum TeacherApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 // ── Models ─────────────────────────────────────────────────────────
 
 model User {
@@ -94,6 +100,7 @@ model User {
   credential         UserCredential?
   profile            UserProfile?
   teacherProfile     TeacherProfile?
+  teacherApplication TeacherApplication?
   gamification       GamificationProfile?
   externalIdentities UserExternalIdentity[]
   enrollments        Enrollment[]
@@ -179,6 +186,26 @@ model TeacherCertification {
   createdAt        DateTime @default(now())
 
   teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+}
+
+// A student's self-service request to become a teacher. Approving one is the
+// only thing that promotes User.role to TEACHER via this path — admins can
+// still promote directly via adminSetRole, but the public "Become a teacher"
+// page always goes through this queue for review.
+model TeacherApplication {
+  id              String                    @id @default(cuid())
+  userId          String                    @unique
+  headline        String?
+  bio             String?
+  instruments     String[]
+  experienceYears Int?
+  status          TeacherApplicationStatus  @default(PENDING)
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 model TeacherAvailability {

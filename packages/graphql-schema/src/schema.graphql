@@ -74,6 +74,12 @@ enum EventBookingStatus {
   ATTENDED
 }
 
+enum TeacherApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 # ── Pagination ────────────────────────
 
 type PageInfo {
@@ -204,6 +210,29 @@ type UserConnection {
 type TeacherConnection {
   nodes: [TeacherProfile!]!
   pageInfo: PageInfo!
+}
+
+# A student's self-service request to become a teacher — reviewed by an
+# admin (reviewTeacherApplication) before role promotion, rather than
+# changing on submission.
+type TeacherApplication {
+  id: ID!
+  userId: ID!
+  headline: String
+  bio: String
+  instruments: [String!]!
+  experienceYears: Int
+  status: TeacherApplicationStatus!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  user: User
+}
+
+input TeacherApplicationInput {
+  headline: String
+  bio: String
+  instruments: [String!]
+  experienceYears: Int
 }
 
 # ── Courses ────────────────────────
@@ -756,6 +785,9 @@ type Query {
   searchUsers(query: String!, role: Role, page: Int, limit: Int): UserConnection!
   teachers(filter: TeacherFilterInput, page: Int, limit: Int): TeacherConnection!
   teacher(id: ID!): TeacherProfile
+  myTeacherApplication: TeacherApplication
+  # Admin review queue for "Become a teacher" submissions.
+  teacherApplications(status: TeacherApplicationStatus, page: Int, limit: Int): [TeacherApplication!]!
 
   # Courses
   courses(filter: CourseFilterInput, page: Int, limit: Int): CourseConnection!
@@ -815,6 +847,10 @@ type Mutation {
   # Users
   updateProfile(input: UpdateProfileInput!): User!
   applyAsTeacher(input: ApplyAsTeacherInput): TeacherProfile!
+  # "Become a teacher" self-service application — pending until an admin
+  # calls reviewTeacherApplication. Re-submitting after a rejection is allowed.
+  applyForTeacher(input: TeacherApplicationInput!): TeacherApplication!
+  reviewTeacherApplication(id: ID!, approve: Boolean!): TeacherApplication!
   updateTeacherProfile(
     headline: String
     teachingBio: String

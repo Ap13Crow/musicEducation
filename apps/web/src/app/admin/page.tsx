@@ -8,10 +8,10 @@ import { useSession, signIn } from 'next-auth/react';
 import { hasRole } from '@/lib/roles';
 import {
   Users, BookOpen, Calendar, DollarSign, Settings, Shield,
-  Key, Video, CreditCard, BarChart3, UserCog, ChevronRight,
+  Key, Video, CreditCard, BarChart3, UserCog, ChevronRight, UserCheck,
 } from 'lucide-react';
 
-type Tab = 'overview' | 'users' | 'content' | 'settings';
+type Tab = 'overview' | 'users' | 'applications' | 'content' | 'settings';
 
 // Identity/config defaults shown in the admin UI. Driven by NEXT_PUBLIC_* env
 // so they reflect the deployment; defaults target the production domain.
@@ -238,6 +238,102 @@ function UsersTab() {
   );
 }
 
+const GET_TEACHER_APPLICATIONS = gql`
+  query TeacherApplicationsQueue($status: TeacherApplicationStatus) {
+    teacherApplications(status: $status) {
+      id headline bio instruments experienceYears status createdAt
+      user { id displayName email }
+    }
+  }
+`;
+const REVIEW_APPLICATION = gql`
+  mutation ReviewTeacherApplication($id: ID!, $approve: Boolean!) {
+    reviewTeacherApplication(id: $id, approve: $approve) { id status }
+  }
+`;
+
+function ApplicationsTab() {
+  const [statusFilter, setStatusFilter] = useState<'PENDING' | 'APPROVED' | 'REJECTED'>('PENDING');
+  const { data, loading, error, refetch } = useQuery(GET_TEACHER_APPLICATIONS, {
+    variables: { status: statusFilter },
+    fetchPolicy: 'cache-and-network',
+  });
+  const [review, { loading: reviewing }] = useMutation(REVIEW_APPLICATION);
+  const applications: any[] = data?.teacherApplications ?? [];
+
+  async function handleReview(id: string, approve: boolean) {
+    await review({ variables: { id, approve } });
+    await refetch();
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        {(['PENDING', 'APPROVED', 'REJECTED'] as const).map((s) => (
+          <button
+            key={s}
+            onClick={() => setStatusFilter(s)}
+            className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+              statusFilter === s ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium' : 'border-gray-200 text-gray-600'
+            }`}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Failed to load applications: {error.message}
+        </div>
+      )}
+
+      {!loading && applications.length === 0 && !error && (
+        <p className="rounded-lg border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500">
+          No {statusFilter.toLowerCase()} applications.
+        </p>
+      )}
+
+      <div className="space-y-3">
+        {applications.map((app) => (
+          <div key={app.id} className="card p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="font-medium">{app.user?.displayName} <span className="text-gray-400 font-normal">· {app.user?.email}</span></p>
+                {app.headline && <p className="mt-1 text-sm text-gray-700">{app.headline}</p>}
+                {app.bio && <p className="mt-1 text-sm text-gray-500">{app.bio}</p>}
+                <p className="mt-2 text-xs text-gray-400">
+                  {app.instruments?.join(', ') || 'No instruments listed'}
+                  {app.experienceYears != null ? ` · ${app.experienceYears} yr experience` : ''}
+                  {' · applied '}{new Date(app.createdAt).toLocaleDateString()}
+                </p>
+              </div>
+              {app.status === 'PENDING' && (
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    disabled={reviewing}
+                    onClick={() => handleReview(app.id, true)}
+                    className="rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    disabled={reviewing}
+                    onClick={() => handleReview(app.id, false)}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Reject
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ContentTab() {
   return (
     <div className="space-y-4">
@@ -349,6 +445,7 @@ function SettingsTab() {
 const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
   { id: 'users', label: 'Users', icon: Users },
+  { id: 'applications', label: 'Applications', icon: UserCheck },
   { id: 'content', label: 'Content', icon: BookOpen },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -421,6 +518,7 @@ export default function AdminPage() {
           <div className="flex-1 min-w-0">
             {activeTab === 'overview' && <OverviewTab />}
             {activeTab === 'users' && <UsersTab />}
+            {activeTab === 'applications' && <ApplicationsTab />}
             {activeTab === 'content' && <ContentTab />}
             {activeTab === 'settings' && <SettingsTab />}
           </div>

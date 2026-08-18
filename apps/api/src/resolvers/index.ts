@@ -10,6 +10,7 @@ import { feedResolvers } from './feed.js';
 import { reviewResolvers } from './reviews.js';
 import { recommendationResolvers } from './recommendations.js';
 import { adminResolvers } from './admin.js';
+import { teacherApplicationResolvers } from './teacherApplications.js';
 import { DateTimeResolver, JSONResolver } from 'graphql-scalars';
 
 const scalarResolvers = {
@@ -35,4 +36,5 @@ export const resolvers = mergeResolvers([
   reviewResolvers,
   recommendationResolvers,
   adminResolvers,
+  teacherApplicationResolvers,
 ]);

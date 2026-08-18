@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useMutation, gql } from '@apollo/client';
 import { useRouter } from 'next/navigation';
+import { signIn, useSession } from 'next-auth/react';
 import { BookOpen, Mic, Globe, Music } from 'lucide-react';
 
 const START_ASSESSMENT = gql`
@@ -80,6 +81,7 @@ const styles = ['Baroque', 'Classical', 'Romantic', 'Contemporary', 'Opera', 'Ch
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const { status } = useSession();
   const [step, setStep] = useState(0);
   const [assessmentId, setAssessmentId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -93,12 +95,22 @@ export default function OnboardingPage() {
   const [completeAssessment, { loading: completing }] = useMutation(COMPLETE_ASSESSMENT);
 
   async function handleStart() {
+    // startAssessment (and completeOnboarding at the end) require an account.
+    // Previously this ran the whole quiz unauthenticated and only discovered
+    // that at the final "Complete Assessment" step, silently discarding the
+    // visitor's answers. Check up front instead, and make account creation
+    // feel like step 1 of this same flow: signIn's callbackUrl brings them
+    // straight back here to continue exactly where they left off.
+    if (status !== 'authenticated') {
+      void signIn('keycloak', { callbackUrl: '/onboarding' });
+      return;
+    }
     try {
       const { data } = await startAssessment();
       setAssessmentId(data.startAssessment.id);
       setStep(1);
     } catch {
-      setStep(1); // proceed without auth for demo
+      setStep(1);
     }
   }
 
@@ -156,8 +168,13 @@ export default function OnboardingPage() {
               Create a useful starting profile for your teacher and learning plan. Audio analysis will be added when the private AI pipeline is activated.
               We&apos;ll evaluate your theory knowledge, musical culture and guide you to the best courses, teachers and events.
             </p>
-            <button onClick={handleStart} className="btn-primary px-10 py-3 text-base">
-              Start Assessment
+            {status !== 'authenticated' && (
+              <p className="mb-4 text-sm text-gray-500">
+                You&rsquo;ll create your account first — it takes a minute, then you&rsquo;re straight back here to continue.
+              </p>
+            )}
+            <button onClick={handleStart} disabled={status === 'loading'} className="btn-primary px-10 py-3 text-base">
+              {status === 'authenticated' ? 'Start Assessment' : 'Create account & start'}
             </button>
           </div>
         )}
