@@ -4,6 +4,7 @@ import { PrismaClient } from '@my-music-coach/database';
 import { logger } from './logger.js';
 import { JobRegistry } from './scheduler.js';
 import { heartbeatJob } from './jobs/heartbeat.js';
+import { ticketmasterIngestJob } from './jobs/ticketmaster-ingest.js';
 
 // Mirrors apps/api's DATABASE_URL construction: the postgres-mymusiccoach
 // Kubernetes Secret provides PG* pieces (via envFrom), not a single DSN.
@@ -32,6 +33,7 @@ configureDatabaseUrl();
 const prisma = new PrismaClient();
 const registry = new JobRegistry(prisma, logger);
 registry.register(heartbeatJob);
+registry.register(ticketmasterIngestJob);
 
 async function main() {
   const app = express();
