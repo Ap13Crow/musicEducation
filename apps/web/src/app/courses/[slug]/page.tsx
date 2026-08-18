@@ -169,21 +169,37 @@ export default function CourseDetailPage() {
                       <span className="ml-2 text-xs text-gray-500">({section.lessons?.length ?? 0} lessons)</span>
                     </div>
                     <ul className="divide-y divide-gray-100">
-                      {section.lessons?.map((lesson: any) => (
-                        <li key={lesson.id} className="flex items-center gap-3 px-4 py-3 text-sm">
-                          {lesson.isFreePreview ? (
-                            <Play className="h-4 w-4 shrink-0 text-primary-600" />
-                          ) : (
-                            <Lock className="h-4 w-4 shrink-0 text-gray-400" />
-                          )}
-                          <span className="flex-1">{lesson.title}</span>
-                          {lesson.isFreePreview && (
-                            <span className="rounded bg-primary-50 px-2 py-0.5 text-xs text-primary-700">Preview</span>
-                          )}
-                          <span className="text-xs text-gray-500">{lesson.durationMin} min</span>
-                          <span className="text-xs text-amber-600">+{lesson.xpReward} XP</span>
-                        </li>
-                      ))}
+                      {section.lessons?.map((lesson: any) => {
+                        const watchable = lesson.isFreePreview || enrolled;
+                        const content = (
+                          <>
+                            {lesson.isFreePreview ? (
+                              <Play className="h-4 w-4 shrink-0 text-primary-600" />
+                            ) : (
+                              <Lock className="h-4 w-4 shrink-0 text-gray-400" />
+                            )}
+                            <span className="flex-1">{lesson.title}</span>
+                            {lesson.isFreePreview && (
+                              <span className="rounded bg-primary-50 px-2 py-0.5 text-xs text-primary-700">Preview</span>
+                            )}
+                            <span className="text-xs text-gray-500">{lesson.durationMin} min</span>
+                            <span className="text-xs text-amber-600">+{lesson.xpReward} XP</span>
+                          </>
+                        );
+                        return watchable ? (
+                          <Link
+                            key={lesson.id}
+                            href={`/courses/${slug}/learn?lesson=${lesson.id}`}
+                            className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-gray-50"
+                          >
+                            {content}
+                          </Link>
+                        ) : (
+                          <li key={lesson.id} className="flex items-center gap-3 px-4 py-3 text-sm">
+                            {content}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 ))}
@@ -231,6 +247,9 @@ export default function CourseDetailPage() {
                     <div className="flex items-center justify-center gap-2 text-sm font-semibold text-green-600">
                       <CheckCircle className="h-5 w-5" /> Enrolled
                     </div>
+                    <Link href={`/courses/${slug}/learn`} className="btn-primary block w-full py-3 text-center text-base">
+                      Continue learning
+                    </Link>
                   </div>
                 ) : (
                   <button

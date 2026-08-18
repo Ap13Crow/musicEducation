@@ -26,8 +26,9 @@ const GET_COURSES = gql`
 // Split from GET_COURSES: myEnrollments requires auth, so bundling it into the
 // public catalog query meant a signed-out visitor's request never ran at all
 // (skip: !session below) and — for a signed-in visitor — one failing field
-// would sink the whole query under Apollo's default error policy. Guests can
-// browse published courses same as students/teachers/admins; this only adds
+// would sink the whole query under Apollo's default error policy. Guests now
+// get their own (more restricted — published + free-tier only, per the
+// `courses` resolver) catalog instead of nothing; this second query only adds
 // the "Enrolled" badge once someone actually has a session.
 const GET_MY_ENROLLMENTS = gql`
   query MyEnrollmentsForCatalog {

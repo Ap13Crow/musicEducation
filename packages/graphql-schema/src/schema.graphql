@@ -302,6 +302,7 @@ type Enrollment {
   completedAt: DateTime
   createdAt: DateTime!
   course: Course
+  lessonProgress: [LessonProgress!]!
 }
 
 type LessonProgress {
@@ -794,6 +795,7 @@ type Query {
   course(id: ID, slug: String): Course
   myCourses(page: Int, limit: Int): CourseConnection!
   myEnrollments(page: Int, limit: Int): EnrollmentConnection!
+  myEnrollment(courseId: ID!): Enrollment
   categories: [Category!]!
 
   # Bookings

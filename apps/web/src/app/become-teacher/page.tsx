@@ -51,7 +51,9 @@ export default function BecomeTeacherPage() {
           headline: form.headline.trim() || null,
           bio: form.bio.trim() || null,
           instruments: selectedInstruments,
-          experienceYears: form.experienceYears ? Number(form.experienceYears) : null,
+          // GraphQL Int rejects a fractional value like "2.5" that a plain
+          // number input can otherwise produce — round down to a whole year.
+          experienceYears: form.experienceYears ? Math.trunc(Number(form.experienceYears)) : null,
         },
       },
     });
@@ -130,6 +132,7 @@ export default function BecomeTeacherPage() {
                 <input
                   type="number"
                   min="0"
+                  step="1"
                   className="input mt-1 w-full"
                   value={form.experienceYears}
                   onChange={(e) => setForm({ ...form, experienceYears: e.target.value })}
@@ -142,6 +145,7 @@ export default function BecomeTeacherPage() {
                     <button
                       key={inst}
                       type="button"
+                      aria-pressed={selectedInstruments.includes(inst)}
                       onClick={() => toggleInstrument(inst)}
                       className={`rounded-full border px-3 py-1 text-sm transition-colors ${
                         selectedInstruments.includes(inst)

@@ -272,6 +272,8 @@ function ApplicationsTab() {
         {(['PENDING', 'APPROVED', 'REJECTED'] as const).map((s) => (
           <button
             key={s}
+            type="button"
+            aria-pressed={statusFilter === s}
             onClick={() => setStatusFilter(s)}
             className={`rounded-full border px-3 py-1 text-sm transition-colors ${
               statusFilter === s ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium' : 'border-gray-200 text-gray-600'

@@ -6,7 +6,7 @@ export const teacherApplicationResolvers = {
   Query: {
     async myTeacherApplication(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
       requireAuth(user);
-      return prisma.teacherApplication.findUnique({ where: { userId: user.id } });
+      return prisma.teacherApplication.findUnique({ where: { userId: user.id }, include: { user: { include: { profile: true } } } });
     },
 
     async teacherApplications(_: unknown, { status, page = 1, limit = 50 }: any, { prisma, user }: GraphQLContext) {
@@ -19,6 +19,8 @@ export const teacherApplicationResolvers = {
         take: limit,
         // Oldest-pending-first — reviewers work through a queue, not a feed.
         orderBy: { createdAt: 'asc' },
+        // Preloaded so the User field resolver below doesn't re-fetch per row.
+        include: { user: { include: { profile: true } } },
       });
     },
   },
@@ -94,6 +96,7 @@ export const teacherApplicationResolvers = {
 
   TeacherApplication: {
     async user(application: any, _: unknown, { prisma }: GraphQLContext) {
+      if (application.user) return application.user;
       return prisma.user.findUnique({ where: { id: application.userId }, include: { profile: true } });
     },
   },

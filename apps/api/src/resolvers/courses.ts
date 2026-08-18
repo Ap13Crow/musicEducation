@@ -91,6 +91,11 @@ export const courseResolvers = {
       return { nodes, pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount } };
     },
 
+    async myEnrollment(_: unknown, { courseId }: any, { prisma, user }: GraphQLContext) {
+      requireAuth(user);
+      return prisma.enrollment.findUnique({ where: { userId_courseId: { userId: user.id, courseId } } });
+    },
+
     async categories(_: unknown, __: unknown, { prisma }: GraphQLContext) {
       return prisma.category.findMany({ where: { parentId: null }, include: { children: true } });
     },
@@ -277,11 +282,38 @@ export const courseResolvers = {
   Lesson: {
     durationMin: (lesson: any) => lesson.duration ?? 0,
     isFreePreview: (lesson: any) => lesson.isPreview ?? false,
+    // The `course(slug)` query returns every lesson in the curriculum
+    // regardless of enrollment (needed for the syllabus list), so without
+    // this check the video URL for locked lessons leaked to anyone who
+    // could see the course page at all — enrollment was only enforced by
+    // the UI showing a lock icon, not by the API. Preview lessons stay
+    // open; everything else requires enrollment, course ownership, or admin.
+    async videoUrl(lesson: any, _: unknown, { prisma, user }: GraphQLContext) {
+      if (lesson.isPreview) return lesson.videoUrl;
+      if (!user) return null;
+      if (user.role === 'ADMIN') return lesson.videoUrl;
+      const section = await prisma.courseSection.findUnique({
+        where: { id: lesson.sectionId },
+        include: { course: { include: { teacherProfile: true } } },
+      });
+      if (!section) return null;
+      if (section.course.teacherProfile?.userId === user.id) return lesson.videoUrl;
+      const enrollment = await prisma.enrollment.findUnique({
+        where: { userId_courseId: { userId: user.id, courseId: section.courseId } },
+      });
+      return enrollment ? lesson.videoUrl : null;
+    },
   },
 
   CourseSection: {
     async lessons(section: any, _: unknown, { prisma }: GraphQLContext) {
       return prisma.lesson.findMany({ where: { sectionId: section.id }, orderBy: { order: 'asc' } });
+    },
+  },
+
+  Enrollment: {
+    async lessonProgress(enrollment: any, _: unknown, { prisma }: GraphQLContext) {
+      return prisma.lessonProgress.findMany({ where: { enrollmentId: enrollment.id } });
     },
   },
 };
