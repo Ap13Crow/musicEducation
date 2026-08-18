@@ -34,6 +34,7 @@ spec:
               psql --set=ON_ERROR_STOP=1 --file=/schema/002-practice.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/003-profile-contract.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/004-native-pillars.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/005-external-events.sql
           envFrom:
             - secretRef:
                 name: postgres-mymusiccoach

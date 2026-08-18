@@ -41,6 +41,13 @@ These are not required for the native Theory, Practice, or Performance workflows
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_CONNECT_CLIENT_ID` (only if marketplace/connected-account payouts are enabled)
 
+### External event discovery
+
+- `TICKETMASTER_API_KEY` (the Discovery API Consumer Key; the Consumer Secret is unused)
+
+Missing this secret disables Ticketmaster ingestion cleanly — the worker job logs that
+it's skipped and the events page simply shows no external listings.
+
 ### Google Calendar synchronization
 
 - `GOOGLE_SERVICE_ACCOUNT_JSON`
