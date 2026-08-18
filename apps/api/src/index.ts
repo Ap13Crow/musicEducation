@@ -21,6 +21,7 @@ import { assessmentResolvers } from './resolvers/assessments.js';
 import { feedResolvers } from './resolvers/feed.js';
 import { paymentResolvers, handleStripeWebhook } from './resolvers/payments.js';
 import { adminResolvers } from './resolvers/admin.js';
+import { discoveryResolvers } from './resolvers/discovery.js';
 import type { GraphQLContext } from './types.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -65,6 +66,7 @@ const resolvers = mergeResolvers([
   feedResolvers,
   paymentResolvers,
   adminResolvers,
+  discoveryResolvers,
 ]);
 const schema = makeExecutableSchema({ typeDefs, resolvers });
 

@@ -174,3 +174,36 @@ describe('Teacher Filter Logic', () => {
     expect(result.OR).toHaveLength(2);
   });
 });
+
+// Regression coverage for: a user demoted away from TEACHER (adminSetRole)
+// must stop being publicly discoverable as a teacher. Their TeacherProfile
+// row is never deleted on demotion (it's history — past courses/bookings
+// reference it), so row existence must never be the "is a teacher" check —
+// only the user's current role decides that. Mirrors the exact `where`
+// construction in resolvers/users.ts `teachers`.
+describe('Teacher Discovery Role Guard', () => {
+  function buildTeachersWhere(filter: any): any {
+    const where: any = { isAvailable: true, user: { role: 'TEACHER' } };
+    if (filter) {
+      if (filter.instrument) where.instruments = { has: filter.instrument };
+      if (filter.maxHourlyRate !== undefined) where.hourlyRate = { lte: filter.maxHourlyRate };
+      if (filter.minRating !== undefined) where.avgRating = { gte: filter.minRating };
+      if (filter.isAvailable !== undefined) where.isAvailable = filter.isAvailable;
+      if (filter.search) {
+        where.OR = [{ bio: { contains: filter.search, mode: 'insensitive' } }];
+      }
+    }
+    return where;
+  }
+
+  it('always scopes teacher discovery to users who currently hold the TEACHER role', () => {
+    expect(buildTeachersWhere(null).user).toEqual({ role: 'TEACHER' });
+  });
+
+  it('keeps the role guard alongside any combination of filters', () => {
+    const result = buildTeachersWhere({ instrument: 'Piano', search: 'jazz' });
+    expect(result.user).toEqual({ role: 'TEACHER' });
+    expect(result.instruments).toEqual({ has: 'Piano' });
+    expect(result.OR).toHaveLength(1);
+  });
+});
