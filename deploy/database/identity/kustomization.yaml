@@ -9,3 +9,4 @@ configMapGenerator:
       - 002-practice.sql
       - 003-profile-contract.sql
       - 004-native-pillars.sql
+      - 005-external-events.sql

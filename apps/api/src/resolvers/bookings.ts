@@ -39,10 +39,18 @@ export const bookingResolvers = {
       requireAuth(user);
       const { teacherProfileId, startsAt, durationMin, format, instrument, notes } = input;
 
-      const teacherProfile = await prisma.teacherProfile.findUnique({ where: { id: teacherProfileId } });
+      const teacherProfile = await prisma.teacherProfile.findUnique({
+        where: { id: teacherProfileId },
+        include: { user: { select: { role: true } } },
+      });
       if (!teacherProfile) throw new GraphQLError('Teacher not found.', { extensions: { code: 'NOT_FOUND' } });
       if (teacherProfile.userId === user.id) {
         throw new GraphQLError('You cannot book a lesson with yourself.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      // The TeacherProfile row outlives a demotion (it's history); the
+      // current role is what decides whether they can still be booked.
+      if (teacherProfile.user.role !== 'TEACHER') {
+        throw new GraphQLError('Teacher not found.', { extensions: { code: 'NOT_FOUND' } });
       }
       if (!teacherProfile.isAvailable) throw new GraphQLError('Teacher is not available.', { extensions: { code: 'BAD_USER_INPUT' } });
 

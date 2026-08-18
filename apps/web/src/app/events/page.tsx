@@ -12,6 +12,12 @@ const GET_EVENTS = gql`
         instruments musicStyles skillLevels
       }
     }
+    externalEvents(page: 1, limit: 12) {
+      nodes {
+        id provider title url imageUrl startsAt venueName city country
+        minPrice maxPrice currency classifications attribution
+      }
+    }
   }
 `;
 
@@ -55,11 +61,24 @@ function formatDate(iso: string) {
 
 const ticketsUrl = process.env.NEXT_PUBLIC_TICKETS_URL ?? 'https://tickets.mymusic.coach';
 
+const PROVIDER_LABELS: Record<string, string> = {
+  TICKETMASTER: 'Ticketmaster',
+  CLASSICTIC: 'Classictic',
+};
+
+function formatPriceRange(minPrice: number | null, maxPrice: number | null, currency: string | null) {
+  if (minPrice == null && maxPrice == null) return null;
+  const cur = currency ?? '';
+  if (minPrice != null && maxPrice != null && minPrice !== maxPrice) return `${cur} ${minPrice}–${maxPrice}`;
+  return `${cur} ${minPrice ?? maxPrice}`;
+}
+
 export default function EventsPage() {
   const liveApiEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_API === 'true';
   const { data, loading } = useQuery(GET_EVENTS, { skip: !liveApiEnabled });
 
   const events: any[] = data?.events?.nodes?.length ? data.events.nodes : fallbackEvents;
+  const externalEvents: any[] = data?.externalEvents?.nodes ?? [];
 
   return (
     <main className="px-6 py-16">
@@ -102,6 +121,45 @@ export default function EventsPage() {
                 </button>
               </article>
             ))}
+          </div>
+        )}
+
+        {externalEvents.length > 0 && (
+          <div className="mt-16">
+            <h2 className="mb-2 text-2xl font-bold">More concerts nearby</h2>
+            <p className="mb-6 max-w-3xl text-sm text-gray-600">
+              Discovered from external listings — purchase happens on the provider&rsquo;s own site.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {externalEvents.map((ext) => (
+                <a
+                  key={ext.id}
+                  href={ext.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="card flex flex-col overflow-hidden p-0 transition hover:-translate-y-0.5 hover:border-primary-300"
+                >
+                  {ext.imageUrl && (
+                    <img src={ext.imageUrl} alt="" className="h-36 w-full object-cover" />
+                  )}
+                  <div className="flex flex-1 flex-col p-4">
+                    <span className="mb-1 inline-block w-fit rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                      via {PROVIDER_LABELS[ext.provider] ?? ext.provider}
+                    </span>
+                    <h3 className="font-semibold leading-snug">{ext.title}</h3>
+                    <p className="mt-1 text-sm text-gray-600">
+                      {[ext.city ?? ext.venueName, formatDate(ext.startsAt)].filter(Boolean).join(' · ')}
+                    </p>
+                    {formatPriceRange(ext.minPrice, ext.maxPrice, ext.currency) && (
+                      <p className="mt-1 text-sm font-medium text-gray-800">
+                        {formatPriceRange(ext.minPrice, ext.maxPrice, ext.currency)}
+                      </p>
+                    )}
+                    <p className="mt-auto pt-3 text-xs text-gray-400">{ext.attribution}</p>
+                  </div>
+                </a>
+              ))}
+            </div>
           </div>
         )}
 

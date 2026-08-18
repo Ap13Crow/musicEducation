@@ -47,6 +47,12 @@ spec:
                   name: application-integrations
                   key: STRIPE_WEBHOOK_SECRET
                   optional: true
+            - name: TICKETMASTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: TICKETMASTER_API_KEY
+                  optional: true
           volumeMounts:
             - name: postgres-ca
               mountPath: /etc/postgres-ca

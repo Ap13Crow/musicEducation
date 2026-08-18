@@ -5,8 +5,8 @@ import { useSession, signIn } from 'next-auth/react';
 import { gql, useQuery, useMutation } from '@apollo/client';
 import {
   User, Mail, MapPin, Music, Globe, Edit3, Save, X,
-  Trophy, Flame, GraduationCap, Star, BookOpen, Lock,
-  ExternalLink, CheckCircle, AlertCircle, Phone, ImagePlus,
+  Trophy, Flame, GraduationCap, Star, Lock,
+  ExternalLink, CheckCircle, AlertCircle, Phone, ImagePlus, Calendar,
 } from 'lucide-react';
 import { externalLinks, keycloakAccountUrl, keycloakAdminUrl, keycloakSigningInUrl } from '@/lib/external-links';
 
@@ -33,7 +33,7 @@ const GET_PROFILE = gql`
       }
     }
     myBookings(page: 1, limit: 20) {
-      id status instrument
+      id status instrument startsAt endsAt format
       teacher {
         id headline avgRating
         user { displayName avatarUrl }
@@ -100,14 +100,10 @@ export default function ProfilePage() {
   const me = data?.me;
   const bookings = data?.myBookings ?? [];
 
-  // Unique teachers the user has booked
-  const myTeachers = Array.from(
-    new Map(
-      bookings
-        .filter((b: any) => b.teacher)
-        .map((b: any) => [b.teacher.id, b.teacher])
-    ).values()
-  );
+  // Booked sessions with a teacher, soonest first, excluding cancelled ones.
+  const mySessions = [...bookings]
+    .filter((b: any) => b.teacher && b.status !== 'CANCELLED')
+    .sort((a: any, b: any) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
 
   function startEdit() {
     setEdit({
@@ -259,12 +255,15 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-4xl px-6 py-8 space-y-6">
-        {photoError && (
+      {photoError && (
+        <div className="mx-auto mt-4 max-w-4xl px-6">
           <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <AlertCircle className="h-4 w-4 shrink-0" /> {photoError}
           </div>
-        )}
+        </div>
+      )}
+
+      <div className="mx-auto max-w-4xl px-6 py-8 space-y-6">
         {(saveError || profileError) && (
           <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <AlertCircle className="h-4 w-4 shrink-0" /> {saveError?.message ?? profileError?.message}
@@ -387,42 +386,46 @@ export default function ProfilePage() {
               )}
             </section>
 
-            {/* My teachers */}
+            {/* My booked sessions */}
             <section className="card p-6">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="flex items-center gap-2 font-semibold text-gray-900">
-                  <BookOpen className="h-4 w-4 text-primary-600" /> My teachers
+                  <Calendar className="h-4 w-4 text-primary-600" /> My booked sessions
                 </h2>
-                {externalLinks.booking && (
-                  <a href={externalLinks.booking} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline">
-                    Book a lesson <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
+                <a href={externalLinks.booking}
+                  className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline">
+                  Book a lesson <ExternalLink className="h-3 w-3" />
+                </a>
               </div>
-              {myTeachers.length === 0 ? (
+              {mySessions.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center">
-                  <p className="text-sm text-gray-500">No teachers yet.</p>
+                  <p className="text-sm text-gray-500">No sessions booked yet.</p>
                   <a href="/teachers" className="mt-1 inline-block text-xs font-medium text-primary-600 hover:underline">Browse teachers →</a>
                 </div>
               ) : (
                 <ul className="space-y-3">
-                  {(myTeachers as any[]).map((t: any) => (
-                    <li key={t.id} className="flex items-center gap-3 rounded-lg border border-gray-100 p-3">
+                  {(mySessions as any[]).map((b: any) => (
+                    <li key={b.id} className="flex items-center gap-3 rounded-lg border border-gray-100 p-3">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600">
-                        {t.user?.avatarUrl
-                          ? <img src={t.user.avatarUrl} alt="" className="h-10 w-10 rounded-full object-cover" />
+                        {b.teacher?.user?.avatarUrl
+                          ? <img src={b.teacher.user.avatarUrl} alt="" className="h-10 w-10 rounded-full object-cover" />
                           : <User className="h-5 w-5" />}
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-900">{t.user?.displayName}</p>
-                        {t.headline && <p className="truncate text-xs text-gray-500">{t.headline}</p>}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-900">{b.teacher?.user?.displayName}</p>
+                        <p className="truncate text-xs text-gray-500">
+                          {new Date(b.startsAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                          {b.instrument ? ` · ${b.instrument}` : ''} · {b.format}
+                        </p>
                       </div>
-                      {t.avgRating > 0 && (
-                        <span className="ml-auto flex shrink-0 items-center gap-1 text-xs text-amber-600">
-                          <Star className="h-3 w-3 fill-amber-400" />{t.avgRating.toFixed(1)}
-                        </span>
-                      )}
+                      <span className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                        b.status === 'CONFIRMED' ? 'bg-green-50 text-green-700'
+                        : b.status === 'PENDING' ? 'bg-amber-50 text-amber-700'
+                        : b.status === 'COMPLETED' ? 'bg-blue-50 text-blue-700'
+                        : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {b.status}
+                      </span>
                     </li>
                   ))}
                 </ul>

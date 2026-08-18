@@ -290,24 +290,54 @@ jobs:
             unset jwt_secret nextauth_secret
             echo 'Created application runtime secrets inside Kubernetes.'
           fi
-      - name: Synchronize configured payment secrets
+      - name: Synchronize configured integration secrets
         if: inputs.operation == 'deploy'
         env:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          TICKETMASTER_API_KEY: ${{ secrets.TICKETMASTER_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
           set +x
-          if [[ -z "$STRIPE_SECRET_KEY" || -z "$STRIPE_WEBHOOK_SECRET" ]]; then
+          # `kubectl apply` on a generated Secret replaces its whole data map,
+          # so a run that only has (say) TICKETMASTER_API_KEY configured must
+          # not wipe out Stripe keys synchronized by an earlier run. Merge:
+          # this run's GitHub secret wins when present, otherwise fall back to
+          # whatever's already in the cluster.
+          existing_json="$(kubectl -n "$NAMESPACE" get secret application-integrations -o json 2>/dev/null || echo '{}')"
+          existing_value() {
+            local b64
+            b64="$(echo "$existing_json" | jq -r --arg k "$1" '.data[$k] // empty')"
+            if [[ -n "$b64" ]]; then echo "$b64" | base64 -d; fi
+          }
+          effective_stripe_secret_key="${STRIPE_SECRET_KEY:-$(existing_value STRIPE_SECRET_KEY)}"
+          effective_stripe_webhook_secret="${STRIPE_WEBHOOK_SECRET:-$(existing_value STRIPE_WEBHOOK_SECRET)}"
+          effective_ticketmaster_key="${TICKETMASTER_API_KEY:-$(existing_value TICKETMASTER_API_KEY)}"
+
+          args=()
+          if [[ -n "$effective_stripe_secret_key" && -n "$effective_stripe_webhook_secret" ]]; then
+            args+=(--from-literal=STRIPE_SECRET_KEY="$effective_stripe_secret_key")
+            args+=(--from-literal=STRIPE_WEBHOOK_SECRET="$effective_stripe_webhook_secret")
+            echo 'Stripe credentials configured.'
+          else
             echo 'Stripe remains disabled because one or both Stripe secrets are absent.'
+          fi
+          if [[ -n "$effective_ticketmaster_key" ]]; then
+            args+=(--from-literal=TICKETMASTER_API_KEY="$effective_ticketmaster_key")
+            echo 'Ticketmaster discovery configured.'
+          else
+            echo 'Ticketmaster discovery remains disabled because TICKETMASTER_API_KEY is absent.'
+          fi
+
+          if [[ ${#args[@]} -eq 0 ]]; then
+            echo 'No integration secrets configured; leaving application-integrations untouched.'
             exit 0
           fi
           kubectl -n "$NAMESPACE" create secret generic application-integrations \
-            --from-literal=STRIPE_SECRET_KEY="$STRIPE_SECRET_KEY" \
-            --from-literal=STRIPE_WEBHOOK_SECRET="$STRIPE_WEBHOOK_SECRET" \
+            "${args[@]}" \
             --dry-run=client -o yaml | kubectl apply -f -
-          echo 'Synchronized Stripe credentials without printing their values.'
+          echo 'Synchronized integration credentials without printing their values.'
       - name: Apply the identity schema
         id: schema
         if: inputs.operation == 'deploy'

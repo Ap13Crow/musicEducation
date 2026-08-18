@@ -15,6 +15,34 @@ type AuthToken = {
 const issuer = process.env.KEYCLOAK_ISSUER ?? '';
 const clientId = process.env.KEYCLOAK_CLIENT_ID ?? '';
 const clientSecret = process.env.KEYCLOAK_CLIENT_SECRET ?? '';
+const internalGraphqlUrl =
+  process.env.GRAPHQL_SERVER_URL ?? process.env.INTERNAL_GRAPHQL_URL ?? 'http://api:4000/graphql';
+
+/**
+ * The platform database — not the Keycloak access token — owns the user's
+ * role and display name (see CLAUDE.md: "the application database owns
+ * profiles, roles..."). Admin role changes (adminSetRole) only ever touch
+ * the database, never Keycloak, so decoding `realm_access.roles` from the
+ * token would keep showing a role the admin already revoked. Ask the API
+ * (which resolves the same access token back to its DB-backed user on every
+ * request) for the authoritative values instead.
+ */
+async function fetchIdentity(accessToken: string): Promise<{ role: string; displayName: string | null } | null> {
+  try {
+    const res = await fetch(internalGraphqlUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ query: '{ me { role displayName } }' }),
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    if (body.errors || !body.data?.me) return null;
+    return { role: body.data.me.role, displayName: body.data.me.displayName ?? null };
+  } catch {
+    return null;
+  }
+}
 
 function rolesFromAccessToken(accessToken?: string): AppRole[] {
   if (!accessToken) return [];
@@ -88,9 +116,16 @@ const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       const authToken = token as typeof token & AuthToken;
+      // Authoritative role/name come from the database on every session check
+      // (see fetchIdentity above); the token-decoded roles are only a
+      // fallback for when the API is unreachable.
+      const identity = authToken.accessToken ? await fetchIdentity(authToken.accessToken) : null;
+      if (identity && session.user) {
+        session.user.name = identity.displayName ?? session.user.name;
+      }
       return Object.assign(session, {
         accessToken: authToken.accessToken,
-        roles: authToken.roles ?? [],
+        roles: identity ? normalizeRoles([identity.role]) : (authToken.roles ?? []),
         error: authToken.error,
       });
     },

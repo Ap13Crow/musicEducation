@@ -535,3 +535,45 @@ model AdminSetting {
   value     String
   updatedAt DateTime @updatedAt
 }
+
+// ── External event discovery (read-only projections) ──────────────────────────
+// Cached, normalized rows from external providers (Ticketmaster now, Classictic
+// later). Kept separate from Event: these are discovery inputs, never authored
+// content, and never enter the authored-event publishing flow.
+
+enum ExternalEventProvider {
+  TICKETMASTER
+  CLASSICTIC
+}
+
+model ExternalEventProjection {
+  id              String                @id @default(cuid())
+  provider        ExternalEventProvider
+  providerId      String
+  title           String
+  description     String?
+  url             String // provider deep/affiliate link — the only purchase path
+  imageUrl        String?
+  startsAt        DateTime
+  endsAt          DateTime?
+  timezone        String?
+  venueName       String?
+  city            String?
+  country         String?
+  latitude        Float?
+  longitude       Float?
+  minPrice        Decimal?              @db.Decimal(10, 2)
+  maxPrice        Decimal?              @db.Decimal(10, 2)
+  currency        String?
+  classifications String[] // normalized genres/styles
+  attribution     String // required provider attribution string
+  raw             Json? // raw payload for debugging; not shown to users
+  fetchedAt       DateTime
+  expiresAt       DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@unique([provider, providerId])
+  @@index([startsAt])
+  @@index([city])
+}

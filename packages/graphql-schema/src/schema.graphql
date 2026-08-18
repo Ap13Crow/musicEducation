@@ -1,7 +1,7 @@
 scalar DateTime
 scalar JSON
 
-# ── Enums ───────────────────────────────────────────────────────
+# ── Enums ────────────────────────────────────
 
 enum Role {
   GUEST
@@ -74,7 +74,7 @@ enum EventBookingStatus {
   ATTENDED
 }
 
-# ── Pagination ───────────────────────────────────────────────────
+# ── Pagination ──────────────────────────────────
 
 type PageInfo {
   hasNextPage: Boolean!
@@ -82,7 +82,7 @@ type PageInfo {
   totalCount: Int!
 }
 
-# ── Auth ─────────────────────────────────────────────────────────
+# ── Auth ────────────────────────────────────────
 
 type AuthPayload {
   accessToken: String!
@@ -96,7 +96,7 @@ type ZoomMeetingInfo {
   startUrl: String!
 }
 
-# ── Users ─────────────────────────────────────────────────────────
+# ── Users ────────────────────────────────────────
 
 type User {
   id: ID!
@@ -202,7 +202,7 @@ type TeacherConnection {
   pageInfo: PageInfo!
 }
 
-# ── Courses ───────────────────────────────────────────────────────
+# ── Courses ──────────────────────────────────────
 
 type Category {
   id: ID!
@@ -294,7 +294,7 @@ type EnrollmentConnection {
   pageInfo: PageInfo!
 }
 
-# ── Assessment ─────────────────────────────────────────────────────
+# ── Assessment ───────────────────────────────────
 
 type Assessment {
   id: ID!
@@ -325,7 +325,7 @@ type AssessmentAnswer {
   isCorrect: Boolean
 }
 
-# ── Bookings ────────────────────────────────────────────────────────
+# ── Bookings ──────────────────────────────────────
 
 type Booking {
   id: ID!
@@ -354,7 +354,7 @@ type BookingConnection {
   pageInfo: PageInfo!
 }
 
-# ── Events ─────────────────────────────────────────────────────────
+# ── Events ──────────────────────────────────────
 
 type Event {
   id: ID!
@@ -406,7 +406,49 @@ type EventConnection {
   pageInfo: PageInfo!
 }
 
-# ── Payments ──────────────────────────────────────────────────────
+# ── External event discovery (read-only projections; never authored Events) ──
+
+enum ExternalEventProvider {
+  TICKETMASTER
+  CLASSICTIC
+}
+
+type ExternalEventProjection {
+  id: ID!
+  provider: ExternalEventProvider!
+  title: String!
+  description: String
+  url: String! # provider deep/affiliate link — the only purchase path
+  imageUrl: String
+  startsAt: DateTime!
+  endsAt: DateTime
+  timezone: String
+  venueName: String
+  city: String
+  country: String
+  latitude: Float
+  longitude: Float
+  minPrice: Float
+  maxPrice: Float
+  currency: String
+  classifications: [String!]!
+  attribution: String! # required provider attribution string
+}
+
+type ExternalEventConnection {
+  nodes: [ExternalEventProjection!]!
+  pageInfo: PageInfo!
+}
+
+input ExternalEventFilterInput {
+  city: String
+  country: String
+  classification: String
+  minDate: DateTime
+  maxDate: DateTime
+}
+
+# ── Payments ────────────────────────────────────
 
 type Payment {
   id: ID!
@@ -425,7 +467,7 @@ type CheckoutSession {
   checkoutUrl: String!
 }
 
-# ── Social Feed ───────────────────────────────────────────────────
+# ── Social Feed ──────────────────────────────────
 
 type FeedPost {
   id: ID!
@@ -454,7 +496,7 @@ type FeedPostConnection {
   pageInfo: PageInfo!
 }
 
-# ── Reviews ───────────────────────────────────────────────────────
+# ── Reviews ──────────────────────────────────
 
 type Review {
   id: ID!
@@ -474,7 +516,7 @@ type ReviewConnection {
   pageInfo: PageInfo!
 }
 
-# ── Admin ─────────────────────────────────────────────────────────
+# ── Admin ──────────────────────────────────────
 
 type AdminSetting {
   id: ID!
@@ -491,7 +533,7 @@ type AdminStats {
   totalRevenue: Float!
 }
 
-# ── Input Types ───────────────────────────────────────────────────
+# ── Input Types ──────────────────────────────────
 
 input RegisterInput {
   email: String!
@@ -701,7 +743,7 @@ input CreateReviewInput {
   isPublic: Boolean
 }
 
-# ── Queries ───────────────────────────────────────────────────────
+# ── Queries ────────────────────────────────────
 
 type Query {
   # Auth
@@ -732,6 +774,10 @@ type Query {
   myEventBookings(page: Int, limit: Int): [EventBooking!]!
   myEvents(page: Int, limit: Int): EventConnection!
 
+  # External event discovery (Ticketmaster now, Classictic later) — read-only,
+  # clearly attributed, links out via `url`. Never enters authored Event flows.
+  externalEvents(filter: ExternalEventFilterInput, page: Int, limit: Int): ExternalEventConnection!
+
   # Assessments
   assessmentQuestions(category: String, difficulty: String, instrument: String, limit: Int): [AssessmentQuestion!]!
   myAssessments: [Assessment!]!
@@ -752,7 +798,7 @@ type Query {
   adminUsers(role: Role, search: String, page: Int, limit: Int): [User!]!
 }
 
-# ── Mutations ─────────────────────────────────────────────────────
+# ── Mutations ───────────────────────────────────
 
 type Mutation {
   # Auth

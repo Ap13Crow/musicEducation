@@ -24,16 +24,18 @@ const KEYCLOAK_REDIRECT_URIS = `${APP_URL}/*`;
 const KEYCLOAK_REALM = KEYCLOAK_ISSUER_URL.split('/realms/').pop() ?? 'mymusic-coach';
 const KEYCLOAK_USERS_URL = `${keycloakAdminUrl}/#/${KEYCLOAK_REALM}/users`;
 
-const SAMPLE_STATS = {
-  totalUsers: 1247,
-  totalTeachers: 42,
-  totalCourses: 86,
-  totalEvents: 23,
-  totalBookings: 534,
-  totalRevenue: 48750.0,
-};
-
-
+const GET_ADMIN_STATS = gql`
+  query AdminStats {
+    adminStats {
+      totalUsers
+      totalTeachers
+      totalCourses
+      totalEvents
+      totalBookings
+      totalRevenue
+    }
+  }
+`;
 
 function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string | number; color: string }) {
   return (
@@ -52,16 +54,22 @@ function StatCard({ icon: Icon, label, value, color }: { icon: any; label: strin
 }
 
 function OverviewTab() {
-  const stats = SAMPLE_STATS;
+  const { data, loading, error } = useQuery(GET_ADMIN_STATS, { fetchPolicy: 'cache-and-network' });
+  const stats = data?.adminStats;
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Failed to load platform stats: {error.message}
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <StatCard icon={Users} label="Total Users" value={stats.totalUsers} color="bg-blue-100 text-blue-600" />
-        <StatCard icon={UserCog} label="Teachers" value={stats.totalTeachers} color="bg-purple-100 text-purple-600" />
-        <StatCard icon={BookOpen} label="Courses" value={stats.totalCourses} color="bg-green-100 text-green-600" />
-        <StatCard icon={Calendar} label="Events" value={stats.totalEvents} color="bg-amber-100 text-amber-600" />
-        <StatCard icon={BarChart3} label="Bookings" value={stats.totalBookings} color="bg-pink-100 text-pink-600" />
-        <StatCard icon={DollarSign} label="Revenue" value={`CHF ${stats.totalRevenue.toLocaleString()}`} color="bg-emerald-100 text-emerald-600" />
+        <StatCard icon={Users} label="Total Users" value={loading && !stats ? '…' : stats?.totalUsers ?? 0} color="bg-blue-100 text-blue-600" />
+        <StatCard icon={UserCog} label="Teachers" value={loading && !stats ? '…' : stats?.totalTeachers ?? 0} color="bg-purple-100 text-purple-600" />
+        <StatCard icon={BookOpen} label="Courses" value={loading && !stats ? '…' : stats?.totalCourses ?? 0} color="bg-green-100 text-green-600" />
+        <StatCard icon={Calendar} label="Events" value={loading && !stats ? '…' : stats?.totalEvents ?? 0} color="bg-amber-100 text-amber-600" />
+        <StatCard icon={BarChart3} label="Bookings" value={loading && !stats ? '…' : stats?.totalBookings ?? 0} color="bg-pink-100 text-pink-600" />
+        <StatCard icon={DollarSign} label="Revenue" value={loading && !stats ? '…' : `CHF ${(stats?.totalRevenue ?? 0).toLocaleString()}`} color="bg-emerald-100 text-emerald-600" />
       </div>
 
       <div className="card p-4">

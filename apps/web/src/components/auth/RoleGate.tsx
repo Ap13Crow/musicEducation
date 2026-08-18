@@ -38,7 +38,8 @@ export default function RoleGate({
           <h1 className="mt-4 font-serif text-2xl font-semibold text-gray-900">Access restricted</h1>
           <p className="mt-2 text-sm text-gray-600">
             This workspace requires {allow.map((role) => role.toLowerCase()).join(' or ')} access.
-            Ask an administrator to assign the matching realm role, then sign out and back in.
+            Ask an administrator to assign that role from the admin dashboard — it applies on your
+            next page load, no need to sign out.
           </p>
         </div>
       </div>

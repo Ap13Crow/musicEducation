@@ -28,10 +28,13 @@ export const recommendationResolvers = {
         orderBy: { avgRating: 'desc' },
       });
 
-      // Recommend teachers matching user's instruments
+      // Recommend teachers matching user's instruments. Only currently-TEACHER
+      // users are recommendable — a demoted user's TeacherProfile row isn't
+      // deleted (it's history), so role is what "is a teacher" means here.
       const teachers = await prisma.teacherProfile.findMany({
         where: {
           isAvailable: true,
+          user: { role: 'TEACHER' },
           ...(instruments.length > 0 && { instruments: { hasSome: instruments } }),
         },
         take: 5,

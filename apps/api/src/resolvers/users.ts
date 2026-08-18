@@ -75,7 +75,11 @@ export const userResolvers = {
         });
       }
 
-      const where: any = { isAvailable: true };
+      // Only users who currently hold the TEACHER role are publicly discoverable.
+      // A TeacherProfile row is never deleted on demotion (it's history — past
+      // courses/bookings still reference it), so this check — not row
+      // existence — is what "is this person a teacher right now" means.
+      const where: any = { isAvailable: true, user: { role: 'TEACHER' } };
       if (filter) {
         if (filter.instrument) where.instruments = { has: filter.instrument };
         if (filter.maxHourlyRate !== undefined) where.hourlyRate = { lte: filter.maxHourlyRate };
@@ -102,7 +106,12 @@ export const userResolvers = {
     },
 
     async teacher(_: unknown, { id }: any, { prisma }: GraphQLContext) {
-      return prisma.teacherProfile.findUnique({ where: { id }, include: { certifications: true, availability: true } });
+      // Same rule as the `teachers` list: a demoted user's TeacherProfile row
+      // survives (history), but they stop being discoverable as a teacher.
+      return prisma.teacherProfile.findFirst({
+        where: { id, user: { role: 'TEACHER' } },
+        include: { certifications: true, availability: true },
+      });
     },
 
     async myAvailability(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {

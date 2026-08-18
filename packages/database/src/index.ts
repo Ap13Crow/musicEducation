@@ -27,6 +27,7 @@ export type {
   Follow,
   Review,
   AdminSetting,
+  ExternalEventProjection,
   Role,
   SkillLevel,
   CourseStatus,
@@ -37,4 +38,5 @@ export type {
   PaymentStatus,
   PaymentProvider,
   EventBookingStatus,
+  ExternalEventProvider,
 } from '@prisma/client';
