@@ -307,6 +307,14 @@ export const userResolvers = {
     locationCountry(profile: any) {
       return profile.user?.profile?.country ?? null;
     },
+    stripeAccountId(profile: any, _: unknown, { user }: GraphQLContext) {
+      const isOwnerOrAdmin = user?.id === profile.userId || user?.role === 'ADMIN';
+      return isOwnerOrAdmin ? (profile.stripeAccountId ?? null) : null;
+    },
+    stripePayoutsEnabled(profile: any, _: unknown, { user }: GraphQLContext) {
+      const isOwnerOrAdmin = user?.id === profile.userId || user?.role === 'ADMIN';
+      return isOwnerOrAdmin ? Boolean(profile.stripePayoutsEnabled) : null;
+    },
     async user(profile: any, _: unknown, { prisma }: GraphQLContext) {
       if (profile.user) return profile.user;
       return prisma.user.findUnique({ where: { id: profile.userId }, include: { profile: true } });

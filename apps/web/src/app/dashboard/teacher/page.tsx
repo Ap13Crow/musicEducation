@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { gql, useQuery } from '@apollo/client';
-import { BookOpen, Calendar, CalendarClock, CalendarPlus, User, UserRoundCheck } from 'lucide-react';
+import { BookOpen, Calendar, CalendarClock, CalendarPlus, CreditCard, User, UserRoundCheck } from 'lucide-react';
 import RoleGate from '@/components/auth/RoleGate';
 
 const GET_TEACHER_BOOKINGS = gql`
@@ -84,6 +84,7 @@ export default function TeacherWorkspacePage() {
           <WorkspaceCard href="/dashboard/teacher/availability" icon={<CalendarClock />} title="Lesson availability" text="Publish the recurring times students can book." />
           <WorkspaceCard href="/dashboard/teacher/content" icon={<BookOpen />} title="Theory studio" text="Create and publish native courses." />
           <WorkspaceCard href="/dashboard/teacher/content/performance" icon={<CalendarPlus />} title="Performance studio" text="Create and publish events." />
+          <WorkspaceCard href="/dashboard/teacher/payouts" icon={<CreditCard />} title="Payouts" text="Connect Stripe to receive your share of sales." />
         </div>
         <div className="mx-auto max-w-6xl px-6 pb-10">
           <UpcomingSessions />

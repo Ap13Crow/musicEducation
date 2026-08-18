@@ -101,19 +101,10 @@ export const adminResolvers = {
     },
   },
 
-  // Field resolvers on User that derive values not stored directly on the model.
-  User: {
-    // displayName lives on UserProfile; fall back to email prefix if no profile yet.
-    displayName: (u: any) =>
-      u.profile?.displayName ?? u.email?.split('@')[0] ?? 'Unknown',
-
-    // username is not a separate DB field — use the email prefix as a stable handle.
-    username: (u: any) => u.email?.split('@')[0] ?? u.id,
-
-    // Prisma column is emailVerified; schema field is isEmailVerified.
-    isEmailVerified: (u: any) => u.emailVerified ?? false,
-
-    // avatarUrl comes from profile
-    avatarUrl: (u: any) => u.profile?.avatarUrl ?? null,
-  },
+  // displayName/username/isEmailVerified/avatarUrl on User are resolved in
+  // users.ts — mergeResolvers merges field-by-field, so a second definition
+  // here for the same type+field would silently shadow that one (and did,
+  // for these four, until this cleanup) rather than adding anything of its
+  // own; both were behaviourally equivalent so no fix was needed there, but
+  // keeping one copy is what "one source of truth" is supposed to mean.
 };

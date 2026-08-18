@@ -155,6 +155,10 @@ model TeacherProfile {
   calendlyUsername String?
   avgRating        Float    @default(0)
   totalReviews     Int      @default(0)
+  // Stripe Connect Express account this teacher's share of course/booking/event
+  // revenue is transferred to. Null until the teacher completes onboarding.
+  stripeAccountId      String?  @unique
+  stripePayoutsEnabled Boolean  @default(false)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

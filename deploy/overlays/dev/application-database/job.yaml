@@ -36,6 +36,7 @@ spec:
               psql --set=ON_ERROR_STOP=1 --file=/schema/004-native-pillars.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/005-external-events.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/006-community-commerce.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/007-stripe-connect.sql
           envFrom:
             - secretRef:
                 name: postgres-mymusiccoach

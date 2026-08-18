@@ -150,6 +150,10 @@ type TeacherProfile {
   calendlyUsername: String
   certifications: [TeacherCertification!]
   availability: [TeacherAvailability!]
+  # Stripe Connect payout status. Only resolved for the teacher themself or an
+  # admin — null for anyone else viewing a public teacher profile.
+  stripeAccountId: String
+  stripePayoutsEnabled: Boolean
   user: User
 }
 
@@ -459,6 +463,10 @@ type Payment {
 type CheckoutSession {
   sessionId: String!
   checkoutUrl: String!
+}
+
+type StripeConnectLink {
+  url: String!
 }
 
 # ── Social Feed ──────────────────────
@@ -870,6 +878,9 @@ type Mutation {
 
   # Payments
   createCheckoutSession(type: String!, refId: ID!, provider: PaymentProvider): CheckoutSession!
+  # Teacher payouts — creates (once) a Stripe Connect Express account for the
+  # calling teacher and returns a fresh hosted onboarding link.
+  createStripeConnectOnboardingLink: StripeConnectLink!
 
   # Admin
   updateAdminSetting(key: String!, value: String!): AdminSetting!
