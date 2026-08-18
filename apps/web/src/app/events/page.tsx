@@ -68,9 +68,10 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 function formatPriceRange(minPrice: number | null, maxPrice: number | null, currency: string | null) {
   if (minPrice == null && maxPrice == null) return null;
-  const prefix = currency ? `${currency} ` : '';
-  if (minPrice != null && maxPrice != null && minPrice !== maxPrice) return `${prefix}${minPrice}–${maxPrice}`;
-  return `${prefix}${minPrice ?? maxPrice}`;
+  const cur = currency ?? '';
+  const amount =
+    minPrice != null && maxPrice != null && minPrice !== maxPrice ? `${minPrice}–${maxPrice}` : `${minPrice ?? maxPrice}`;
+  return cur ? `${cur} ${amount}` : amount;
 }
 
 export default function EventsPage() {

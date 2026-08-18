@@ -8,15 +8,12 @@ COPY apps/web/package.json ./apps/web/package.json
 COPY packages/database/package.json ./packages/database/package.json
 COPY packages/graphql-schema/package.json ./packages/graphql-schema/package.json
 COPY packages/mcp-server/package.json ./packages/mcp-server/package.json
-# npm install (not ci): apps/web's package.json gained @playwright/test and
-# package-lock.json regeneration for it is tracked separately (see
-# docs/development.md); install resolves it from the existing lockfile
-# instead of requiring exact sync. Browser binaries are irrelevant to this
-# production build (e2e/ isn't part of it — see apps/web/tsconfig.json's
-# exclude — and the Playwright CI job installs its own browser), so skip
-# that download entirely rather than pay for it on every image build.
+# Browser binaries are irrelevant to this production build (e2e/ isn't part
+# of it — see apps/web/tsconfig.json's exclude — and the Playwright CI job
+# installs its own browser), so skip that download entirely rather than pay
+# for it on every image build.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-RUN npm install --workspace @my-music-coach/web --include-workspace-root
+RUN npm ci --workspace @my-music-coach/web --include-workspace-root
 
 FROM deps AS builder
 COPY apps/web ./apps/web

@@ -113,10 +113,7 @@ jobs:
           node-version: '20'
           cache: npm
       - name: Install dependencies
-        # npm ci is intentionally not used here: the committed lockfile can
-        # lag a freshly-added workspace dependency (see docs/development.md),
-        # and some Docker builds in this repo use `npm install` for the same reason.
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Install Playwright's Chromium
         run: npx playwright install --with-deps chromium
       - name: Run the Playwright suite
