@@ -21,9 +21,11 @@ export function calculateApplicationFee(amountCents: number): number {
 // Resolves which teacher (if any) a checkout line item's revenue belongs to,
 // so createCheckoutSession can route funds via Stripe Connect once that
 // teacher has completed onboarding. Courses and bookings hang off a
-// TeacherProfile directly; events are published by a User who — per
-// RoleGate on the publishing page — is always a teacher, so we look their
-// TeacherProfile up by userId.
+// TeacherProfile directly; events are published by a User with the
+// TEACHER/ADMIN role (createEvent's own requireRole), but that doesn't
+// guarantee a TeacherProfile row exists — it's provisioned separately via
+// applyAsTeacher — so this lookup by publisherId can legitimately return
+// null, same as the other two branches.
 async function getPayoutDestination(prisma: GraphQLContext['prisma'], type: string, refId: string) {
   if (type === 'course') {
     const course = await prisma.course.findUnique({ where: { id: refId }, include: { teacherProfile: true } });

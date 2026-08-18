@@ -490,9 +490,9 @@ jobs:
               echo "lookupTeacherProfileId must be alphanumeric; got: $LOOKUP_TEACHER_PROFILE_ID" >&2
               exit 1
             fi
-            echo 'Teacher profile name lookup (email/role/stored displayName only):'
+            echo 'Teacher profile name lookup (email masked, role/stored displayName only):'
             kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
-              "${db_url_js}const{PrismaClient}=require('@prisma/client');const p=new PrismaClient();p.teacherProfile.findUnique({where:{id:'$LOOKUP_TEACHER_PROFILE_ID'},include:{user:{include:{profile:true}}}}).then(tp=>{console.log(tp?JSON.stringify({email:tp.user.email,role:tp.user.role,storedDisplayName:tp.user.profile?.displayName??null}):'not found');return p.\$disconnect()}).catch(e=>{console.error(e.message);process.exit(1)})"
+              "${db_url_js}const mask=e=>e?e.replace(/^(.).*(@.*)$/,'\$1***\$2'):null;const{PrismaClient}=require('@prisma/client');const p=new PrismaClient();p.teacherProfile.findUnique({where:{id:'$LOOKUP_TEACHER_PROFILE_ID'},include:{user:{include:{profile:true}}}}).then(tp=>{console.log(tp?JSON.stringify({email:mask(tp.user.email),role:tp.user.role,storedDisplayName:tp.user.profile?.displayName??null}):'not found');return p.\$disconnect()}).catch(e=>{console.error(e.message);process.exit(1)})"
           fi
 
       - name: Report application status

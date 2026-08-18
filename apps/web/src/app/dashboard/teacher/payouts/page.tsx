@@ -13,10 +13,12 @@ const GET = gql`
     }
   }
 `;
+const PROVISION = gql`mutation Provision { applyAsTeacher { id } }`;
 const CREATE_LINK = gql`mutation ConnectPayouts { createStripeConnectOnboardingLink { url } }`;
 
 export default function PayoutsPage() {
   const { data, loading, error, refetch } = useQuery(GET, { fetchPolicy: 'cache-and-network' });
+  const [provision] = useMutation(PROVISION);
   const [createLink, { loading: linking }] = useMutation(CREATE_LINK);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [justOnboarded, setJustOnboarded] = useState(false);
@@ -31,6 +33,11 @@ export default function PayoutsPage() {
   async function connect() {
     setLinkError(null);
     try {
+      // createStripeConnectOnboardingLink requires a TeacherProfile row, which
+      // isn't guaranteed to exist yet — same provision-then-act pattern the
+      // Theory/Performance studios use, so a first-time teacher isn't stuck
+      // on a confusing "complete your profile" error from the mutation itself.
+      if (!profile) await provision();
       const { data: res } = await createLink();
       if (res?.createStripeConnectOnboardingLink?.url) {
         window.location.href = res.createStripeConnectOnboardingLink.url;
