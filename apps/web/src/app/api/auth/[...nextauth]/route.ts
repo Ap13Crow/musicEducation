@@ -34,6 +34,7 @@ async function fetchIdentity(accessToken: string): Promise<{ role: string; displ
       headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ query: '{ me { role displayName } }' }),
       cache: 'no-store',
+      signal: AbortSignal.timeout(2_000),
     });
     if (!res.ok) return null;
     const body = await res.json();
