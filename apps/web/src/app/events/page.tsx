@@ -2,6 +2,7 @@
 
 import { gql, useQuery } from '@apollo/client';
 import Link from 'next/link';
+import { CalendarX } from 'lucide-react';
 
 const GET_EVENTS = gql`
   query GetEvents {
@@ -76,9 +77,15 @@ function formatPriceRange(minPrice: number | null, maxPrice: number | null, curr
 
 export default function EventsPage() {
   const liveApiEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_API === 'true';
-  const { data, loading } = useQuery(GET_EVENTS, { skip: !liveApiEnabled });
+  const { data, loading, error } = useQuery(GET_EVENTS, { skip: !liveApiEnabled });
 
-  const events: any[] = data?.events?.nodes?.length ? data.events.nodes : fallbackEvents;
+  // Fallback demo data is only for when the live API genuinely can't be
+  // reached (disabled in this environment, or the query errored) - a
+  // successful query that legitimately found zero published events must
+  // render an honest empty state below, not three fake events with a real
+  // "Buy Ticket" button.
+  const usingFallback = !liveApiEnabled || Boolean(error);
+  const events: any[] = usingFallback ? fallbackEvents : data?.events?.nodes ?? [];
   const externalEvents: any[] = data?.externalEvents?.nodes ?? [];
 
   return (
@@ -92,6 +99,18 @@ export default function EventsPage() {
           Discover upcoming classical music events near you and reserve your place directly on My Music Coach.
         </p>
 
+        {!liveApiEnabled && (
+          <p className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+            Live API is disabled in this environment. Showing sample event data.
+          </p>
+        )}
+
+        {error && liveApiEnabled && (
+          <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Live API is currently unavailable. Showing sample event data.
+          </p>
+        )}
+
         {loading ? (
           <div className="space-y-4">
             {[1, 2, 3].map((i) => (
@@ -101,7 +120,7 @@ export default function EventsPage() {
               </div>
             ))}
           </div>
-        ) : (
+        ) : events.length > 0 ? (
           <div className="space-y-4">
             {events.map((eventItem) => (
               <article key={eventItem.id} className="card p-6 sm:flex sm:items-center sm:justify-between">
@@ -122,6 +141,11 @@ export default function EventsPage() {
                 </button>
               </article>
             ))}
+          </div>
+        ) : (
+          <div className="py-16 text-center">
+            <CalendarX className="mx-auto mb-4 h-12 w-12 text-gray-300" />
+            <p className="text-gray-500">No upcoming events published yet — check back soon.</p>
           </div>
         )}
 

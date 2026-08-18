@@ -20,6 +20,18 @@ const GET_COURSES = gql`
       }
       pageInfo { totalCount hasNextPage }
     }
+  }
+`;
+
+// Split from GET_COURSES: myEnrollments requires auth, so bundling it into the
+// public catalog query meant a signed-out visitor's request never ran at all
+// (skip: !session below) and — for a signed-in visitor — one failing field
+// would sink the whole query under Apollo's default error policy. Guests now
+// get their own (more restricted — published + free-tier only, per the
+// `courses` resolver) catalog instead of nothing; this second query only adds
+// the "Enrolled" badge once someone actually has a session.
+const GET_MY_ENROLLMENTS = gql`
+  query MyEnrollmentsForCatalog {
     myEnrollments(page: 1, limit: 200) {
       nodes { courseId }
     }
@@ -96,11 +108,12 @@ export default function CoursesPage() {
 
   const { data, loading, error } = useQuery(GET_COURSES, {
     variables: { filter: Object.keys(filter).length > 0 ? filter : undefined, page: 1, limit: 24 },
-    skip: !liveApiEnabled || !session,
+    skip: !liveApiEnabled,
   });
+  const { data: enrollmentData } = useQuery(GET_MY_ENROLLMENTS, { skip: !liveApiEnabled || !session });
 
   const enrolledCourseIds = new Set<string>(
-    (data?.myEnrollments?.nodes ?? []).map((e: any) => e.courseId)
+    (enrollmentData?.myEnrollments?.nodes ?? []).map((e: any) => e.courseId)
   );
 
   // Client-side filtering for fallback data
