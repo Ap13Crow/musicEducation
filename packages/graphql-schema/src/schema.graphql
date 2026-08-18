@@ -1,7 +1,7 @@
 scalar DateTime
 scalar JSON
 
-# ── Enums ────────────────────────────────────
+# ── Enums ──────────────────────────────────
 
 enum Role {
   GUEST
@@ -74,7 +74,7 @@ enum EventBookingStatus {
   ATTENDED
 }
 
-# ── Pagination ──────────────────────────────────
+# ── Pagination ────────────────────────
 
 type PageInfo {
   hasNextPage: Boolean!
@@ -82,7 +82,7 @@ type PageInfo {
   totalCount: Int!
 }
 
-# ── Auth ────────────────────────────────────────
+# ── Auth ──────────────────────────
 
 type AuthPayload {
   accessToken: String!
@@ -96,7 +96,7 @@ type ZoomMeetingInfo {
   startUrl: String!
 }
 
-# ── Users ────────────────────────────────────────
+# ── Users ────────────────────────
 
 type User {
   id: ID!
@@ -202,7 +202,7 @@ type TeacherConnection {
   pageInfo: PageInfo!
 }
 
-# ── Courses ──────────────────────────────────────
+# ── Courses ────────────────────────
 
 type Category {
   id: ID!
@@ -238,12 +238,6 @@ type Course {
   category: Category
   sections: [CourseSection!]
   reviews(page: Int, limit: Int): ReviewConnection
-}
-
-type SyncResult {
-  created: Int!
-  skipped: Int!
-  total: Int!
 }
 
 type CourseSection {
@@ -294,7 +288,7 @@ type EnrollmentConnection {
   pageInfo: PageInfo!
 }
 
-# ── Assessment ───────────────────────────────────
+# ── Assessment ───────────────────────
 
 type Assessment {
   id: ID!
@@ -325,7 +319,7 @@ type AssessmentAnswer {
   isCorrect: Boolean
 }
 
-# ── Bookings ──────────────────────────────────────
+# ── Bookings ────────────────────────
 
 type Booking {
   id: ID!
@@ -354,7 +348,7 @@ type BookingConnection {
   pageInfo: PageInfo!
 }
 
-# ── Events ──────────────────────────────────────
+# ── Events ────────────────────────
 
 type Event {
   id: ID!
@@ -448,7 +442,7 @@ input ExternalEventFilterInput {
   maxDate: DateTime
 }
 
-# ── Payments ────────────────────────────────────
+# ── Payments ───────────────────────
 
 type Payment {
   id: ID!
@@ -467,7 +461,7 @@ type CheckoutSession {
   checkoutUrl: String!
 }
 
-# ── Social Feed ──────────────────────────────────
+# ── Social Feed ──────────────────────
 
 type FeedPost {
   id: ID!
@@ -496,7 +490,7 @@ type FeedPostConnection {
   pageInfo: PageInfo!
 }
 
-# ── Reviews ──────────────────────────────────
+# ── Reviews ──────────────────────
 
 type Review {
   id: ID!
@@ -516,7 +510,7 @@ type ReviewConnection {
   pageInfo: PageInfo!
 }
 
-# ── Admin ──────────────────────────────────────
+# ── Admin ────────────────────────
 
 type AdminSetting {
   id: ID!
@@ -533,7 +527,7 @@ type AdminStats {
   totalRevenue: Float!
 }
 
-# ── Input Types ──────────────────────────────────
+# ── Input Types ──────────────────────
 
 input RegisterInput {
   email: String!
@@ -743,7 +737,7 @@ input CreateReviewInput {
   isPublic: Boolean
 }
 
-# ── Queries ────────────────────────────────────
+# ── Queries ──────────────────────
 
 type Query {
   # Auth
@@ -798,7 +792,7 @@ type Query {
   adminUsers(role: Role, search: String, page: Int, limit: Int): [User!]!
 }
 
-# ── Mutations ───────────────────────────────────
+# ── Mutations ───────────────────────
 
 type Mutation {
   # Auth
@@ -881,5 +875,4 @@ type Mutation {
   updateAdminSetting(key: String!, value: String!): AdminSetting!
   adminBanUser(userId: ID!): User!
   adminSetRole(userId: ID!, role: Role!): User!
-  syncKeycloakRoles: SyncResult!
 }

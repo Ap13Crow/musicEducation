@@ -452,6 +452,22 @@ jobs:
           echo 'Public health:'
           curl --fail --silent --show-error "$PUBLIC_URL/api/health"
 
+          echo 'Ticketmaster discovery — worker configuration and recent activity:'
+          worker_pod="$(kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name=worker -o json | jq -r '.items[] | select(.status.phase == "Running") | .metadata.name' | head -n 1)"
+          if [[ -z "$worker_pod" ]]; then
+            echo 'No running worker Pod was found.' >&2
+          else
+            kubectl -n "$NAMESPACE" exec "$worker_pod" -- node -e \
+              "console.log('TICKETMASTER_API_KEY=' + (process.env.TICKETMASTER_API_KEY ? 'configured' : 'missing'))"
+            echo 'Recent worker logs (bearer tokens and apikey query params redacted):'
+            kubectl -n "$NAMESPACE" logs "$worker_pod" --since=24h --tail=300 \
+              | sed -E 's/Bearer[[:space:]]+[A-Za-z0-9._~-]+/Bearer [REDACTED]/g; s/apikey=[A-Za-z0-9]+/apikey=[REDACTED]/g' \
+              || true
+          fi
+          echo 'External event projection row count (Ticketmaster ingestion output):'
+          kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
+            "const{PrismaClient}=require('@prisma/client');const p=new PrismaClient();p.externalEventProjection.count().then(n=>{console.log('rows='+n);return p.\$disconnect()}).catch(e=>{console.error(e.message);process.exit(1)})"
+
       - name: Report application status
         if: always()
         shell: bash

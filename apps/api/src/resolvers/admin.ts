@@ -1,6 +1,4 @@
-import axios from 'axios';
 import { requireRole } from '../middleware/auth.js';
-import { mapKeycloakRole } from '../middleware/keycloak.js';
 import type { GraphQLContext } from '../types.js';
 
 export const adminResolvers = {
@@ -91,69 +89,6 @@ export const adminResolvers = {
       });
 
       return updated;
-    },
-
-    async syncKeycloakRoles(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
-      requireRole(user, 'ADMIN');
-
-      const adminUrl = process.env.KEYCLOAK_ADMIN_URL ?? 'http://keycloak:8080';
-      const realm = process.env.KEYCLOAK_ADMIN_REALM ?? 'mymusic-coach';
-      const adminUser = process.env.KEYCLOAK_ADMIN;
-      const adminPass = process.env.KEYCLOAK_ADMIN_PASSWORD;
-
-      if (!adminUser || !adminPass) {
-        throw new Error('Keycloak admin credentials not configured (KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD).');
-      }
-
-      // 1. Obtain short-lived admin token from master realm
-      const tokenRes = await axios.post(
-        `${adminUrl}/realms/master/protocol/openid-connect/token`,
-        new URLSearchParams({
-          grant_type: 'password',
-          client_id: 'admin-cli',
-          username: adminUser,
-          password: adminPass,
-        }),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
-      );
-      const accessToken: string = tokenRes.data.access_token;
-      const headers = { Authorization: `Bearer ${accessToken}` };
-
-      // 2. Fetch all users in the realm (paginate up to 500)
-      const usersRes = await axios.get(
-        `${adminUrl}/admin/realms/${realm}/users?max=500`,
-        { headers },
-      );
-      const kcUsers: Array<{ id: string; email?: string; realmRoles?: string[] }> = usersRes.data;
-
-      let updated = 0;
-      let skipped = 0;
-
-      for (const kcu of kcUsers) {
-        if (!kcu.email) { skipped++; continue; }
-
-        // 3. Fetch effective realm roles for this user
-        const rolesRes = await axios.get(
-          `${adminUrl}/admin/realms/${realm}/users/${kcu.id}/role-mappings/realm`,
-          { headers },
-        );
-        const roles: string[] = (rolesRes.data ?? []).map((r: { name: string }) => r.name);
-        const fakeClaims = { sub: kcu.id, email: kcu.email, realm_access: { roles } };
-        const platformRole = mapKeycloakRole(fakeClaims as any);
-
-        // 4. Find local user by email; create if missing, update role if changed
-        const localUser = await prisma.user.findUnique({ where: { email: kcu.email } });
-        if (!localUser) { skipped++; continue; }
-
-        if (localUser.role !== platformRole) {
-          await prisma.user.update({ where: { id: localUser.id }, data: { role: platformRole } });
-          updated++;
-        } else {
-          skipped++;
-        }
-      }
-
-      return { created: updated, skipped, total: kcUsers.length };
     },
 
     // Schema name: adminBanUser — downgrades to STUDENT (minimum role; no hard-delete)
