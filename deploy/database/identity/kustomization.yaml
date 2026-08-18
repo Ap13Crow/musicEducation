@@ -15,3 +15,6 @@ configMapGenerator:
       - 008-teacher-applications.sql
       - 009-lesson-content-type.sql
       - 010-lesson-quizzes.sql
+      - 011-xp-awards.sql
+      - 012-assessment-answer-unique.sql
+      - 013-assessment-question-seed.sql

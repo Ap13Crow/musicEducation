@@ -1,13 +1,29 @@
 import Stripe from 'stripe';
 import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { awardXpOnce } from './xp.js';
 import type { GraphQLContext } from '../types.js';
+
+const EVENT_ATTENDED_XP = 40;
 
 function getStripe(): Stripe {
   if (!process.env.STRIPE_SECRET_KEY) {
     throw new Error('STRIPE_SECRET_KEY environment variable is required but was not set.');
   }
   return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
+}
+
+// success_url/cancel_url below are built by string-interpolating this value.
+// An unset FRONTEND_URL used to silently produce "undefined/payment/success"
+// - Stripe's SDK rejected the whole session with "Invalid URL: An explicit
+// scheme (such as https) must be provided", surfacing to the enroll button
+// as an opaque ApolloError. Fail loudly and specifically instead.
+export function getFrontendUrl(): string {
+  const url = process.env.FRONTEND_URL;
+  if (!url) {
+    throw new Error('FRONTEND_URL environment variable is required but was not set.');
+  }
+  return url;
 }
 
 // Platform's cut of a Connect destination charge, in basis points. The rest
@@ -76,6 +92,9 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
         update: { paymentId: payment.id, status: 'CONFIRMED' },
         create: { userId: userId!, eventId: refId!, paymentId: payment.id, status: 'CONFIRMED' },
       });
+      // Mirrors the free-event award in events.ts bookEvent - refId=eventId
+      // keeps it one-time even if Stripe retries this webhook.
+      await awardXpOnce(prisma, userId!, 'EVENT_ATTENDED', refId!, EVENT_ATTENDED_XP);
     }
   } else if (event.type === 'account.updated') {
     // Keep payout eligibility in sync with the connected account's own
@@ -132,12 +151,13 @@ export const paymentResolvers = {
         const destination = await getPayoutDestination(prisma, type, refId);
         const payoutReady = destination?.stripeAccountId && destination.stripePayoutsEnabled;
 
+        const frontendUrl = getFrontendUrl();
         const session = await getStripe().checkout.sessions.create({
           payment_method_types: ['card'],
           line_items: [{ price_data: { currency, product_data: { name: description }, unit_amount: amount }, quantity: 1 }],
           mode: 'payment',
-          success_url: `${process.env.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}&type=${type}&ref=${refId}`,
-          cancel_url: `${process.env.FRONTEND_URL}/payment/cancel`,
+          success_url: `${frontendUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}&type=${type}&ref=${refId}`,
+          cancel_url: `${frontendUrl}/payment/cancel`,
           metadata: { userId: user.id, type, refId },
           ...(payoutReady && amount > 0
             ? {
@@ -172,11 +192,12 @@ export const paymentResolvers = {
         await prisma.teacherProfile.update({ where: { id: profile.id }, data: { stripeAccountId: accountId } });
       }
 
+      const frontendUrl = getFrontendUrl();
       const link = await getStripe().accountLinks.create({
         account: accountId,
         type: 'account_onboarding',
-        refresh_url: `${process.env.FRONTEND_URL}/dashboard/teacher/payouts?refresh=true`,
-        return_url: `${process.env.FRONTEND_URL}/dashboard/teacher/payouts?onboarded=true`,
+        refresh_url: `${frontendUrl}/dashboard/teacher/payouts?refresh=true`,
+        return_url: `${frontendUrl}/dashboard/teacher/payouts?onboarded=true`,
       });
       return { url: link.url };
     },

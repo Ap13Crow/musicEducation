@@ -1,6 +1,9 @@
 import { GraphQLError } from 'graphql';
 import { requireAuth } from '../middleware/auth.js';
+import { awardXpOnce } from './xp.js';
 import type { GraphQLContext } from '../types.js';
+
+const TEACHER_FOUND_XP = 30;
 
 export const bookingResolvers = {
   Query: {
@@ -95,7 +98,7 @@ export const bookingResolvers = {
       });
       if (conflict) throw new GraphQLError('Time slot not available.', { extensions: { code: 'BAD_USER_INPUT' } });
 
-      return prisma.booking.create({
+      const booking = await prisma.booking.create({
         data: {
           userId: user.id,
           teacherProfileId,
@@ -108,6 +111,10 @@ export const bookingResolvers = {
           status: teacherProfile.hourlyRate ? 'PENDING' : 'CONFIRMED',
         },
       });
+      // "Found a teacher" - the achievement is booking one at all, not
+      // waiting on payment/confirmation; the 'self' key makes this one-time.
+      await awardXpOnce(prisma, user.id, 'TEACHER_FOUND', 'self', TEACHER_FOUND_XP);
+      return booking;
     },
 
     async confirmBooking(_: unknown, { bookingId }: any, { prisma, user }: GraphQLContext) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { gql, useMutation, useQuery } from '@apollo/client';
 import { keycloakAdminUrl, keycloakIssuer } from '@/lib/external-links';
@@ -386,6 +386,73 @@ function ContentTab() {
   );
 }
 
+const COURSE_BONUS_MIN_KEY = 'xp.courseBonus.min';
+const COURSE_BONUS_MAX_KEY = 'xp.courseBonus.max';
+
+const GET_ADMIN_SETTINGS = gql`
+  query GetAdminSettingsForXp {
+    adminSettings { key value }
+  }
+`;
+const UPDATE_ADMIN_SETTING = gql`
+  mutation UpdateXpBoundsSetting($key: String!, $value: String!) {
+    updateAdminSetting(key: $key, value: $value) { key value }
+  }
+`;
+
+function XpBoundsCard() {
+  const { data, loading, refetch } = useQuery(GET_ADMIN_SETTINGS);
+  const [updateSetting, { loading: saving }] = useMutation(UPDATE_ADMIN_SETTING);
+  const settings = Object.fromEntries((data?.adminSettings ?? []).map((s: any) => [s.key, s.value]));
+  const [min, setMin] = useState('');
+  const [max, setMax] = useState('');
+
+  useEffect(() => {
+    if (data) {
+      setMin(settings[COURSE_BONUS_MIN_KEY] ?? '5');
+      setMax(settings[COURSE_BONUS_MAX_KEY] ?? '200');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    await Promise.all([
+      updateSetting({ variables: { key: COURSE_BONUS_MIN_KEY, value: String(min) } }),
+      updateSetting({ variables: { key: COURSE_BONUS_MAX_KEY, value: String(max) } }),
+    ]);
+    await refetch();
+  }
+
+  return (
+    <div className="card p-5 space-y-3">
+      <h3 className="font-semibold">XP &amp; Gamification</h3>
+      <p className="text-sm text-gray-600">
+        Bounds a teacher or admin can award a student as a course bonus (from the course&rsquo;s Students panel).
+        Profile completion, first teacher booking, event attendance, lesson completion, and assessment XP are
+        automatic and not configurable here.
+      </p>
+      {loading ? (
+        <p className="text-sm text-gray-500">Loading…</p>
+      ) : (
+        <form onSubmit={save} className="flex flex-wrap items-end gap-4">
+          <label className="text-sm font-medium">
+            Min course bonus XP
+            <input type="number" min="0" className="input mt-1 w-32" value={min} onChange={(e) => setMin(e.target.value)} />
+          </label>
+          <label className="text-sm font-medium">
+            Max course bonus XP
+            <input type="number" min="0" className="input mt-1 w-32" value={max} onChange={(e) => setMax(e.target.value)} />
+          </label>
+          <button disabled={saving} className="btn-primary rounded-lg px-4 py-2 text-sm">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 function SettingsTab() {
   return (
     <div className="space-y-6">
@@ -393,6 +460,8 @@ function SettingsTab() {
         <p className="font-medium">Platform configuration</p>
         <p className="mt-1">Security, identity and platform settings are managed via environment variables and the Keycloak admin console. Changes take effect on the next container restart.</p>
       </div>
+
+      <XpBoundsCard />
 
       <div className="card p-5 space-y-3">
         <h3 className="font-semibold flex items-center gap-2">

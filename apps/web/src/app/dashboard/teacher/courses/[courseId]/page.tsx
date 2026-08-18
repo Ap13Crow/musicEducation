@@ -17,6 +17,9 @@ const DELETE_LESSON=gql`mutation DeleteLesson($id:ID!){deleteLesson(id:$id)}`;
 const PUBLISH=gql`mutation PublishBuilderCourse($id:ID!){publishCourse(id:$id){id status}}`;
 const ADD_QUIZ_QUESTION=gql`mutation AddQuizQuestion($input:CreateQuizQuestionInput!){createQuizQuestion(input:$input){id}}`;
 const DELETE_QUIZ_QUESTION=gql`mutation DeleteQuizQuestion($id:ID!){deleteQuizQuestion(id:$id)}`;
+const GET_ENROLLMENTS=gql`query CourseEnrollmentsForBuilder($courseId:ID!){courseEnrollments(courseId:$courseId,limit:200){nodes{id progress completedAt user{id profile{displayName}}}}}`;
+const GET_XP_BOUNDS=gql`query XpAwardBoundsForBuilder{xpAwardBounds{min max}}`;
+const AWARD_XP=gql`mutation AwardCourseXp($enrollmentId:ID!,$amount:Int!,$note:String){awardCourseXp(enrollmentId:$enrollmentId,amount:$amount,note:$note){id amount}}`;
 
 const CONTENT_TYPES=[{value:'VIDEO',label:'Video'},{value:'YOUTUBE',label:'YouTube'},{value:'AUDIO',label:'Audio'}];
 const CONTENT_TYPE_LABELS:Record<string,string>={VIDEO:'Video',YOUTUBE:'YouTube',AUDIO:'Audio'};
@@ -29,6 +32,10 @@ export default function CourseBuilderPage(){
  const [update,{loading:saving}]=useMutation(UPDATE);const [addSection]=useMutation(ADD_SECTION);const [deleteSection]=useMutation(DELETE_SECTION);
  const [addLesson]=useMutation(ADD_LESSON);const [updateLesson]=useMutation(UPDATE_LESSON);const [deleteLesson]=useMutation(DELETE_LESSON);const [publish]=useMutation(PUBLISH);
  const [addQuizQuestion]=useMutation(ADD_QUIZ_QUESTION);const [deleteQuizQuestion]=useMutation(DELETE_QUIZ_QUESTION);
+ const {data:enrollmentData,refetch:refetchEnrollments}=useQuery(GET_ENROLLMENTS,{variables:{courseId},skip:!courseId});
+ const {data:boundsData}=useQuery(GET_XP_BOUNDS);
+ const [awardXp,{loading:awarding}]=useMutation(AWARD_XP);
+ const [xpDraft,setXpDraft]=useState<Record<string,{amount:string;note:string}>>({});
  const [form,setForm]=useState({title:'',description:'',shortSummary:'',level:'BEGINNER',price:'0',currency:'CHF',language:'en',instruments:'',musicStyles:'',thumbnailUrl:''});
  const [sectionTitle,setSectionTitle]=useState('');const [lessonDraft,setLessonDraft]=useState<Record<string,any>>({});const [editing,setEditing]=useState<any>(null);
  const [quizLessonId,setQuizLessonId]=useState<string|null>(null);const [questionDraft,setQuestionDraft]=useState<any>(EMPTY_QUESTION_DRAFT);
@@ -50,6 +57,15 @@ export default function CourseBuilderPage(){
   setQuestionDraft(EMPTY_QUESTION_DRAFT);await refetch();
  }
  async function removeQuestion(id:string){await deleteQuizQuestion({variables:{id}});await refetch();}
+ const bounds=boundsData?.xpAwardBounds??{min:5,max:200};
+ async function giveXp(enrollmentId:string){
+  const draft=xpDraft[enrollmentId]??{amount:'',note:''};
+  const amount=parseInt(draft.amount,10);
+  if(!Number.isInteger(amount)||amount<bounds.min||amount>bounds.max)return alert(`Amount must be a whole number between ${bounds.min} and ${bounds.max}.`);
+  await awardXp({variables:{enrollmentId,amount,note:draft.note.trim()||null}});
+  setXpDraft({...xpDraft,[enrollmentId]:{amount:'',note:''}});
+  await refetchEnrollments();
+ }
  return <RoleGate allow={['TEACHER','ADMIN']} callbackUrl={`/dashboard/teacher/courses/${courseId}`}><main className="mx-auto max-w-6xl px-6 py-10">
   <Link href="/dashboard/teacher/content" className="text-sm text-primary-700">← Theory studio</Link>{loading?<p className="mt-8">Loading…</p>:error||!course?<p className="mt-8 text-red-600">{error?.message??'Course not found.'}</p>:<>
   <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div><h1 className="font-serif text-3xl font-bold">Course builder</h1><p className="text-sm text-gray-600">{course.status} · /courses/{course.slug}</p></div>{course.status==='DRAFT'&&<button className="btn-primary rounded-lg px-4 py-2" onClick={async()=>{await publish({variables:{id:courseId}});await refetch();}}>Publish course</button>}</div>
@@ -67,6 +83,18 @@ export default function CourseBuilderPage(){
     <div className="mt-4 space-y-2">{section.lessons?.map((lesson:any)=><div key={lesson.id} className="flex items-center justify-between rounded-lg border p-3"><div><p className="font-medium">{lesson.title}</p><p className="text-xs text-gray-500">{CONTENT_TYPE_LABELS[lesson.contentType as string]??'Video'} · {lesson.durationMin} min{lesson.isFreePreview?' · Free preview':''}{lesson.quizQuestions?.length?` · ${lesson.quizQuestions.length} quiz question${lesson.quizQuestions.length===1?'':'s'}`:''}</p></div><div className="flex gap-3"><button className="inline-flex items-center gap-1 text-sm text-primary-700" onClick={()=>setQuizLessonId(lesson.id)}><HelpCircle className="h-4 w-4"/>Quiz</button><button className="text-sm text-primary-700" onClick={()=>setEditing({...lesson})}>Edit</button><button className="text-red-600" onClick={async()=>{await deleteLesson({variables:{id:lesson.id}});await refetch();}}><Trash2 className="h-4 w-4"/></button></div></div>)}</div>
     <div className="mt-4 grid gap-2 rounded-xl bg-gray-50 p-4 sm:grid-cols-2"><input className="input" placeholder="Unit title" value={lessonDraft[section.id]?.title??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],title:e.target.value}})}/><input type="number" min="0" className="input" placeholder="Length in minutes" value={lessonDraft[section.id]?.durationMin??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],durationMin:e.target.value}})}/><textarea className="input" placeholder="Unit description or written material" value={lessonDraft[section.id]?.description??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],description:e.target.value}})}/><select className="input" value={lessonDraft[section.id]?.contentType??'VIDEO'} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],contentType:e.target.value}})}>{CONTENT_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select><input type="url" className="input" placeholder={URL_PLACEHOLDERS[lessonDraft[section.id]?.contentType??'VIDEO']} value={lessonDraft[section.id]?.videoUrl??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],videoUrl:e.target.value}})}/><label className="text-sm"><input type="checkbox" checked={Boolean(lessonDraft[section.id]?.isFreePreview)} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],isFreePreview:e.target.checked}})}/> Free preview</label><button className="btn-secondary rounded-lg px-4 py-2" onClick={()=>void createLesson(section.id)}>Add unit</button></div>
    </article>)}</div>
+  </section>
+  <section className="mt-8"><h2 className="text-2xl font-semibold">Students</h2>
+   <p className="mt-1 text-sm text-gray-500">Award a bonus ({bounds.min}–{bounds.max} XP) for engagement or completion, on top of automatic per-lesson XP.</p>
+   <div className="mt-4 space-y-2">
+    {(enrollmentData?.courseEnrollments?.nodes??[]).length===0&&<p className="text-sm text-gray-500">No enrollments yet.</p>}
+    {enrollmentData?.courseEnrollments?.nodes?.map((e:any)=><div key={e.id} className="card flex flex-wrap items-center gap-3 p-4">
+     <div className="flex-1 min-w-[10rem]"><p className="font-medium">{e.user?.profile?.displayName??'Student'}</p><p className="text-xs text-gray-500">{Math.round((e.progress??0)*100)}% complete{e.completedAt?' · Completed':''}</p></div>
+     <input type="number" min={bounds.min} max={bounds.max} className="input w-24" placeholder="XP" value={xpDraft[e.id]?.amount??''} onChange={ev=>setXpDraft({...xpDraft,[e.id]:{amount:ev.target.value,note:xpDraft[e.id]?.note??''}})}/>
+     <input className="input w-48" placeholder="Note (optional)" value={xpDraft[e.id]?.note??''} onChange={ev=>setXpDraft({...xpDraft,[e.id]:{amount:xpDraft[e.id]?.amount??'',note:ev.target.value}})}/>
+     <button disabled={awarding} className="btn-secondary rounded-lg px-3 py-2 text-sm" onClick={()=>void giveXp(e.id)}>Award XP</button>
+    </div>)}
+   </div>
   </section>
   {editing&&<div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"><section className="w-full max-w-lg space-y-3 rounded-2xl bg-white p-6"><h2 className="text-xl font-semibold">Edit unit</h2><input className="input w-full" value={editing.title} onChange={e=>setEditing({...editing,title:e.target.value})}/><textarea className="input w-full" value={editing.description??''} onChange={e=>setEditing({...editing,description:e.target.value})}/><select className="input w-full" value={editing.contentType??'VIDEO'} onChange={e=>setEditing({...editing,contentType:e.target.value})}>{CONTENT_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select><input type="url" className="input w-full" placeholder={URL_PLACEHOLDERS[editing.contentType??'VIDEO']} value={editing.videoUrl??''} onChange={e=>setEditing({...editing,videoUrl:e.target.value})}/><input type="number" className="input w-full" value={editing.durationMin??0} onChange={e=>setEditing({...editing,durationMin:e.target.value})}/><label className="text-sm"><input type="checkbox" checked={Boolean(editing.isFreePreview)} onChange={e=>setEditing({...editing,isFreePreview:e.target.checked})}/> Free preview</label><div className="flex justify-end gap-3"><button className="btn-secondary rounded-lg px-4 py-2" onClick={()=>setEditing(null)}>Cancel</button><button className="btn-primary rounded-lg px-4 py-2" onClick={()=>void saveLesson()}>Save unit</button></div></section></div>}
   {quizLesson&&<div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"><section className="max-h-[85vh] w-full max-w-2xl space-y-4 overflow-y-auto rounded-2xl bg-white p-6">

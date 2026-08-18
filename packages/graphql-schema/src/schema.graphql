@@ -218,6 +218,26 @@ type GamificationProfile {
   currentStreak: Int!
 }
 
+enum XpAwardReason {
+  PROFILE_COMPLETED
+  TEACHER_FOUND
+  EVENT_ATTENDED
+  COURSE_BONUS
+}
+
+type XpAward {
+  id: ID!
+  reason: XpAwardReason!
+  amount: Int!
+  note: String
+  createdAt: DateTime!
+}
+
+type XpAwardBounds {
+  min: Int!
+  max: Int!
+}
+
 type UserConnection {
   nodes: [User!]!
   pageInfo: PageInfo!
@@ -359,6 +379,7 @@ type Enrollment {
   completedAt: DateTime
   createdAt: DateTime!
   course: Course
+  user: User
   lessonProgress: [LessonProgress!]!
 }
 
@@ -886,6 +907,9 @@ type Query {
   myCourses(page: Int, limit: Int): CourseConnection!
   myEnrollments(page: Int, limit: Int): EnrollmentConnection!
   myEnrollment(courseId: ID!): Enrollment
+  # Enrolled students for a course, for the owning teacher/admin - powers the
+  # course builder's Students panel (award bonus XP).
+  courseEnrollments(courseId: ID!, page: Int, limit: Int): EnrollmentConnection!
   myQuizAttempt(lessonId: ID!): QuizAttempt
   categories: [Category!]!
 
@@ -908,6 +932,11 @@ type Query {
   # Assessments
   assessmentQuestions(category: String, difficulty: String, instrument: String, limit: Int): [AssessmentQuestion!]!
   myAssessments: [Assessment!]!
+
+  # XP ledger — audits every grant outside per-lesson/assessment completion.
+  myXpAwards: [XpAward!]!
+  # Configured min/max for teacher/admin-awarded course bonus XP.
+  xpAwardBounds: XpAwardBounds!
 
   # Feed
   feed(page: Int, limit: Int): FeedPostConnection!
@@ -1001,6 +1030,9 @@ type Mutation {
   startAssessment: Assessment!
   submitAssessmentAnswer(input: SubmitAssessmentAnswerInput!): AssessmentAnswer!
   completeAssessment(assessmentId: ID!): Assessment!
+
+  # XP — teacher/admin-awarded course bonus, bounded by xpAwardBounds.
+  awardCourseXp(enrollmentId: ID!, amount: Int!, note: String): XpAward!
 
   # Feed
   createFeedPost(input: CreateFeedPostInput!): FeedPost!

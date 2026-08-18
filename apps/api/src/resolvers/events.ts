@@ -1,6 +1,9 @@
 import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { awardXpOnce } from './xp.js';
 import type { GraphQLContext } from '../types.js';
+
+const EVENT_ATTENDED_XP = 40;
 
 export const eventResolvers = {
   Query: {
@@ -139,6 +142,9 @@ export const eventResolvers = {
         data: { userId: user.id, eventId, status: 'CONFIRMED' },
       });
       await prisma.event.update({ where: { id: eventId }, data: { currentCapacity: { increment: 1 } } });
+      // Once per event (refId=eventId), not per-user-globally - a paid event's
+      // equivalent award fires from the Stripe webhook in payments.ts instead.
+      await awardXpOnce(prisma, user.id, 'EVENT_ATTENDED', eventId, EVENT_ATTENDED_XP);
       return booking;
     },
 

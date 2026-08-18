@@ -133,6 +133,7 @@ model User {
   publishedEvents     Event[]
   studentAvailability StudentAvailability[]
   quizAttempts        QuizAttempt[]
+  xpAwards            XpAward[]
 }
 
 model UserCredential {
@@ -261,6 +262,38 @@ model GamificationProfile {
   updatedAt   DateTime   @updatedAt
 
   user User @relation(fields: [userId], references: [id])
+}
+
+enum XpAwardReason {
+  PROFILE_COMPLETED
+  TEACHER_FOUND
+  EVENT_ATTENDED
+  COURSE_BONUS
+}
+
+// Audit ledger for every XP grant outside per-lesson (Lesson.xpReward) and
+// assessment (Assessment.xpAwarded) completion, which already increment
+// GamificationProfile directly. refId is the idempotency key for the
+// automatic one-time reasons (PROFILE_COMPLETED/TEACHER_FOUND use the
+// sentinel 'self'; EVENT_ATTENDED uses the event id) - the unique
+// constraint below relies on Postgres treating NULL <> NULL, so
+// COURSE_BONUS (refId always null) is deliberately exempt and stays
+// repeatable, since a teacher/admin may award it more than once.
+model XpAward {
+  id           String        @id @default(cuid())
+  userId       String
+  reason       XpAwardReason
+  refId        String?
+  enrollmentId String?
+  amount       Int
+  note         String?
+  awardedBy    String?
+  createdAt    DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, reason, refId])
+  @@index([userId])
 }
 
 model UserExternalIdentity {
@@ -473,6 +506,12 @@ model AssessmentAnswer {
 
   assessment Assessment         @relation(fields: [assessmentId], references: [id])
   question   AssessmentQuestion @relation(fields: [questionId], references: [id])
+
+  // Revisiting a question (e.g. going back a step) must update the existing
+  // answer, not add a second row - completeAssessment scores off
+  // assessment.answers.length, so a duplicate would inflate totalAnswered
+  // and silently skew the resulting score/skill level.
+  @@unique([assessmentId, questionId])
 }
 
 model Booking {
