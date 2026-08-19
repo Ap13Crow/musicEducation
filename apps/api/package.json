@@ -39,7 +39,7 @@
     "passport-openidconnect": "^0.1.2",
     "pino": "^9.2.0",
     "pino-pretty": "^11.2.0",
-    "stripe": "^16.0.0",
+    "stripe": "^22.5.0",
     "ws": "^8.17.1"
   },
   "devDependencies": {

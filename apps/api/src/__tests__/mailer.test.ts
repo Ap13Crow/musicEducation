@@ -24,7 +24,7 @@ describe('mailer', () => {
 
   it('mailConfigured() is false when SMTP_* is unset', async () => {
     clearSmtpEnv();
-    const { mailConfigured } = await import('../lib/mailer');
+    const { mailConfigured } = await import('../lib/mailer.js');
     expect(mailConfigured()).toBe(false);
   });
 
@@ -33,14 +33,14 @@ describe('mailer', () => {
     process.env.SMTP_HOST = 'smtp-relay.gmail.com';
     process.env.SMTP_USER = 'camille@mymusic.coach';
     // SMTP_PASSWORD and SMTP_FROM missing
-    const { mailConfigured } = await import('../lib/mailer');
+    const { mailConfigured } = await import('../lib/mailer.js');
     expect(mailConfigured()).toBe(false);
   });
 
   it('mailConfigured() is true once host/user/password/from are all set', async () => {
     clearSmtpEnv();
     setSmtpEnv();
-    const { mailConfigured } = await import('../lib/mailer');
+    const { mailConfigured } = await import('../lib/mailer.js');
     expect(mailConfigured()).toBe(true);
   });
 
@@ -48,7 +48,7 @@ describe('mailer', () => {
   // must never fail because email isn't configured yet in this deployment.
   it('sendMail() no-ops (resolves false, never throws) when unconfigured', async () => {
     clearSmtpEnv();
-    const { sendMail } = await import('../lib/mailer');
+    const { sendMail } = await import('../lib/mailer.js');
     await expect(sendMail({ to: 'student@example.com', subject: 'Hi', html: '<p>Hi</p>' })).resolves.toBe(false);
   });
 
@@ -60,7 +60,7 @@ describe('mailer', () => {
     setSmtpEnv();
     process.env.SMTP_HOST = '127.0.0.1';
     process.env.SMTP_PORT = '1'; // nothing listens here
-    const { sendMail } = await import('../lib/mailer');
+    const { sendMail } = await import('../lib/mailer.js');
     await expect(sendMail({ to: 'student@example.com', subject: 'Hi', html: '<p>Hi</p>' })).resolves.toBe(false);
   }, 10_000);
 });

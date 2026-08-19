@@ -357,9 +357,10 @@ jobs:
           }
 
           kcadm_config="/tmp/kcadm-smtp-$GITHUB_RUN_ID.config"
+          smtp_json="/tmp/realm-smtp-$GITHUB_RUN_ID.json"
           cleanup() {
-            kubectl -n "$NAMESPACE" exec "$keycloak_pod" -- rm -f "$kcadm_config" >/dev/null 2>&1 || true
-            unset admin_password smtp_password
+            kubectl -n "$NAMESPACE" exec "$keycloak_pod" -- rm -f "$kcadm_config" "$smtp_json" >/dev/null 2>&1 || true
+            unset admin_password smtp_password smtp_json_content
           }
           trap cleanup EXIT
 
@@ -369,7 +370,25 @@ jobs:
           # relay (see deploy/README.md) - Keycloak sends its own native
           # verify-email/reset-password mail through this once verifyEmail is
           # on, no application code involved.
-          kubectl -n "$NAMESPACE" exec "$keycloak_pod" --             /opt/keycloak/bin/kcadm.sh update realms/mymusic-coach             --config "$kcadm_config"             -s 'smtpServer.host=smtp-relay.gmail.com'             -s 'smtpServer.port=587'             -s 'smtpServer.from=camille@mymusic.coach'             -s 'smtpServer.fromDisplayName=MyMusic.Coach'             -s 'smtpServer.starttls=true'             -s 'smtpServer.auth=true'             -s 'smtpServer.user=camille@mymusic.coach'             -s "smtpServer.password=$smtp_password"             -s 'verifyEmail=true' >/dev/null
+          #
+          # The password travels over stdin into a file inside the Pod
+          # instead of as a kcadm -s command-line argument - argv is visible
+          # via process listings and can end up in audit logs. jq -Rs safely
+          # JSON-encodes it regardless of what characters it contains; kcadm
+          # update merges these fields onto the existing realm rather than
+          # replacing it wholesale, same as -s would.
+          smtp_json_content="$(jq -n --arg password "$smtp_password" '{
+            smtpServer: {
+              host: "smtp-relay.gmail.com", port: "587",
+              from: "camille@mymusic.coach", fromDisplayName: "MyMusic.Coach",
+              starttls: "true", auth: "true",
+              user: "camille@mymusic.coach", password: $password
+            },
+            verifyEmail: true
+          }')"
+          kubectl -n "$NAMESPACE" exec -i "$keycloak_pod" -- sh -c "umask 077 && cat > $smtp_json" <<< "$smtp_json_content"
+
+          kubectl -n "$NAMESPACE" exec "$keycloak_pod" --             /opt/keycloak/bin/kcadm.sh update realms/mymusic-coach             --config "$kcadm_config"             -f "$smtp_json" >/dev/null
 
           echo 'Realm SMTP configured and email verification enabled.'
 

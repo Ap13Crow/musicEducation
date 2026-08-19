@@ -2,6 +2,7 @@ import { GraphQLError } from 'graphql';
 import { requireAuth } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
 import { sendBookingConfirmedEmails } from '../lib/emails.js';
+import { logger } from '../utils/logger.js';
 import type { GraphQLContext } from '../types.js';
 
 const TEACHER_FOUND_XP = 30;
@@ -9,28 +10,36 @@ const TEACHER_FOUND_XP = 30;
 // Shared by bookSession (auto-confirmed when the teacher has no hourly rate)
 // and confirmBooking (a paid booking the teacher just accepted) - both are
 // "this booking just became CONFIRMED" moments, and both notify the same
-// two people. Best-effort: sendBookingConfirmedEmails never throws, so a
-// notification failure can't undo the confirmation that already happened.
+// two people. Deliberately not `await`ed by callers (see both call sites) -
+// this must never be able to turn an already-successful confirmation into a
+// failed mutation response, and a slow SMTP round-trip must never delay
+// that response either. sendBookingConfirmedEmails itself never throws, but
+// the lookup here still could (a DB hiccup), so this catches everything
+// internally rather than relying on every caller to remember to.
 export async function notifyBookingConfirmed(prisma: GraphQLContext['prisma'], bookingId: string) {
-  const booking = await prisma.booking.findUnique({
-    where: { id: bookingId },
-    include: { user: { include: { profile: true } }, teacherProfile: { include: { user: { include: { profile: true } } } } },
-  });
-  if (!booking) return;
-  // Same displayName fallback chain as the User.displayName field resolver
-  // in users.ts (profile.displayName -> local part of the email -> generic).
-  const studentName = booking.user.profile?.displayName || booking.user.email?.split('@')[0] || 'there';
-  const teacherName = booking.teacherProfile.user.profile?.displayName || booking.teacherProfile.user.email?.split('@')[0] || 'there';
-  await sendBookingConfirmedEmails({
-    studentEmail: booking.user.email,
-    studentName,
-    teacherEmail: booking.teacherProfile.user.email,
-    teacherName,
-    startsAt: booking.startsAt,
-    durationMin: booking.durationMin,
-    format: booking.format,
-    instrument: booking.instrument,
-  });
+  try {
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { user: { include: { profile: true } }, teacherProfile: { include: { user: { include: { profile: true } } } } },
+    });
+    if (!booking) return;
+    // Same displayName fallback chain as the User.displayName field resolver
+    // in users.ts (profile.displayName -> local part of the email -> generic).
+    const studentName = booking.user.profile?.displayName || booking.user.email?.split('@')[0] || 'there';
+    const teacherName = booking.teacherProfile.user.profile?.displayName || booking.teacherProfile.user.email?.split('@')[0] || 'there';
+    await sendBookingConfirmedEmails({
+      studentEmail: booking.user.email,
+      studentName,
+      teacherEmail: booking.teacherProfile.user.email,
+      teacherName,
+      startsAt: booking.startsAt,
+      durationMin: booking.durationMin,
+      format: booking.format,
+      instrument: booking.instrument,
+    });
+  } catch (error) {
+    logger.warn({ error, bookingId }, 'notifyBookingConfirmed failed');
+  }
 }
 
 export const bookingResolvers = {
@@ -79,8 +88,11 @@ export const bookingResolvers = {
         throw new GraphQLError('You cannot book a lesson with yourself.', { extensions: { code: 'BAD_USER_INPUT' } });
       }
       // The TeacherProfile row outlives a demotion (it's history); the
-      // current role is what decides whether they can still be booked.
-      if (teacherProfile.user.role !== 'TEACHER') {
+      // current role is what decides whether they can still be booked. Same
+      // TEACHER-or-ADMIN rule as the public teachers/teacher queries in
+      // users.ts - an admin discoverable there as a teacher must also be
+      // bookable here, or they'd be a dead end in the UI.
+      if (teacherProfile.user.role !== 'TEACHER' && teacherProfile.user.role !== 'ADMIN') {
         throw new GraphQLError('Teacher not found.', { extensions: { code: 'NOT_FOUND' } });
       }
       if (!teacherProfile.isAvailable) throw new GraphQLError('Teacher is not available.', { extensions: { code: 'BAD_USER_INPUT' } });
@@ -143,9 +155,12 @@ export const bookingResolvers = {
       // waiting on payment/confirmation; the 'self' key makes this one-time.
       await awardXpOnce(prisma, user.id, 'TEACHER_FOUND', 'self', TEACHER_FOUND_XP);
       // A free teacher's booking is CONFIRMED immediately above - that's the
-      // moment to notify, same as confirmBooking below for a paid one.
+      // moment to notify, same as confirmBooking below for a paid one. Not
+      // awaited: notifyBookingConfirmed already catches its own errors (see
+      // its definition above), and this response must not wait on an SMTP
+      // round-trip either.
       if (booking.status === 'CONFIRMED') {
-        await notifyBookingConfirmed(prisma, booking.id);
+        void notifyBookingConfirmed(prisma, booking.id);
       }
       return booking;
     },
@@ -156,7 +171,7 @@ export const bookingResolvers = {
       if (!booking) throw new GraphQLError('Booking not found.', { extensions: { code: 'NOT_FOUND' } });
       if (booking.teacherProfile.userId !== user.id) throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
       const updated = await prisma.booking.update({ where: { id: bookingId }, data: { status: 'CONFIRMED' } });
-      await notifyBookingConfirmed(prisma, bookingId);
+      void notifyBookingConfirmed(prisma, bookingId);
       return updated;
     },
 

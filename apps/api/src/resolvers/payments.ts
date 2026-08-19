@@ -8,11 +8,15 @@ import type { GraphQLContext } from '../types.js';
 
 const EVENT_ATTENDED_XP = 40;
 
+// No explicit apiVersion - the SDK pins and sends its own default (the
+// installed stripe package version determines it), per the integration
+// spec this follows: "the stripe version does not need to be set since it
+// will be used automatically by the SDK."
 function getStripe(): Stripe {
   if (!process.env.STRIPE_SECRET_KEY) {
     throw new Error('STRIPE_SECRET_KEY environment variable is required but was not set.');
   }
-  return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
+  return new Stripe(process.env.STRIPE_SECRET_KEY);
 }
 
 // success_url/cancel_url below are built by string-interpolating this value.
@@ -70,24 +74,30 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
     const session = event.data.object as Stripe.Checkout.Session;
     const { userId, type, refId } = session.metadata ?? {};
 
-    // Stripe retries webhook deliveries that don't 2xx in time - without
-    // this check a retry would insert a second Payment row for the same
-    // checkout session and, more visibly, re-send the confirmation email
-    // below on every retry.
-    const alreadyProcessed = await prisma.payment.findFirst({ where: { provider: 'STRIPE', providerRef: session.id } });
-    if (alreadyProcessed) return;
-
-    const payment = await prisma.payment.create({
-      data: {
-        userId: userId!,
-        amount: (session.amount_total ?? 0) / 100,
-        currency: session.currency?.toUpperCase() ?? 'CHF',
-        status: 'SUCCEEDED',
-        provider: 'STRIPE',
-        providerRef: session.id,
-        description: `${type}:${refId}`,
-      },
-    });
+    // Stripe retries webhook deliveries that don't 2xx in time. The real
+    // idempotency guard is the @@unique([provider, providerRef]) constraint
+    // (see schema.prisma / 018-payment-provider-ref-unique.sql) - a
+    // preceding findFirst check alone isn't concurrency-safe (two
+    // near-simultaneous deliveries can both pass it before either creates a
+    // row), so this catches the unique-violation P2002 from create() itself
+    // and treats it as "already processed," not an error.
+    let payment;
+    try {
+      payment = await prisma.payment.create({
+        data: {
+          userId: userId!,
+          amount: (session.amount_total ?? 0) / 100,
+          currency: session.currency?.toUpperCase() ?? 'CHF',
+          status: 'SUCCEEDED',
+          provider: 'STRIPE',
+          providerRef: session.id,
+          description: `${type}:${refId}`,
+        },
+      });
+    } catch (error: any) {
+      if (error?.code === 'P2002') return; // already processed by an earlier delivery
+      throw error;
+    }
     const buyer = await prisma.user.findUnique({ where: { id: userId! }, include: { profile: true } });
     const buyerName = buyer?.profile?.displayName || buyer?.email?.split('@')[0] || 'there';
 
@@ -98,14 +108,18 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
         create: { userId: userId!, courseId: refId!, paymentId: payment.id },
       });
       const course = await prisma.course.findUnique({ where: { id: refId } });
-      await sendPurchaseConfirmedEmail({
+      // Not awaited - the webhook response must not wait on an SMTP
+      // round-trip (Stripe times out and retries slow deliveries), and
+      // sendPurchaseConfirmedEmail already can't throw (it only ever calls
+      // sendMail, which swallows its own failures).
+      void sendPurchaseConfirmedEmail({
         toEmail: buyer?.email, toName: buyerName,
         description: `Enrolled in: ${course?.title ?? 'your course'}`,
         amount: payment.amount.toNumber(), currency: payment.currency,
       });
     } else if (type === 'booking') {
       await prisma.booking.update({ where: { id: refId }, data: { paymentId: payment.id, status: 'CONFIRMED' } });
-      await notifyBookingConfirmed(prisma, refId!);
+      void notifyBookingConfirmed(prisma, refId!);
     } else if (type === 'event') {
       await prisma.eventBooking.upsert({
         where: { userId_eventId: { userId: userId!, eventId: refId! } },
@@ -116,7 +130,7 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
       // keeps it one-time even if Stripe retries this webhook.
       await awardXpOnce(prisma, userId!, 'EVENT_ATTENDED', refId!, EVENT_ATTENDED_XP);
       const ticketedEvent = await prisma.event.findUnique({ where: { id: refId } });
-      await sendPurchaseConfirmedEmail({
+      void sendPurchaseConfirmedEmail({
         toEmail: buyer?.email, toName: buyerName,
         description: `Ticket: ${ticketedEvent?.title ?? 'your event'}`,
         amount: payment.amount.toNumber(), currency: payment.currency,

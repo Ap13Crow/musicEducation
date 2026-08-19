@@ -466,11 +466,11 @@ export const courseResolvers = {
       if (enrollment.user) return enrollment.user;
       return prisma.user.findUnique({ where: { id: enrollment.userId }, include: { profile: true } });
     },
-    // Without this, User.enrollments (used e.g. on the student's own profile
-    // page to show course status) always resolved course: null - the
-    // enrollments field resolver doesn't `include: { course: true }`, and
-    // GraphQL's default resolver only looks for an already-populated
-    // `enrollment.course` property, which was never there.
+    // The fast path (enrollment.course already populated) is the normal
+    // case: User.enrollments (users.ts) includes { course: true } so a
+    // profile page listing N enrollments doesn't turn into N+1 queries here.
+    // The findUnique fallback exists for any other caller that constructs
+    // an Enrollment without that include.
     async course(enrollment: any, _: unknown, { prisma }: GraphQLContext) {
       if (enrollment.course) return enrollment.course;
       return prisma.course.findUnique({ where: { id: enrollment.courseId } });
