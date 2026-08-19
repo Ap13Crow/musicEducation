@@ -3,9 +3,9 @@ const ORIGINAL_MAILER_ENV = { ...process.env };
 function setSmtpEnv() {
   process.env.SMTP_HOST = 'smtp-relay.gmail.com';
   process.env.SMTP_PORT = '587';
-  process.env.SMTP_USER = 'camille@mymusic.coach';
+  process.env.SMTP_USER = 'test-sender@example.com';
   process.env.SMTP_PASSWORD = 'test-password';
-  process.env.SMTP_FROM = 'camille@mymusic.coach';
+  process.env.SMTP_FROM = 'test-sender@example.com';
 }
 
 function clearSmtpEnv() {

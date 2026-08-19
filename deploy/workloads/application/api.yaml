@@ -64,6 +64,16 @@ spec:
                   name: application-integrations
                   key: STRIPE_WEBHOOK_SECRET
                   optional: true
+            # Separate signing secret for the v2 thin-event Connect
+            # requirements webhook (/webhooks/stripe-v2) - absent, that
+            # route stays disabled but checkout/payouts still work off the
+            # two keys above.
+            - name: STRIPE_WEBHOOK_SECRET_V2
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: STRIPE_WEBHOOK_SECRET_V2
+                  optional: true
             - name: TICKETMASTER_API_KEY
               valueFrom:
                 secretKeyRef:

@@ -325,6 +325,7 @@ jobs:
         env:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          STRIPE_WEBHOOK_SECRET_V2: ${{ secrets.STRIPE_WEBHOOK_SECRET_V2 }}
           TICKETMASTER_API_KEY: ${{ secrets.TICKETMASTER_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DEEPSEEK_API_URL: ${{ secrets.DEEPSEEK_API_URL }}
@@ -352,6 +353,7 @@ jobs:
           }
           effective_stripe_secret_key="${STRIPE_SECRET_KEY:-$(existing_value STRIPE_SECRET_KEY)}"
           effective_stripe_webhook_secret="${STRIPE_WEBHOOK_SECRET:-$(existing_value STRIPE_WEBHOOK_SECRET)}"
+          effective_stripe_webhook_secret_v2="${STRIPE_WEBHOOK_SECRET_V2:-$(existing_value STRIPE_WEBHOOK_SECRET_V2)}"
           effective_ticketmaster_key="${TICKETMASTER_API_KEY:-$(existing_value TICKETMASTER_API_KEY)}"
           effective_deepseek_key="${DEEPSEEK_API_KEY:-$(existing_value DEEPSEEK_API_KEY)}"
           effective_deepseek_url="${DEEPSEEK_API_URL:-$(existing_value DEEPSEEK_API_URL)}"
@@ -370,6 +372,17 @@ jobs:
             echo 'Stripe credentials configured.'
           else
             echo 'Stripe remains disabled because one or both Stripe secrets are absent.'
+          fi
+          if [[ -n "$effective_stripe_secret_key" && -n "$effective_stripe_webhook_secret_v2" ]]; then
+            # Separate from the check above: the v1 secret pair alone
+            # already lets checkout/payouts work, this second signing
+            # secret only turns on the Connect-requirements thin-event
+            # listener (handleStripeV2Webhook) - not required for the rest
+            # of Stripe to function.
+            args+=(--from-literal=STRIPE_WEBHOOK_SECRET_V2="$effective_stripe_webhook_secret_v2")
+            echo 'Stripe Connect v2 requirements webhook configured.'
+          else
+            echo 'Stripe Connect v2 requirements webhook remains disabled because STRIPE_WEBHOOK_SECRET_V2 (or the base Stripe key) is absent.'
           fi
           if [[ -n "$effective_ticketmaster_key" ]]; then
             args+=(--from-literal=TICKETMASTER_API_KEY="$effective_ticketmaster_key")

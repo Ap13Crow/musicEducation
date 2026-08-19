@@ -19,7 +19,7 @@ import { courseResolvers } from './resolvers/courses.js';
 import { eventResolvers } from './resolvers/events.js';
 import { assessmentResolvers } from './resolvers/assessments.js';
 import { feedResolvers } from './resolvers/feed.js';
-import { paymentResolvers, handleStripeWebhook } from './resolvers/payments.js';
+import { paymentResolvers, handleStripeWebhook, handleStripeV2Webhook } from './resolvers/payments.js';
 import { adminResolvers } from './resolvers/admin.js';
 import { discoveryResolvers } from './resolvers/discovery.js';
 import type { GraphQLContext } from './types.js';
@@ -85,6 +85,24 @@ async function main() {
         return res.json({ received: true });
       } catch (error) {
         logger.warn({ error }, 'Stripe webhook rejected');
+        return res.status(400).send('Invalid Stripe webhook');
+      }
+    });
+  }
+
+  // Separate endpoint, separate signing secret - v2 thin events (Connect
+  // account requirements/capability changes) are delivered to their own
+  // event destination, distinct from the v1 webhook above. See
+  // handleStripeV2Webhook's own comment for the Stripe Dashboard setup.
+  if (process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET_V2) {
+    app.post('/webhooks/stripe-v2', express.raw({ type: 'application/json' }), async (req, res) => {
+      const signature = req.headers['stripe-signature'];
+      if (typeof signature !== 'string') return res.status(400).send('Missing stripe-signature header');
+      try {
+        await handleStripeV2Webhook(prisma, req.body, signature);
+        return res.json({ received: true });
+      } catch (error) {
+        logger.warn({ error }, 'Stripe v2 webhook rejected');
         return res.status(400).send('Invalid Stripe webhook');
       }
     });

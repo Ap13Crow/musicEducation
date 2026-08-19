@@ -79,9 +79,17 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
     // (see schema.prisma / 018-payment-provider-ref-unique.sql) - a
     // preceding findFirst check alone isn't concurrency-safe (two
     // near-simultaneous deliveries can both pass it before either creates a
-    // row), so this catches the unique-violation P2002 from create() itself
-    // and treats it as "already processed," not an error.
+    // row). This catches the unique-violation P2002 from create() itself,
+    // but - unlike an early return on that catch - still runs the
+    // follow-up state transitions below on every delivery, new or repeat:
+    // they're each independently idempotent (upsert/update), so this is
+    // also what repairs a delivery that created the Payment row but then
+    // crashed (process killed, DB hiccup) before reaching them, which an
+    // early return would instead leave stuck half-processed forever. Only
+    // the confirmation email is gated on isNewPayment, so a retry of an
+    // already-fully-processed delivery doesn't re-send it.
     let payment;
+    let isNewPayment = true;
     try {
       payment = await prisma.payment.create({
         data: {
@@ -95,8 +103,9 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
         },
       });
     } catch (error: any) {
-      if (error?.code === 'P2002') return; // already processed by an earlier delivery
-      throw error;
+      if (error?.code !== 'P2002') throw error;
+      isNewPayment = false;
+      payment = await prisma.payment.findUniqueOrThrow({ where: { provider_providerRef: { provider: 'STRIPE', providerRef: session.id } } });
     }
     const buyer = await prisma.user.findUnique({ where: { id: userId! }, include: { profile: true } });
     const buyerName = buyer?.profile?.displayName || buyer?.email?.split('@')[0] || 'there';
@@ -107,19 +116,21 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
         update: { paymentId: payment.id },
         create: { userId: userId!, courseId: refId!, paymentId: payment.id },
       });
-      const course = await prisma.course.findUnique({ where: { id: refId } });
-      // Not awaited - the webhook response must not wait on an SMTP
-      // round-trip (Stripe times out and retries slow deliveries), and
-      // sendPurchaseConfirmedEmail already can't throw (it only ever calls
-      // sendMail, which swallows its own failures).
-      void sendPurchaseConfirmedEmail({
-        toEmail: buyer?.email, toName: buyerName,
-        description: `Enrolled in: ${course?.title ?? 'your course'}`,
-        amount: payment.amount.toNumber(), currency: payment.currency,
-      });
+      if (isNewPayment) {
+        const course = await prisma.course.findUnique({ where: { id: refId } });
+        // Not awaited - the webhook response must not wait on an SMTP
+        // round-trip (Stripe times out and retries slow deliveries), and
+        // sendPurchaseConfirmedEmail already can't throw (it only ever
+        // calls sendMail, which swallows its own failures).
+        void sendPurchaseConfirmedEmail({
+          toEmail: buyer?.email, toName: buyerName,
+          description: `Enrolled in: ${course?.title ?? 'your course'}`,
+          amount: payment.amount.toNumber(), currency: payment.currency,
+        });
+      }
     } else if (type === 'booking') {
       await prisma.booking.update({ where: { id: refId }, data: { paymentId: payment.id, status: 'CONFIRMED' } });
-      void notifyBookingConfirmed(prisma, refId!);
+      if (isNewPayment) void notifyBookingConfirmed(prisma, refId!);
     } else if (type === 'event') {
       await prisma.eventBooking.upsert({
         where: { userId_eventId: { userId: userId!, eventId: refId! } },
@@ -129,23 +140,62 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
       // Mirrors the free-event award in events.ts bookEvent - refId=eventId
       // keeps it one-time even if Stripe retries this webhook.
       await awardXpOnce(prisma, userId!, 'EVENT_ATTENDED', refId!, EVENT_ATTENDED_XP);
-      const ticketedEvent = await prisma.event.findUnique({ where: { id: refId } });
-      void sendPurchaseConfirmedEmail({
-        toEmail: buyer?.email, toName: buyerName,
-        description: `Ticket: ${ticketedEvent?.title ?? 'your event'}`,
-        amount: payment.amount.toNumber(), currency: payment.currency,
-      });
+      if (isNewPayment) {
+        const ticketedEvent = await prisma.event.findUnique({ where: { id: refId } });
+        void sendPurchaseConfirmedEmail({
+          toEmail: buyer?.email, toName: buyerName,
+          description: `Ticket: ${ticketedEvent?.title ?? 'your event'}`,
+          amount: payment.amount.toNumber(), currency: payment.currency,
+        });
+      }
     }
   } else if (event.type === 'account.updated') {
-    // Keep payout eligibility in sync with the connected account's own
-    // onboarding/verification state, rather than trusting the return_url hit
-    // (a teacher can close the tab before Stripe finishes verifying them).
+    // v1 accounts only - a v2-created account (see
+    // createStripeConnectOnboardingLink) never fires this classic event at
+    // all, it fires the v2 thin events handleStripeV2Webhook below listens
+    // for instead. Kept for any account created before that migration.
     const account = event.data.object as Stripe.Account;
     await prisma.teacherProfile.updateMany({
       where: { stripeAccountId: account.id },
       data: { stripePayoutsEnabled: Boolean(account.payouts_enabled) },
     });
   }
+}
+
+// handleStripeV2Webhook is exported for use as an Express route, not a
+// GraphQL resolver. Requires a *separate* event destination created in the
+// Stripe Dashboard (Developers -> Webhooks -> + Add destination -> Events
+// from: Connected accounts -> Show advanced options -> Payload style: Thin
+// -> Events: v2.core.account[requirements].updated and
+// v2.core.account[configuration.recipient].capability_status_updated) -
+// v1 and v2 events are delivered to different destinations with different
+// signing secrets, they can't share the /webhooks/stripe endpoint above.
+// Keeps stripePayoutsEnabled in sync the same way the v1 account.updated
+// handler does, for accounts created via the v2 API.
+export async function handleStripeV2Webhook(prisma: import('@my-music-coach/database').PrismaClient, rawBody: Buffer, sig: string): Promise<void> {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET_V2;
+  if (!secret) return;
+  const stripe = getStripe();
+  // parseEventNotification verifies the signature and returns a "thin"
+  // notification - just { id, type, ... } plus a fetchEvent() convenience
+  // method, not the full event payload (the whole point of a thin event is
+  // that the sender doesn't have to trust arbitrary account data pushed to
+  // it - see the parseThinEvent()/client.v2.core.events.retrieve() pattern
+  // this replaces; the installed SDK version renamed/merged both steps into
+  // parseEventNotification + .fetchEvent()).
+  const thinEvent: any = stripe.parseEventNotification(rawBody.toString('utf8'), sig, secret);
+  if (typeof thinEvent.type !== 'string' || !thinEvent.type.startsWith('v2.core.account')) return;
+
+  const event: any = await thinEvent.fetchEvent();
+  const accountId: string | undefined = event?.data?.object?.id ?? event?.related_object?.id ?? thinEvent.related_object?.id;
+  if (!accountId) return;
+
+  const account = await stripe.v2.core.accounts.retrieve(accountId, { include: ['configuration.recipient'] });
+  const ready = account.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status === 'active';
+  await prisma.teacherProfile.updateMany({
+    where: { stripeAccountId: accountId },
+    data: { stripePayoutsEnabled: ready },
+  });
 }
 
 export const paymentResolvers = {
@@ -217,29 +267,89 @@ export const paymentResolvers = {
 
     async createStripeConnectOnboardingLink(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
       requireRole(user, 'TEACHER', 'ADMIN');
-      const profile = await prisma.teacherProfile.findUnique({ where: { userId: user!.id } });
+      const profile = await prisma.teacherProfile.findUnique({
+        where: { userId: user!.id },
+        include: { user: { include: { profile: true } } },
+      });
       if (!profile) {
         throw new GraphQLError('Complete your teacher profile before setting up payouts.', { extensions: { code: 'NOT_FOUND' } });
       }
 
       let accountId = profile.stripeAccountId;
       if (!accountId) {
-        const account = await getStripe().accounts.create({
-          type: 'express',
-          capabilities: { card_payments: { requested: true }, transfers: { requested: true } },
+        // V2 Core Accounts API - the platform (not the connected account)
+        // collects fees and absorbs losses (defaults.responsibilities), and
+        // the account only requests the capability it actually needs:
+        // receiving transfers into its own Stripe balance. Only these
+        // properties - never a top-level `type` (that's the v1 accounts API
+        // this replaces; `dashboard: 'express'` here is the v2 equivalent).
+        const account = await getStripe().v2.core.accounts.create({
+          display_name: profile.user.profile?.displayName || profile.user.email.split('@')[0],
+          contact_email: profile.user.email,
+          // Placeholder: MyMusic.Coach's own home jurisdiction (matches the
+          // Europe/Zurich default used elsewhere) - replace with the
+          // teacher's actual country once the application collects one.
+          identity: { country: 'ch' },
+          dashboard: 'express',
+          defaults: {
+            responsibilities: {
+              fees_collector: 'application',
+              losses_collector: 'application',
+            },
+          },
+          configuration: {
+            recipient: {
+              capabilities: {
+                stripe_balance: {
+                  stripe_transfers: { requested: true },
+                },
+              },
+            },
+          },
         });
         accountId = account.id;
         await prisma.teacherProfile.update({ where: { id: profile.id }, data: { stripeAccountId: accountId } });
       }
 
       const frontendUrl = getFrontendUrl();
-      const link = await getStripe().accountLinks.create({
+      const accountLink = await getStripe().v2.core.accountLinks.create({
         account: accountId,
-        type: 'account_onboarding',
-        refresh_url: `${frontendUrl}/dashboard/teacher/payouts?refresh=true`,
-        return_url: `${frontendUrl}/dashboard/teacher/payouts?onboarded=true`,
+        use_case: {
+          type: 'account_onboarding',
+          account_onboarding: {
+            configurations: ['recipient'],
+            refresh_url: `${frontendUrl}/dashboard/teacher/payouts?refresh=true`,
+            return_url: `${frontendUrl}/dashboard/teacher/payouts?onboarded=true`,
+          },
+        },
       });
-      return { url: link.url };
+      return { url: accountLink.url };
+    },
+  },
+
+  Query: {
+    async stripeConnectStatus(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'TEACHER', 'ADMIN');
+      const profile = await prisma.teacherProfile.findUnique({ where: { userId: user!.id } });
+      if (!profile?.stripeAccountId) {
+        return { hasAccount: false, onboardingComplete: false, readyToReceivePayments: false, requirementsStatus: null };
+      }
+
+      // Always live from the API, never a cached DB flag, for this specific
+      // status display - onboarding/compliance state can change on Stripe's
+      // side at any time (see the account.updated v1 webhook handler below,
+      // which keeps stripePayoutsEnabled - the *checkout-routing* flag -
+      // in sync separately; this query is for the teacher's own payouts
+      // page, where a live check is worth the extra round-trip).
+      const account = await getStripe().v2.core.accounts.retrieve(profile.stripeAccountId, {
+        include: ['configuration.recipient', 'requirements'],
+      });
+      const readyToReceivePayments =
+        account.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status === 'active';
+      const requirementsStatus = account.requirements?.summary?.minimum_deadline?.status ?? null;
+      const onboardingComplete = requirementsStatus !== 'currently_due' && requirementsStatus !== 'past_due';
+
+      return { hasAccount: true, onboardingComplete, readyToReceivePayments, requirementsStatus };
     },
   },
 };
