@@ -1,4 +1,4 @@
-const ORIGINAL_ENV = { ...process.env };
+const ORIGINAL_MAILER_ENV = { ...process.env };
 
 function setSmtpEnv() {
   process.env.SMTP_HOST = 'smtp-relay.gmail.com';
@@ -18,7 +18,7 @@ function clearSmtpEnv() {
 
 describe('mailer', () => {
   afterEach(() => {
-    process.env = { ...ORIGINAL_ENV };
+    process.env = { ...ORIGINAL_MAILER_ENV };
     jest.resetModules();
   });
 
