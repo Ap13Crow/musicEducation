@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { signIn, useSession } from 'next-auth/react';
 import { hasRole } from '@/lib/roles';
 import { uploadFileToStorage } from '@/lib/upload';
+import { toYouTubeEmbedUrl } from '@/lib/youtube';
 
 const GET = gql`
   query MyTeacherApplicationStatus {
@@ -43,36 +44,6 @@ function calculateAge(birthdate: string): number | null {
   const monthDiff = now.getMonth() - dob.getMonth();
   if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < dob.getDate())) age -= 1;
   return age;
-}
-
-// Same rules as apps/web/src/lib/youtube.ts's toYouTubeEmbedUrl - kept as a
-// light presence/shape check here (the server is the real gate) so the
-// wizard can preview the embed and block "Next" on obvious garbage.
-function toYouTubeEmbedUrl(input: string): string | null {
-  const value = input.trim();
-  if (!value) return null;
-  if (/^[\w-]{11}$/.test(value)) return `https://www.youtube.com/embed/${value}`;
-  try {
-    const url = new URL(value);
-    if (url.hostname === 'youtu.be') {
-      const id = url.pathname.slice(1);
-      return id ? `https://www.youtube.com/embed/${id}` : null;
-    }
-    if (url.hostname.endsWith('youtube.com')) {
-      if (url.pathname === '/watch') {
-        const id = url.searchParams.get('v');
-        return id ? `https://www.youtube.com/embed/${id}` : null;
-      }
-      if (url.pathname.startsWith('/embed/')) return url.toString();
-      if (url.pathname.startsWith('/shorts/')) {
-        const id = url.pathname.split('/')[2];
-        return id ? `https://www.youtube.com/embed/${id}` : null;
-      }
-    }
-  } catch {
-    return null;
-  }
-  return null;
 }
 
 const INSTRUMENTS = ['Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute', 'Clarinet', 'Oboe', 'Trumpet', 'Organ', 'Harp', 'Percussion', 'Composition', 'Theory'];

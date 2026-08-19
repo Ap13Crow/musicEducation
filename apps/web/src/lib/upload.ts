@@ -5,7 +5,7 @@
 // Credentials never pass through the browser - the presigned URL is the
 // only thing that does.
 export async function uploadFileToStorage(
-  requestUploadUrl: (filename: string, contentType: string) => Promise<{ uploadUrl: string; fileUrl: string; key: string }>,
+  requestUploadUrl: (filename: string, contentType: string) => Promise<{ uploadUrl: string; fileUrl: string }>,
   file: File,
 ): Promise<string> {
   const { uploadUrl, fileUrl } = await requestUploadUrl(file.name, file.type);
