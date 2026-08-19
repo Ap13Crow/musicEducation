@@ -66,8 +66,10 @@ export interface UploadTarget {
   key: string;
 }
 
-// ownerId namespaces the key (a user's own id, or a course id for slides) so
-// two callers can never collide or overwrite each other's uploads.
+// ownerId namespaces the key so two callers can never collide or overwrite
+// each other's uploads - always the uploading user's own id, including for
+// COURSE_SLIDE (the teacher/admin who requested the URL, not the course),
+// which is what addLessonSlide's isOwnedUploadUrl check assumes too.
 export async function createUploadTarget(
   purpose: UploadPurpose,
   ownerId: string,
