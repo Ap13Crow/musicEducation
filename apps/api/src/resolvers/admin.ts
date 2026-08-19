@@ -3,6 +3,23 @@ import type { GraphQLContext } from '../types.js';
 
 export const adminResolvers = {
   Query: {
+    // Public (no requireRole) - the homepage's headline counters. Scoped to
+    // what's actually live rather than raw table counts: PUBLISHED courses
+    // only, upcoming events (native isPublished + external, mirroring the
+    // events page's own visibility rules), STUDENT-role users.
+    async platformStats(_: unknown, __: unknown, { prisma }: GraphQLContext) {
+      const [totalCourses, totalTeachers, totalStudents, nativeEvents, externalEvents] = await Promise.all([
+        prisma.course.count({ where: { status: 'PUBLISHED' } }),
+        prisma.teacherProfile.count(),
+        prisma.user.count({ where: { role: 'STUDENT' } }),
+        prisma.event.count({ where: { isPublished: true } }),
+        prisma.externalEventProjection.count({
+          where: { OR: [{ expiresAt: null }, { expiresAt: { gte: new Date() } }] },
+        }),
+      ]);
+      return { totalCourses, totalTeachers, totalStudents, totalEvents: nativeEvents + externalEvents };
+    },
+
     async adminSettings(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
       requireRole(user, 'ADMIN');
       return prisma.adminSetting.findMany();

@@ -703,6 +703,16 @@ type AdminStats {
   totalRevenue: Float!
 }
 
+# Public headline counters for the homepage - unlike AdminStats, scoped to
+# what's actually live/visible (published courses, upcoming events) rather
+# than raw row counts, and open to signed-out visitors.
+type PlatformStats {
+  totalCourses: Int!
+  totalTeachers: Int!
+  totalEvents: Int!
+  totalStudents: Int!
+}
+
 # ── Input Types ──────────────────────
 
 input RegisterInput {
@@ -1027,6 +1037,9 @@ type Query {
   # Object storage - false when S3_* isn't configured, so callers can hide
   # upload UI rather than let requestUploadUrl fail.
   storageConfigured: Boolean!
+
+  # Public homepage counters - real counts, no auth required.
+  platformStats: PlatformStats!
 }
 
 # ── Mutations ───────────────────────
