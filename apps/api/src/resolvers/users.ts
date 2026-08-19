@@ -182,8 +182,23 @@ export const userResolvers = {
       // accepts as args), so every field but hourlyRate/instruments/
       // isAvailable/calendlyUsername was silently ignored.
       const { headline, teachingBio, hourlyRate, instruments, specializations, isAvailable, calendlyUsername, introVideoVisible } = args;
-      const data: Record<string, unknown> = { hourlyRate, instruments, isAvailable, calendlyUsername, introVideoVisible };
-      if (specializations !== undefined) data.musicStyles = specializations;
+      const data: Record<string, unknown> = {};
+      // hourlyRate/calendlyUsername are nullable columns - an explicit null
+      // is a legitimate "clear this" and Prisma accepts it.
+      if (hourlyRate !== undefined) data.hourlyRate = hourlyRate;
+      if (calendlyUsername !== undefined) data.calendlyUsername = calendlyUsername;
+      // instruments/isAvailable/introVideoVisible/musicStyles are non-nullable
+      // columns (String[]/Boolean with a default). The GraphQL args are still
+      // nullable, so a client can send an explicit null even though the
+      // schema doesn't attach any "clear it" meaning to that for these
+      // fields - Prisma would otherwise reject writing null into a
+      // non-nullable column with an opaque validation error. Treat an
+      // explicit null the same as omitting the field (no-op) rather than
+      // letting it reach Prisma.
+      if (instruments !== undefined && instruments !== null) data.instruments = instruments;
+      if (isAvailable !== undefined && isAvailable !== null) data.isAvailable = isAvailable;
+      if (introVideoVisible !== undefined && introVideoVisible !== null) data.introVideoVisible = introVideoVisible;
+      if (specializations !== undefined && specializations !== null) data.musicStyles = specializations;
       // headline has no independent column - TeacherProfile.headline is
       // derived from bio's first line (see the headline resolver below), so
       // an update needs to recompute both halves together. Rebuilding
