@@ -97,14 +97,23 @@ export const teacherApplicationResolvers = {
 
       // Each non-null URL must be one requestUploadUrl actually minted for
       // this user and this purpose - otherwise a client could submit any
-      // external URL for a field an admin later opens in a new tab.
-      const cvUrl = input.cvUrl ? requireOwnedUploadUrl(input.cvUrl, 'TEACHER_APPLICATION_CV', user.id, 'CV') : null;
-      const audioSampleUrl = input.audioSampleUrl
-        ? requireOwnedUploadUrl(input.audioSampleUrl, 'TEACHER_APPLICATION_AUDIO', user.id, 'Audio sample')
-        : null;
-      const documentUrls: string[] = (input.documentUrls ?? []).map((url: string) =>
-        requireOwnedUploadUrl(url, 'TEACHER_APPLICATION_DOCUMENT', user.id, 'Document'),
-      );
+      // external URL for a field an admin later opens in a new tab. Only
+      // touch these columns when the client actually sent the field:
+      // undefined means "no change" (the web wizard always re-sends the
+      // application's existing URLs, but the resolver shouldn't rely on
+      // that - a client that omits the field on a resubmission, e.g. to
+      // only edit the headline, must not wipe out a previously uploaded
+      // CV/recording/documents), while an explicit null/[] is a deliberate
+      // clear.
+      const cvUrl = input.cvUrl !== undefined
+        ? (input.cvUrl ? requireOwnedUploadUrl(input.cvUrl, 'TEACHER_APPLICATION_CV', user.id, 'CV') : null)
+        : undefined;
+      const audioSampleUrl = input.audioSampleUrl !== undefined
+        ? (input.audioSampleUrl ? requireOwnedUploadUrl(input.audioSampleUrl, 'TEACHER_APPLICATION_AUDIO', user.id, 'Audio sample') : null)
+        : undefined;
+      const documentUrls: string[] | undefined = input.documentUrls !== undefined
+        ? input.documentUrls.map((url: string) => requireOwnedUploadUrl(url, 'TEACHER_APPLICATION_DOCUMENT', user.id, 'Document'))
+        : undefined;
 
       // Upsert rather than create-only: a previously rejected applicant can
       // resubmit, which resets status to PENDING and clears the prior review.

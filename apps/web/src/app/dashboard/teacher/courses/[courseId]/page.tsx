@@ -6,6 +6,7 @@ import { gql, useMutation, useQuery } from '@apollo/client';
 import { useEffect, useState } from 'react';
 import RoleGate from '@/components/auth/RoleGate';
 import { BookOpen, HelpCircle, Plus, Save, Trash2 } from 'lucide-react';
+import { uploadFileToStorage } from '@/lib/upload';
 
 const GET=gql`query CourseBuilder($id:ID!){storageConfigured course(id:$id){id slug title description shortSummary level price currency isFreeTier language instruments musicStyles thumbnailUrl status sections{id title order lessons{id title description videoUrl contentType durationMin isFreePreview order xpReward feedbackMode quizQuestions{id text type points order options{id text} correctOptionIds} slides{id order fileUrl title}}}}}`;
 const UPDATE=gql`mutation UpdateCourseBuilder($id:ID!,$input:UpdateCourseInput!){updateCourse(id:$id,input:$input){id title description shortSummary level price currency thumbnailUrl status}}`;
@@ -68,10 +69,12 @@ export default function CourseBuilderPage(){
   if(!slidesLessonId)return; // modal closed (or never opened) - nothing to attach this slide to
   setSlideUploadError(null);setUploadingSlide(true);
   try{
-   const {data}=await requestUploadUrl({variables:{purpose:'COURSE_SLIDE',filename:file.name,contentType:file.type}});
-   const {uploadUrl,fileUrl}=data.requestUploadUrl;
-   const res=await fetch(uploadUrl,{method:'PUT',headers:{'Content-Type':file.type},body:file});
-   if(!res.ok)throw new Error(`Upload failed (${res.status}).`);
+   // Same presigned-URL-then-PUT flow the teacher application wizard uses -
+   // share the one helper rather than a second copy of the request/PUT logic.
+   const fileUrl=await uploadFileToStorage(async (filename,contentType)=>{
+    const {data}=await requestUploadUrl({variables:{purpose:'COURSE_SLIDE',filename,contentType}});
+    return data.requestUploadUrl;
+   },file);
    await addLessonSlide({variables:{input:{lessonId:slidesLessonId,fileUrl,title:file.name}}});
    await refetch();
   }catch(e:any){setSlideUploadError(e.message??'Upload failed.');}
