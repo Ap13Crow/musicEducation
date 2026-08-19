@@ -201,16 +201,24 @@ export default function BecomeTeacherPage() {
       }
     }
 
-    let cvUrl = application?.cvUrl ?? null;
-    let audioSampleUrl = application?.audioSampleUrl ?? null;
-    let documentUrls: string[] = application?.documentUrls ?? [];
+    // When storage isn't configured, these fields are omitted from the
+    // mutation entirely (undefined) rather than resent as their current
+    // value - applyForTeacher rejects any non-null upload URL while storage
+    // is unconfigured (there's no way to prove ownership), so resending an
+    // untouched, previously-uploaded URL from before storage was disabled
+    // would make an otherwise-unrelated resubmission (e.g. just editing the
+    // headline) fail outright. The resolver treats an omitted field as "no
+    // change," which is exactly what an untouched file should mean here.
+    let cvUrl: string | null | undefined = storageConfigured ? (application?.cvUrl ?? null) : undefined;
+    let audioSampleUrl: string | null | undefined = storageConfigured ? (application?.audioSampleUrl ?? null) : undefined;
+    let documentUrls: string[] | undefined = storageConfigured ? (application?.documentUrls ?? []) : undefined;
     try {
       setUploading(true);
       if (cvFile) cvUrl = await uploadFileToStorage(requestUrlFor('TEACHER_APPLICATION_CV'), cvFile);
       if (audioFile) audioSampleUrl = await uploadFileToStorage(requestUrlFor('TEACHER_APPLICATION_AUDIO'), audioFile);
       if (documentFiles.length > 0) {
         const uploaded = await Promise.all(documentFiles.map((f) => uploadFileToStorage(requestUrlFor('TEACHER_APPLICATION_DOCUMENT'), f)));
-        documentUrls = [...documentUrls, ...uploaded];
+        documentUrls = [...(documentUrls ?? []), ...uploaded];
       }
     } catch (err: any) {
       setUploadError(err.message ?? 'File upload failed.');
