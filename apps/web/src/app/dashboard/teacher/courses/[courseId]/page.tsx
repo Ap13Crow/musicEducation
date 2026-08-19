@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import RoleGate from '@/components/auth/RoleGate';
 import { BookOpen, HelpCircle, Plus, Save, Trash2 } from 'lucide-react';
 
-const GET=gql`query CourseBuilder($id:ID!){course(id:$id){id slug title description shortSummary level price currency isFreeTier language instruments musicStyles thumbnailUrl status sections{id title order lessons{id title description videoUrl contentType durationMin isFreePreview order xpReward feedbackMode quizQuestions{id text type points order options{id text} correctOptionIds} slides{id order fileUrl title}}}}}`;
+const GET=gql`query CourseBuilder($id:ID!){storageConfigured course(id:$id){id slug title description shortSummary level price currency isFreeTier language instruments musicStyles thumbnailUrl status sections{id title order lessons{id title description videoUrl contentType durationMin isFreePreview order xpReward feedbackMode quizQuestions{id text type points order options{id text} correctOptionIds} slides{id order fileUrl title}}}}}`;
 const UPDATE=gql`mutation UpdateCourseBuilder($id:ID!,$input:UpdateCourseInput!){updateCourse(id:$id,input:$input){id title description shortSummary level price currency thumbnailUrl status}}`;
 const ADD_SECTION=gql`mutation AddSection($input:CreateSectionInput!){createSection(input:$input){id}}`;
 const DELETE_SECTION=gql`mutation DeleteSection($id:ID!){deleteSection(id:$id)}`;
@@ -148,8 +148,8 @@ export default function CourseBuilderPage(){
    </div>
    <div className="space-y-2 rounded-xl bg-gray-50 p-4">
     <p className="text-sm font-medium">Add a slide</p>
-    <input type="file" accept="application/pdf,image/png,image/jpeg" disabled={uploadingSlide} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadSlide(f);e.target.value='';}}/>
-    {uploadingSlide&&<p className="text-xs text-gray-500">Uploading…</p>}
+    {data?.storageConfigured?<><input type="file" accept="application/pdf,image/png,image/jpeg" disabled={uploadingSlide} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadSlide(f);e.target.value='';}}/>
+    {uploadingSlide&&<p className="text-xs text-gray-500">Uploading…</p>}</>:<p className="text-xs text-gray-500">Slide uploads aren&rsquo;t enabled on this deployment yet.</p>}
    </div>
   </section></div>}
   </>}</main></RoleGate>;

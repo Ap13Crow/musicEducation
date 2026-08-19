@@ -201,7 +201,16 @@ export const userResolvers = {
           if (newHeadline === undefined) newHeadline = existingLines[0] ?? '';
           if (newBody === undefined) newBody = existingLines.slice(1).join('\n');
         }
-        data.bio = [newHeadline, newBody].filter(Boolean).join('\n');
+        // filter(Boolean) here would drop an *intentionally cleared* empty
+        // headline whenever the body is non-empty, collapsing bio down to
+        // just the body - and headline() derives from bio's own first line,
+        // so the body's own first line would then read back as a bogus
+        // headline. Keep the headline slot (even empty) whenever there's a
+        // body to protect, and only fall back to null when there's truly
+        // nothing to store.
+        const headlineLine = newHeadline ?? '';
+        const bodyText = newBody ?? '';
+        data.bio = headlineLine || bodyText ? `${headlineLine}\n${bodyText}` : null;
       }
       return prisma.teacherProfile.update({ where: { userId: user!.id }, data });
     },
@@ -336,7 +345,12 @@ export const userResolvers = {
       return body || null;
     },
     headline(profile: any) {
-      return profile.bio ? profile.bio.split(/\r?\n/, 1)[0].slice(0, 120) : null;
+      if (!profile.bio) return null;
+      // An intentionally-cleared headline is stored as an empty first line
+      // (see updateTeacherProfile) so it doesn't get confused with the
+      // body's own first line - read back as null, not ''.
+      const first = profile.bio.split(/\r?\n/, 1)[0].slice(0, 120);
+      return first || null;
     },
     specializations(profile: any) {
       return profile.musicStyles ?? [];
