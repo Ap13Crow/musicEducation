@@ -17,21 +17,26 @@ export function toYouTubeEmbedUrl(input: string | null | undefined): string | nu
 
   try {
     const url = new URL(value);
+    // Exact host or a real subdomain only - `endsWith('youtube.com')` would
+    // also match a lookalike like evilyoutube.com, which would then get
+    // embedded in an iframe as if it were trusted.
+    const isYouTubeHost = url.hostname === 'youtube.com' || url.hostname.endsWith('.youtube.com');
     if (url.hostname === 'youtu.be') {
       const id = url.pathname.slice(1);
-      return id ? `https://www.youtube.com/embed/${id}` : null;
+      return isVideoId(id) ? `https://www.youtube.com/embed/${id}` : null;
     }
-    if (url.hostname.endsWith('youtube.com')) {
+    if (isYouTubeHost) {
       if (url.pathname === '/watch') {
         const id = url.searchParams.get('v');
-        return id ? `https://www.youtube.com/embed/${id}` : null;
+        return isVideoId(id) ? `https://www.youtube.com/embed/${id}` : null;
       }
       if (url.pathname.startsWith('/embed/')) {
-        return url.toString();
+        const id = url.pathname.slice('/embed/'.length);
+        return isVideoId(id) ? `https://www.youtube.com/embed/${id}` : null;
       }
       if (url.pathname.startsWith('/shorts/')) {
         const id = url.pathname.split('/')[2];
-        return id ? `https://www.youtube.com/embed/${id}` : null;
+        return isVideoId(id) ? `https://www.youtube.com/embed/${id}` : null;
       }
     }
   } catch {
@@ -39,4 +44,8 @@ export function toYouTubeEmbedUrl(input: string | null | undefined): string | nu
   }
 
   return null;
+}
+
+function isVideoId(id: string | null | undefined): id is string {
+  return typeof id === 'string' && /^[\w-]{11}$/.test(id);
 }

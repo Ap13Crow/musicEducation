@@ -492,7 +492,7 @@ jobs:
             || true
           echo 'API environment contract (values are not printed):'
           kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
-            "for (const key of ['PGHOST','PGPORT','PGDATABASE','PGUSER','PGPASSWORD','PGSSLROOTCERT','KEYCLOAK_ISSUER','KEYCLOAK_CLIENT_ID','DEEPSEEK_API_KEY','OPENAI_API_KEY','S3_ENDPOINT','S3_BUCKET']) console.log(key + '=' + (process.env[key] ? 'configured' : 'missing'))"
+            "for (const key of ['PGHOST','PGPORT','PGDATABASE','PGUSER','PGPASSWORD','PGSSLROOTCERT','KEYCLOAK_ISSUER','KEYCLOAK_CLIENT_ID','DEEPSEEK_API_KEY','DEEPSEEK_API_URL','OPENAI_API_KEY','S3_ENDPOINT','S3_REGION','S3_BUCKET','S3_ACCESS_KEY_ID','S3_SECRET_ACCESS_KEY']) console.log(key + '=' + (process.env[key] ? 'configured' : 'missing'))"
           echo 'Database readiness from the running API process:'
           kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
             "fetch('http://127.0.0.1:4000/health/ready').then(async r => { console.log(await r.text()); if (!r.ok) process.exit(1) })"
