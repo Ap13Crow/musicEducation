@@ -242,6 +242,7 @@ const GET_TEACHER_APPLICATIONS = gql`
   query TeacherApplicationsQueue($status: TeacherApplicationStatus) {
     teacherApplications(status: $status) {
       id headline bio instruments experienceYears status createdAt address birthdate
+      cvUrl audioSampleUrl documentUrls
       user { id displayName email }
     }
   }
@@ -321,6 +322,15 @@ function ApplicationsTab() {
                   {' · applied '}{new Date(app.createdAt).toLocaleDateString()}
                 </p>
                 {app.address && <p className="mt-1 text-xs text-gray-400">{app.address}</p>}
+                {(app.cvUrl || app.audioSampleUrl || app.documentUrls?.length > 0) && (
+                  <p className="mt-2 flex flex-wrap gap-3 text-xs">
+                    {app.cvUrl && <a href={app.cvUrl} target="_blank" rel="noreferrer" className="font-medium text-primary-700 underline">CV</a>}
+                    {app.audioSampleUrl && <a href={app.audioSampleUrl} target="_blank" rel="noreferrer" className="font-medium text-primary-700 underline">Audio sample</a>}
+                    {app.documentUrls?.map((url: string, i: number) => (
+                      <a key={url} href={url} target="_blank" rel="noreferrer" className="font-medium text-primary-700 underline">Document {i + 1}</a>
+                    ))}
+                  </p>
+                )}
               </div>
               {app.status === 'PENDING' && (
                 <div className="flex shrink-0 gap-2">

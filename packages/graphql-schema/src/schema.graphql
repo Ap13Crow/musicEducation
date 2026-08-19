@@ -28,6 +28,26 @@ enum LessonContentType {
   VIDEO
   YOUTUBE
   AUDIO
+  SLIDES
+}
+
+# What a requestUploadUrl call is for - the resolver uses this to pick the
+# storage key prefix, the allowed content types, and the authorization rule
+# (a signed-in caller may upload their own teacher-application files; only a
+# course's teacher/an admin may upload a COURSE_SLIDE).
+enum UploadPurpose {
+  TEACHER_APPLICATION_CV
+  TEACHER_APPLICATION_AUDIO
+  TEACHER_APPLICATION_DOCUMENT
+  COURSE_SLIDE
+}
+
+type UploadTarget {
+  # Presigned PUT URL, valid briefly - PUT the file's raw bytes here with
+  # the same contentType requested, then use fileUrl in the owning mutation.
+  uploadUrl: String!
+  fileUrl: String!
+  key: String!
 }
 
 enum QuizQuestionType {
@@ -260,6 +280,11 @@ type TeacherApplication {
   experienceYears: Int
   address: String
   birthdate: DateTime
+  # Populated via requestUploadUrl(purpose: TEACHER_APPLICATION_*) then
+  # attached here on submit - object storage, never inline file data.
+  cvUrl: String
+  audioSampleUrl: String
+  documentUrls: [String!]!
   status: TeacherApplicationStatus!
   createdAt: DateTime!
   updatedAt: DateTime!
@@ -275,6 +300,9 @@ input TeacherApplicationInput {
   # Required - applyForTeacher rejects an application without one, or from
   # someone under 18.
   birthdate: DateTime
+  cvUrl: String
+  audioSampleUrl: String
+  documentUrls: [String!]
 }
 
 # ── Courses ────────────────────────
@@ -336,6 +364,21 @@ type Lesson {
   xpReward: Int!
   feedbackMode: QuizFeedbackMode!
   quizQuestions: [QuizQuestion!]!
+  # Populated for contentType SLIDES - ordered slide deck, each slide its
+  # own uploaded file (image or single-page PDF) in object storage.
+  slides: [LessonSlide!]!
+  # Slide ids the current caller has viewed in this lesson - [] when signed
+  # out or not enrolled. Drives the slide viewer's progress bar.
+  myViewedSlideIds: [ID!]!
+}
+
+type LessonSlide {
+  id: ID!
+  lessonId: ID!
+  order: Int!
+  fileUrl: String!
+  title: String
+  createdAt: DateTime!
 }
 
 type QuizOption {
@@ -748,6 +791,13 @@ input UpdateSectionInput {
   order: Int
 }
 
+input AddLessonSlideInput {
+  lessonId: ID!
+  fileUrl: String!
+  title: String
+  order: Int
+}
+
 input UpdateLessonInput {
   title: String
   description: String
@@ -973,6 +1023,10 @@ type Query {
   adminStats: AdminStats!
   adminSettings: [AdminSetting!]!
   adminUsers(role: Role, search: String, page: Int, limit: Int): [User!]!
+
+  # Object storage - false when S3_* isn't configured, so callers can hide
+  # upload UI rather than let requestUploadUrl fail.
+  storageConfigured: Boolean!
 }
 
 # ── Mutations ───────────────────────
@@ -1014,6 +1068,11 @@ type Mutation {
   followUser(userId: ID!): User!
   unfollowUser(userId: ID!): User!
 
+  # Object storage - obtain a short-lived presigned PUT URL, upload directly
+  # to it client-side, then pass the returned fileUrl into applyForTeacher /
+  # addLessonSlide. Throws if S3_* isn't configured (see storageConfigured).
+  requestUploadUrl(purpose: UploadPurpose!, filename: String!, contentType: String!): UploadTarget!
+
   # Courses
   createCourse(input: CreateCourseInput!): Course!
   updateCourse(id: ID!, input: UpdateCourseInput!): Course!
@@ -1033,6 +1092,15 @@ type Mutation {
   startQuizAttempt(lessonId: ID!): QuizAttempt!
   submitQuizAnswer(input: SubmitQuizAnswerInput!): QuizAnswer!
   completeQuizAttempt(attemptId: ID!): QuizAttempt!
+  # Slide deck management (contentType SLIDES) - fileUrl comes from a prior
+  # requestUploadUrl(purpose: COURSE_SLIDE) round trip.
+  addLessonSlide(input: AddLessonSlideInput!): LessonSlide!
+  reorderLessonSlides(lessonId: ID!, slideIds: [ID!]!): [LessonSlide!]!
+  deleteLessonSlide(id: ID!): Boolean!
+  # Records that the current student viewed one slide - idempotent, drives
+  # myViewedSlideIds. Does not itself complete the lesson; call
+  # markLessonComplete once every slide has been viewed.
+  viewLessonSlide(slideId: ID!): Boolean!
 
   # Bookings
   bookSession(input: BookSessionInput!): Booking!

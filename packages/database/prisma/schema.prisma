@@ -34,6 +34,7 @@ enum LessonContentType {
   VIDEO
   YOUTUBE
   AUDIO
+  SLIDES
 }
 
 enum QuizQuestionType {
@@ -222,6 +223,12 @@ model TeacherApplication {
   // later phase, this is the quality/legal floor for now.
   address         String?
   birthdate       DateTime?                 @db.Date
+  // Object storage URLs (see apps/api/src/lib/storage.ts) - populated via
+  // requestUploadUrl(purpose: TEACHER_APPLICATION_*) then attached here on
+  // submit. Never inline file data.
+  cvUrl           String?
+  audioSampleUrl  String?
+  documentUrls    String[]                  @default([])
   status          TeacherApplicationStatus  @default(PENDING)
   reviewedBy      String?
   reviewedAt      DateTime?
@@ -383,6 +390,40 @@ model Lesson {
   progress      LessonProgress[]
   quizQuestions QuizQuestion[]
   quizAttempts  QuizAttempt[]
+  slides        LessonSlide[]
+}
+
+// Ordered slide deck for a contentType SLIDES lesson - each slide its own
+// uploaded file (image or single-page PDF) in object storage, rather than a
+// single PDF split server-side, so per-slide viewing can be tracked without
+// a PDF-rendering pipeline.
+model LessonSlide {
+  id        String   @id @default(cuid())
+  lessonId  String
+  order     Int      @default(0)
+  fileUrl   String
+  title     String?
+  createdAt DateTime @default(now())
+
+  lesson Lesson            @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  views  LessonSlideView[]
+
+  @@index([lessonId, order])
+}
+
+// Per-slide "viewed" marker for one student's enrollment - drives
+// Lesson.myViewedSlideIds and the slide viewer's progress bar. Idempotent
+// per (enrollment, slide): viewing a slide again is a no-op, not a new row.
+model LessonSlideView {
+  id           String   @id @default(cuid())
+  enrollmentId String
+  slideId      String
+  viewedAt     DateTime @default(now())
+
+  enrollment Enrollment  @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  slide      LessonSlide @relation(fields: [slideId], references: [id], onDelete: Cascade)
+
+  @@unique([enrollmentId, slideId])
 }
 
 model QuizQuestion {
@@ -452,10 +493,11 @@ model Enrollment {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  user           User             @relation(fields: [userId], references: [id])
-  course         Course           @relation(fields: [courseId], references: [id])
-  payment        Payment?         @relation(fields: [paymentId], references: [id])
+  user           User              @relation(fields: [userId], references: [id])
+  course         Course            @relation(fields: [courseId], references: [id])
+  payment        Payment?          @relation(fields: [paymentId], references: [id])
   lessonProgress LessonProgress[]
+  slideViews     LessonSlideView[]
 
   @@unique([userId, courseId])
 }

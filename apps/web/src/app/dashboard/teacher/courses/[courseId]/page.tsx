@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import RoleGate from '@/components/auth/RoleGate';
 import { BookOpen, HelpCircle, Plus, Save, Trash2 } from 'lucide-react';
 
-const GET=gql`query CourseBuilder($id:ID!){course(id:$id){id slug title description shortSummary level price currency isFreeTier language instruments musicStyles thumbnailUrl status sections{id title order lessons{id title description videoUrl contentType durationMin isFreePreview order xpReward feedbackMode quizQuestions{id text type points order options{id text} correctOptionIds}}}}}`;
+const GET=gql`query CourseBuilder($id:ID!){course(id:$id){id slug title description shortSummary level price currency isFreeTier language instruments musicStyles thumbnailUrl status sections{id title order lessons{id title description videoUrl contentType durationMin isFreePreview order xpReward feedbackMode quizQuestions{id text type points order options{id text} correctOptionIds} slides{id order fileUrl title}}}}}`;
 const UPDATE=gql`mutation UpdateCourseBuilder($id:ID!,$input:UpdateCourseInput!){updateCourse(id:$id,input:$input){id title description shortSummary level price currency thumbnailUrl status}}`;
 const ADD_SECTION=gql`mutation AddSection($input:CreateSectionInput!){createSection(input:$input){id}}`;
 const DELETE_SECTION=gql`mutation DeleteSection($id:ID!){deleteSection(id:$id)}`;
@@ -20,9 +20,13 @@ const DELETE_QUIZ_QUESTION=gql`mutation DeleteQuizQuestion($id:ID!){deleteQuizQu
 const GET_ENROLLMENTS=gql`query CourseEnrollmentsForBuilder($courseId:ID!){courseEnrollments(courseId:$courseId,limit:200){nodes{id progress completedAt user{id profile{displayName}}}}}`;
 const GET_XP_BOUNDS=gql`query XpAwardBoundsForBuilder{xpAwardBounds{min max}}`;
 const AWARD_XP=gql`mutation AwardCourseXp($enrollmentId:ID!,$amount:Int!,$note:String){awardCourseXp(enrollmentId:$enrollmentId,amount:$amount,note:$note){id amount}}`;
+const REQUEST_UPLOAD_URL=gql`mutation RequestSlideUploadUrl($purpose:UploadPurpose!,$filename:String!,$contentType:String!){requestUploadUrl(purpose:$purpose,filename:$filename,contentType:$contentType){uploadUrl fileUrl}}`;
+const ADD_LESSON_SLIDE=gql`mutation AddLessonSlideFromBuilder($input:AddLessonSlideInput!){addLessonSlide(input:$input){id order fileUrl title}}`;
+const DELETE_LESSON_SLIDE=gql`mutation DeleteLessonSlideFromBuilder($id:ID!){deleteLessonSlide(id:$id)}`;
+const REORDER_LESSON_SLIDES=gql`mutation ReorderLessonSlidesFromBuilder($lessonId:ID!,$slideIds:[ID!]!){reorderLessonSlides(lessonId:$lessonId,slideIds:$slideIds){id order}}`;
 
-const CONTENT_TYPES=[{value:'VIDEO',label:'Video'},{value:'YOUTUBE',label:'YouTube'},{value:'AUDIO',label:'Audio'}];
-const CONTENT_TYPE_LABELS:Record<string,string>={VIDEO:'Video',YOUTUBE:'YouTube',AUDIO:'Audio'};
+const CONTENT_TYPES=[{value:'VIDEO',label:'Video'},{value:'YOUTUBE',label:'YouTube'},{value:'AUDIO',label:'Audio'},{value:'SLIDES',label:'Slides'}];
+const CONTENT_TYPE_LABELS:Record<string,string>={VIDEO:'Video',YOUTUBE:'YouTube',AUDIO:'Audio',SLIDES:'Slides'};
 const URL_PLACEHOLDERS:Record<string,string>={VIDEO:'Video file URL (mp4, etc.)',YOUTUBE:'YouTube video URL or ID',AUDIO:'Audio file URL (mp3, etc.)'};
 const QUESTION_TYPES=[{value:'SINGLE_CHOICE',label:'Single choice'},{value:'MULTIPLE_CHOICE',label:'Multiple choice'}];
 const EMPTY_QUESTION_DRAFT={text:'',type:'SINGLE_CHOICE',points:'1',optionsText:'',correctIndexes:''};
@@ -32,6 +36,8 @@ export default function CourseBuilderPage(){
  const [update,{loading:saving}]=useMutation(UPDATE);const [addSection]=useMutation(ADD_SECTION);const [deleteSection]=useMutation(DELETE_SECTION);
  const [addLesson]=useMutation(ADD_LESSON);const [updateLesson]=useMutation(UPDATE_LESSON);const [deleteLesson]=useMutation(DELETE_LESSON);const [publish]=useMutation(PUBLISH);
  const [addQuizQuestion]=useMutation(ADD_QUIZ_QUESTION);const [deleteQuizQuestion]=useMutation(DELETE_QUIZ_QUESTION);
+ const [requestUploadUrl]=useMutation(REQUEST_UPLOAD_URL);const [addLessonSlide]=useMutation(ADD_LESSON_SLIDE);const [deleteLessonSlide]=useMutation(DELETE_LESSON_SLIDE);const [reorderLessonSlides]=useMutation(REORDER_LESSON_SLIDES);
+ const [slidesLessonId,setSlidesLessonId]=useState<string|null>(null);const [uploadingSlide,setUploadingSlide]=useState(false);const [slideUploadError,setSlideUploadError]=useState<string|null>(null);
  const {data:enrollmentData,refetch:refetchEnrollments}=useQuery(GET_ENROLLMENTS,{variables:{courseId},skip:!courseId});
  const {data:boundsData}=useQuery(GET_XP_BOUNDS);
  const [awardXp,{loading:awarding}]=useMutation(AWARD_XP);
@@ -57,6 +63,26 @@ export default function CourseBuilderPage(){
   setQuestionDraft(EMPTY_QUESTION_DRAFT);await refetch();
  }
  async function removeQuestion(id:string){await deleteQuizQuestion({variables:{id}});await refetch();}
+ const slidesLesson=course?.sections?.flatMap((s:any)=>s.lessons??[]).find((l:any)=>l.id===slidesLessonId);
+ async function uploadSlide(file:File){
+  setSlideUploadError(null);setUploadingSlide(true);
+  try{
+   const {data}=await requestUploadUrl({variables:{purpose:'COURSE_SLIDE',filename:file.name,contentType:file.type}});
+   const {uploadUrl,fileUrl}=data.requestUploadUrl;
+   const res=await fetch(uploadUrl,{method:'PUT',headers:{'Content-Type':file.type},body:file});
+   if(!res.ok)throw new Error(`Upload failed (${res.status}).`);
+   await addLessonSlide({variables:{input:{lessonId:slidesLessonId,fileUrl,title:file.name}}});
+   await refetch();
+  }catch(e:any){setSlideUploadError(e.message??'Upload failed.');}
+  setUploadingSlide(false);
+ }
+ async function removeSlide(id:string){await deleteLessonSlide({variables:{id}});await refetch();}
+ async function moveSlide(slideId:string,direction:-1|1){
+  const ids=(slidesLesson?.slides??[]).map((s:any)=>s.id);
+  const i=ids.indexOf(slideId);const j=i+direction;if(j<0||j>=ids.length)return;
+  [ids[i],ids[j]]=[ids[j],ids[i]];
+  await reorderLessonSlides({variables:{lessonId:slidesLessonId,slideIds:ids}});await refetch();
+ }
  const bounds=boundsData?.xpAwardBounds??{min:5,max:200};
  async function giveXp(enrollmentId:string){
   const draft=xpDraft[enrollmentId]??{amount:'',note:''};
@@ -80,8 +106,8 @@ export default function CourseBuilderPage(){
   <section className="mt-8"><div className="flex items-center gap-2"><BookOpen className="h-5 w-5"/><h2 className="text-2xl font-semibold">Sections and units</h2></div>
    <form onSubmit={createSection} className="mt-4 flex gap-2"><input className="input flex-1" placeholder="New section title" value={sectionTitle} onChange={e=>setSectionTitle(e.target.value)}/><button className="btn-secondary inline-flex items-center gap-2 rounded-lg px-4"><Plus className="h-4 w-4"/>Add section</button></form>
    <div className="mt-5 space-y-5">{course.sections?.map((section:any)=><article key={section.id} className="card p-6"><div className="flex items-center justify-between"><h3 className="text-lg font-semibold">{section.title}</h3><button className="text-red-600" onClick={async()=>{if(confirm('Delete this section and all its units?')){await deleteSection({variables:{id:section.id}});await refetch();}}}><Trash2 className="h-4 w-4"/></button></div>
-    <div className="mt-4 space-y-2">{section.lessons?.map((lesson:any)=><div key={lesson.id} className="flex items-center justify-between rounded-lg border p-3"><div><p className="font-medium">{lesson.title}</p><p className="text-xs text-gray-500">{CONTENT_TYPE_LABELS[lesson.contentType as string]??'Video'} · {lesson.durationMin} min{lesson.isFreePreview?' · Free preview':''}{lesson.quizQuestions?.length?` · ${lesson.quizQuestions.length} quiz question${lesson.quizQuestions.length===1?'':'s'}`:''}</p></div><div className="flex gap-3"><button className="inline-flex items-center gap-1 text-sm text-primary-700" onClick={()=>setQuizLessonId(lesson.id)}><HelpCircle className="h-4 w-4"/>Quiz</button><button className="text-sm text-primary-700" onClick={()=>setEditing({...lesson})}>Edit</button><button className="text-red-600" onClick={async()=>{await deleteLesson({variables:{id:lesson.id}});await refetch();}}><Trash2 className="h-4 w-4"/></button></div></div>)}</div>
-    <div className="mt-4 grid gap-2 rounded-xl bg-gray-50 p-4 sm:grid-cols-2"><input className="input" placeholder="Unit title" value={lessonDraft[section.id]?.title??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],title:e.target.value}})}/><input type="number" min="0" className="input" placeholder="Length in minutes" value={lessonDraft[section.id]?.durationMin??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],durationMin:e.target.value}})}/><textarea className="input" placeholder="Unit description or written material" value={lessonDraft[section.id]?.description??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],description:e.target.value}})}/><select className="input" value={lessonDraft[section.id]?.contentType??'VIDEO'} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],contentType:e.target.value}})}>{CONTENT_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select><input type="url" className="input" placeholder={URL_PLACEHOLDERS[lessonDraft[section.id]?.contentType??'VIDEO']} value={lessonDraft[section.id]?.videoUrl??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],videoUrl:e.target.value}})}/><label className="text-sm"><input type="checkbox" checked={Boolean(lessonDraft[section.id]?.isFreePreview)} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],isFreePreview:e.target.checked}})}/> Free preview</label><button className="btn-secondary rounded-lg px-4 py-2" onClick={()=>void createLesson(section.id)}>Add unit</button></div>
+    <div className="mt-4 space-y-2">{section.lessons?.map((lesson:any)=><div key={lesson.id} className="flex items-center justify-between rounded-lg border p-3"><div><p className="font-medium">{lesson.title}</p><p className="text-xs text-gray-500">{CONTENT_TYPE_LABELS[lesson.contentType as string]??'Video'} · {lesson.durationMin} min{lesson.isFreePreview?' · Free preview':''}{lesson.quizQuestions?.length?` · ${lesson.quizQuestions.length} quiz question${lesson.quizQuestions.length===1?'':'s'}`:''}{lesson.contentType==='SLIDES'?` · ${lesson.slides?.length??0} slide${(lesson.slides?.length??0)===1?'':'s'}`:''}</p></div><div className="flex gap-3">{lesson.contentType==='SLIDES'&&<button className="inline-flex items-center gap-1 text-sm text-primary-700" onClick={()=>{setSlidesLessonId(lesson.id);setSlideUploadError(null);}}><Plus className="h-4 w-4"/>Slides</button>}<button className="inline-flex items-center gap-1 text-sm text-primary-700" onClick={()=>setQuizLessonId(lesson.id)}><HelpCircle className="h-4 w-4"/>Quiz</button><button className="text-sm text-primary-700" onClick={()=>setEditing({...lesson})}>Edit</button><button className="text-red-600" onClick={async()=>{await deleteLesson({variables:{id:lesson.id}});await refetch();}}><Trash2 className="h-4 w-4"/></button></div></div>)}</div>
+    <div className="mt-4 grid gap-2 rounded-xl bg-gray-50 p-4 sm:grid-cols-2"><input className="input" placeholder="Unit title" value={lessonDraft[section.id]?.title??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],title:e.target.value}})}/><input type="number" min="0" className="input" placeholder="Length in minutes" value={lessonDraft[section.id]?.durationMin??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],durationMin:e.target.value}})}/><textarea className="input" placeholder="Unit description or written material" value={lessonDraft[section.id]?.description??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],description:e.target.value}})}/><select className="input" value={lessonDraft[section.id]?.contentType??'VIDEO'} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],contentType:e.target.value}})}>{CONTENT_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select>{(lessonDraft[section.id]?.contentType??'VIDEO')!=='SLIDES'&&<input type="url" className="input" placeholder={URL_PLACEHOLDERS[lessonDraft[section.id]?.contentType??'VIDEO']} value={lessonDraft[section.id]?.videoUrl??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],videoUrl:e.target.value}})}/>}<label className="text-sm"><input type="checkbox" checked={Boolean(lessonDraft[section.id]?.isFreePreview)} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],isFreePreview:e.target.checked}})}/> Free preview</label><button className="btn-secondary rounded-lg px-4 py-2" onClick={()=>void createLesson(section.id)}>Add unit</button></div>
    </article>)}</div>
   </section>
   <section className="mt-8"><h2 className="text-2xl font-semibold">Students</h2>
@@ -96,7 +122,7 @@ export default function CourseBuilderPage(){
     </div>)}
    </div>
   </section>
-  {editing&&<div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"><section className="w-full max-w-lg space-y-3 rounded-2xl bg-white p-6"><h2 className="text-xl font-semibold">Edit unit</h2><input className="input w-full" value={editing.title} onChange={e=>setEditing({...editing,title:e.target.value})}/><textarea className="input w-full" value={editing.description??''} onChange={e=>setEditing({...editing,description:e.target.value})}/><select className="input w-full" value={editing.contentType??'VIDEO'} onChange={e=>setEditing({...editing,contentType:e.target.value})}>{CONTENT_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select><input type="url" className="input w-full" placeholder={URL_PLACEHOLDERS[editing.contentType??'VIDEO']} value={editing.videoUrl??''} onChange={e=>setEditing({...editing,videoUrl:e.target.value})}/><input type="number" className="input w-full" value={editing.durationMin??0} onChange={e=>setEditing({...editing,durationMin:e.target.value})}/><label className="text-sm"><input type="checkbox" checked={Boolean(editing.isFreePreview)} onChange={e=>setEditing({...editing,isFreePreview:e.target.checked})}/> Free preview</label><div className="flex justify-end gap-3"><button className="btn-secondary rounded-lg px-4 py-2" onClick={()=>setEditing(null)}>Cancel</button><button className="btn-primary rounded-lg px-4 py-2" onClick={()=>void saveLesson()}>Save unit</button></div></section></div>}
+  {editing&&<div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"><section className="w-full max-w-lg space-y-3 rounded-2xl bg-white p-6"><h2 className="text-xl font-semibold">Edit unit</h2><input className="input w-full" value={editing.title} onChange={e=>setEditing({...editing,title:e.target.value})}/><textarea className="input w-full" value={editing.description??''} onChange={e=>setEditing({...editing,description:e.target.value})}/><select className="input w-full" value={editing.contentType??'VIDEO'} onChange={e=>setEditing({...editing,contentType:e.target.value})}>{CONTENT_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select>{(editing.contentType??'VIDEO')!=='SLIDES'&&<input type="url" className="input w-full" placeholder={URL_PLACEHOLDERS[editing.contentType??'VIDEO']} value={editing.videoUrl??''} onChange={e=>setEditing({...editing,videoUrl:e.target.value})}/>}<input type="number" className="input w-full" value={editing.durationMin??0} onChange={e=>setEditing({...editing,durationMin:e.target.value})}/><label className="text-sm"><input type="checkbox" checked={Boolean(editing.isFreePreview)} onChange={e=>setEditing({...editing,isFreePreview:e.target.checked})}/> Free preview</label><div className="flex justify-end gap-3"><button className="btn-secondary rounded-lg px-4 py-2" onClick={()=>setEditing(null)}>Cancel</button><button className="btn-primary rounded-lg px-4 py-2" onClick={()=>void saveLesson()}>Save unit</button></div></section></div>}
   {quizLesson&&<div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"><section className="max-h-[85vh] w-full max-w-2xl space-y-4 overflow-y-auto rounded-2xl bg-white p-6">
    <div className="flex items-center justify-between"><h2 className="text-xl font-semibold">Quiz · {quizLesson.title}</h2><button className="text-sm text-gray-500" onClick={()=>{setQuizLessonId(null);setQuestionDraft(EMPTY_QUESTION_DRAFT);}}>Close</button></div>
    <label className="block text-sm font-medium">Feedback timing<select className="input mt-1 w-full" value={quizLesson.feedbackMode??'IMMEDIATE'} onChange={e=>void setFeedbackMode(quizLesson.id,e.target.value)}><option value="IMMEDIATE">Show result right after each question</option><option value="AT_END">Show results only once the quiz is finished</option></select></label>
@@ -112,6 +138,18 @@ export default function CourseBuilderPage(){
     <textarea rows={4} className="input w-full" placeholder={'One option per line, e.g.\nC major\nD major\nE major'} value={questionDraft.optionsText} onChange={e=>setQuestionDraft({...questionDraft,optionsText:e.target.value})}/>
     <input className="input w-full" placeholder="Correct option number(s), e.g. 1 or 1,3" value={questionDraft.correctIndexes} onChange={e=>setQuestionDraft({...questionDraft,correctIndexes:e.target.value})}/>
     <button className="btn-secondary inline-flex items-center gap-2 rounded-lg px-4 py-2" onClick={()=>void addQuestion()}><Plus className="h-4 w-4"/>Add question</button>
+   </div>
+  </section></div>}
+  {slidesLesson&&<div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"><section className="max-h-[85vh] w-full max-w-2xl space-y-4 overflow-y-auto rounded-2xl bg-white p-6">
+   <div className="flex items-center justify-between"><h2 className="text-xl font-semibold">Slides · {slidesLesson.title}</h2><button className="text-sm text-gray-500" onClick={()=>{setSlidesLessonId(null);setSlideUploadError(null);}}>Close</button></div>
+   {slideUploadError&&<p className="text-sm text-red-600">{slideUploadError}</p>}
+   <div className="space-y-2">{(slidesLesson.slides??[]).length===0&&<p className="text-sm text-gray-500">No slides yet — add one below. Each slide is its own file (image or single-page PDF), shown to students one at a time.</p>}
+    {(slidesLesson.slides??[]).map((slide:any,i:number,arr:any[])=><div key={slide.id} className="flex items-center justify-between rounded-lg border p-3"><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{i+1}. {slide.title??slide.fileUrl}</p></div><div className="flex shrink-0 items-center gap-2"><button className="text-sm text-gray-500 disabled:opacity-30" disabled={i===0} onClick={()=>void moveSlide(slide.id,-1)}>↑</button><button className="text-sm text-gray-500 disabled:opacity-30" disabled={i===arr.length-1} onClick={()=>void moveSlide(slide.id,1)}>↓</button><button className="text-red-600" onClick={()=>void removeSlide(slide.id)}><Trash2 className="h-4 w-4"/></button></div></div>)}
+   </div>
+   <div className="space-y-2 rounded-xl bg-gray-50 p-4">
+    <p className="text-sm font-medium">Add a slide</p>
+    <input type="file" accept="application/pdf,image/png,image/jpeg" disabled={uploadingSlide} onChange={e=>{const f=e.target.files?.[0];if(f)void uploadSlide(f);e.target.value='';}}/>
+    {uploadingSlide&&<p className="text-xs text-gray-500">Uploading…</p>}
    </div>
   </section></div>}
   </>}</main></RoleGate>;

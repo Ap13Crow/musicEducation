@@ -4,10 +4,24 @@ import { useState } from 'react';
 import { gql, useMutation, useQuery } from '@apollo/client';
 import { signIn, useSession } from 'next-auth/react';
 import { hasRole } from '@/lib/roles';
+import { uploadFileToStorage } from '@/lib/upload';
 
 const GET = gql`
   query MyTeacherApplicationStatus {
-    myTeacherApplication { id status headline bio instruments experienceYears address birthdate }
+    myTeacherApplication {
+      id status headline bio instruments experienceYears address birthdate
+      cvUrl audioSampleUrl documentUrls
+    }
+    storageConfigured
+  }
+`;
+
+const REQUEST_UPLOAD_URL = gql`
+  mutation RequestUploadUrl($purpose: UploadPurpose!, $filename: String!, $contentType: String!) {
+    requestUploadUrl(purpose: $purpose, filename: $filename, contentType: $contentType) {
+      uploadUrl
+      fileUrl
+    }
   }
 `;
 
@@ -46,19 +60,34 @@ export default function BecomeTeacherPage() {
 
   const { data, loading, refetch } = useQuery(GET, { skip: status !== 'authenticated' || alreadyTeacher });
   const [apply, { loading: applying, error }] = useMutation(APPLY);
+  const [requestUploadUrl] = useMutation(REQUEST_UPLOAD_URL);
   const [form, setForm] = useState({ headline: '', bio: '', experienceYears: '', address: '', birthdate: '' });
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>([]);
   const [ageError, setAgeError] = useState<string | null>(null);
+  const [cvFile, setCvFile] = useState<File | null>(null);
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const application = data?.myTeacherApplication;
+  const storageConfigured = data?.storageConfigured ?? false;
 
   function toggleInstrument(inst: string) {
     setSelectedInstruments((prev) => (prev.includes(inst) ? prev.filter((i) => i !== inst) : [...prev, inst]));
   }
 
+  function requestUrlFor(purpose: string) {
+    return async (filename: string, contentType: string) => {
+      const { data } = await requestUploadUrl({ variables: { purpose, filename, contentType } });
+      return data.requestUploadUrl;
+    };
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setAgeError(null);
+    setUploadError(null);
     // Server enforces this too (the real check) - client-side only saves a
     // round trip for the common case of someone just under the line.
     const age = form.birthdate ? calculateAge(form.birthdate) : null;
@@ -70,6 +99,25 @@ export default function BecomeTeacherPage() {
       setAgeError(`You must be at least ${MIN_TEACHER_AGE_YEARS} to apply as a teacher.`);
       return;
     }
+
+    let cvUrl = application?.cvUrl ?? null;
+    let audioSampleUrl = application?.audioSampleUrl ?? null;
+    let documentUrls: string[] = application?.documentUrls ?? [];
+    try {
+      setUploading(true);
+      if (cvFile) cvUrl = await uploadFileToStorage(requestUrlFor('TEACHER_APPLICATION_CV'), cvFile);
+      if (audioFile) audioSampleUrl = await uploadFileToStorage(requestUrlFor('TEACHER_APPLICATION_AUDIO'), audioFile);
+      if (documentFiles.length > 0) {
+        const uploaded = await Promise.all(documentFiles.map((f) => uploadFileToStorage(requestUrlFor('TEACHER_APPLICATION_DOCUMENT'), f)));
+        documentUrls = [...documentUrls, ...uploaded];
+      }
+    } catch (err: any) {
+      setUploadError(err.message ?? 'File upload failed.');
+      setUploading(false);
+      return;
+    }
+    setUploading(false);
+
     await apply({
       variables: {
         input: {
@@ -81,9 +129,15 @@ export default function BecomeTeacherPage() {
           experienceYears: form.experienceYears ? Math.trunc(Number(form.experienceYears)) : null,
           address: form.address.trim() || null,
           birthdate: form.birthdate,
+          cvUrl,
+          audioSampleUrl,
+          documentUrls,
         },
       },
     });
+    setCvFile(null);
+    setAudioFile(null);
+    setDocumentFiles([]);
     await refetch();
   }
 
@@ -137,6 +191,7 @@ export default function BecomeTeacherPage() {
               )}
               {error && <p className="text-sm text-red-600">{error.message}</p>}
               {ageError && <p className="text-sm text-red-600">{ageError}</p>}
+              {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block text-sm font-medium">
                   Date of birth
@@ -208,12 +263,53 @@ export default function BecomeTeacherPage() {
                   ))}
                 </div>
               </div>
-              <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
-                Uploading a CV, a recording, and supporting documents will be added soon — for now our team follows up by
-                email if we need anything beyond what&rsquo;s here. A verified-identity step is also planned for a later phase.
-              </p>
-              <button disabled={applying} className="btn-primary px-8 py-3">
-                {applying ? 'Submitting…' : 'Submit application'}
+              {storageConfigured ? (
+                <div className="space-y-4 rounded-lg border border-gray-200 p-4">
+                  <p className="text-sm font-medium">Supporting materials (optional, but they help review go faster)</p>
+                  <label className="block text-sm">
+                    CV / resume (PDF)
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      className="input mt-1 w-full"
+                      onChange={(e) => setCvFile(e.target.files?.[0] ?? null)}
+                    />
+                    {application?.cvUrl && !cvFile && <span className="mt-1 block text-xs text-green-700">A CV is already on file — choose a new one to replace it.</span>}
+                  </label>
+                  <label className="block text-sm">
+                    Audio sample of your own playing/teaching
+                    <input
+                      type="file"
+                      accept="audio/mpeg,audio/mp4,audio/wav,audio/ogg"
+                      className="input mt-1 w-full"
+                      onChange={(e) => setAudioFile(e.target.files?.[0] ?? null)}
+                    />
+                    {application?.audioSampleUrl && !audioFile && <span className="mt-1 block text-xs text-green-700">A sample is already on file — choose a new one to replace it.</span>}
+                  </label>
+                  <label className="block text-sm">
+                    Additional proof of experience (certificates, references — PDF or image, multiple allowed)
+                    <input
+                      type="file"
+                      accept="application/pdf,image/png,image/jpeg"
+                      multiple
+                      className="input mt-1 w-full"
+                      onChange={(e) => setDocumentFiles(Array.from(e.target.files ?? []))}
+                    />
+                    {application?.documentUrls?.length > 0 && (
+                      <span className="mt-1 block text-xs text-green-700">{application.documentUrls.length} document(s) already on file — new ones are added, not replaced.</span>
+                    )}
+                  </label>
+                  <p className="text-xs text-gray-400">A verified-identity step is also planned for a later phase.</p>
+                </div>
+              ) : (
+                <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                  Uploading a CV, a recording, and supporting documents isn&rsquo;t enabled on this deployment yet — for now
+                  our team follows up by email if we need anything beyond what&rsquo;s here. A verified-identity step is also
+                  planned for a later phase.
+                </p>
+              )}
+              <button disabled={applying || uploading} className="btn-primary px-8 py-3">
+                {uploading ? 'Uploading files…' : applying ? 'Submitting…' : 'Submit application'}
               </button>
             </form>
           )}

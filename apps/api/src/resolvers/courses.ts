@@ -300,6 +300,60 @@ export const courseResolvers = {
       requireAuth(user);
       return completeLessonForUser(prisma, user.id, lessonId);
     },
+
+    async addLessonSlide(_: unknown, { input }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'TEACHER', 'ADMIN');
+      const lesson = await prisma.lesson.findUnique({ where: { id: input.lessonId }, include: { section: true } });
+      if (!lesson) throw new GraphQLError('Lesson not found.', { extensions: { code: 'NOT_FOUND' } });
+      await requireOwnedCourse(prisma, user!, lesson.section.courseId);
+      const order = input.order ?? (await prisma.lessonSlide.count({ where: { lessonId: input.lessonId } }));
+      return prisma.lessonSlide.create({
+        data: { lessonId: input.lessonId, fileUrl: input.fileUrl, title: input.title ?? null, order },
+      });
+    },
+
+    async reorderLessonSlides(_: unknown, { lessonId, slideIds }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'TEACHER', 'ADMIN');
+      const lesson = await prisma.lesson.findUnique({ where: { id: lessonId }, include: { section: true } });
+      if (!lesson) throw new GraphQLError('Lesson not found.', { extensions: { code: 'NOT_FOUND' } });
+      await requireOwnedCourse(prisma, user!, lesson.section.courseId);
+      const existing = await prisma.lessonSlide.findMany({ where: { lessonId } });
+      const existingIds = new Set(existing.map((s: any) => s.id));
+      if (slideIds.length !== existing.length || !slideIds.every((id: string) => existingIds.has(id))) {
+        throw new GraphQLError("slideIds must be exactly this lesson's current slide set.", { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      await prisma.$transaction(
+        slideIds.map((id: string, index: number) => prisma.lessonSlide.update({ where: { id }, data: { order: index } })),
+      );
+      return prisma.lessonSlide.findMany({ where: { lessonId }, orderBy: { order: 'asc' } });
+    },
+
+    async deleteLessonSlide(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'TEACHER', 'ADMIN');
+      const slide = await prisma.lessonSlide.findUnique({ where: { id }, include: { lesson: { include: { section: true } } } });
+      if (!slide) return true;
+      await requireOwnedCourse(prisma, user!, slide.lesson.section.courseId);
+      await prisma.lessonSlide.delete({ where: { id } });
+      return true;
+    },
+
+    // Idempotent: re-viewing an already-viewed slide upserts to the same
+    // row rather than creating a duplicate or erroring.
+    async viewLessonSlide(_: unknown, { slideId }: any, { prisma, user }: GraphQLContext) {
+      requireAuth(user);
+      const slide = await prisma.lessonSlide.findUnique({ where: { id: slideId }, include: { lesson: { include: { section: true } } } });
+      if (!slide) throw new GraphQLError('Slide not found.', { extensions: { code: 'NOT_FOUND' } });
+      const enrollment = await prisma.enrollment.findUnique({
+        where: { userId_courseId: { userId: user.id, courseId: slide.lesson.section.courseId } },
+      });
+      if (!enrollment) throw new GraphQLError('Not enrolled in this course.', { extensions: { code: 'FORBIDDEN' } });
+      await prisma.lessonSlideView.upsert({
+        where: { enrollmentId_slideId: { enrollmentId: enrollment.id, slideId } },
+        create: { enrollmentId: enrollment.id, slideId },
+        update: {},
+      });
+      return true;
+    },
   },
 
   Course: {
@@ -361,6 +415,27 @@ export const courseResolvers = {
       const { allowed } = await resolveLessonAccess(prisma, user, lesson);
       if (!allowed) return [];
       return prisma.quizQuestion.findMany({ where: { lessonId: lesson.id }, orderBy: { order: 'asc' } });
+    },
+    // Same gating as videoUrl/quizQuestions - a locked lesson's slide deck
+    // shouldn't be visible before enrollment either.
+    async slides(lesson: any, _: unknown, { prisma, user }: GraphQLContext) {
+      const { allowed } = await resolveLessonAccess(prisma, user, lesson);
+      if (!allowed) return [];
+      return prisma.lessonSlide.findMany({ where: { lessonId: lesson.id }, orderBy: { order: 'asc' } });
+    },
+    async myViewedSlideIds(lesson: any, _: unknown, { prisma, user }: GraphQLContext) {
+      if (!user) return [];
+      const section = await prisma.courseSection.findUnique({ where: { id: lesson.sectionId } });
+      if (!section) return [];
+      const enrollment = await prisma.enrollment.findUnique({
+        where: { userId_courseId: { userId: user.id, courseId: section.courseId } },
+      });
+      if (!enrollment) return [];
+      const views = await prisma.lessonSlideView.findMany({
+        where: { enrollmentId: enrollment.id, slide: { lessonId: lesson.id } },
+        select: { slideId: true },
+      });
+      return views.map((v: any) => v.slideId);
     },
   },
 

@@ -20,3 +20,4 @@ configMapGenerator:
       - 013-assessment-question-seed.sql
       - 014-external-event-classification.sql
       - 015-teacher-application-address-birthdate.sql
+      - 016-object-storage-uploads.sql
