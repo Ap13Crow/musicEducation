@@ -107,8 +107,15 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
       isNewPayment = false;
       payment = await prisma.payment.findUniqueOrThrow({ where: { provider_providerRef: { provider: 'STRIPE', providerRef: session.id } } });
     }
-    const buyer = await prisma.user.findUnique({ where: { id: userId! }, include: { profile: true } });
-    const buyerName = buyer?.profile?.displayName || buyer?.email?.split('@')[0] || 'there';
+    // Only ever needed for the purchase-confirmation email (course/event,
+    // and only when isNewPayment) - not the booking branch (which does its
+    // own lookup inside notifyBookingConfirmed) and not a retry of an
+    // already-processed delivery. Lazy so neither case pays for this DB
+    // round-trip on the hottest webhook path.
+    async function getBuyerInfo() {
+      const buyer = await prisma.user.findUnique({ where: { id: userId! }, include: { profile: true } });
+      return { email: buyer?.email, name: buyer?.profile?.displayName || buyer?.email?.split('@')[0] || 'there' };
+    }
 
     if (type === 'course') {
       await prisma.enrollment.upsert({
@@ -117,13 +124,16 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
         create: { userId: userId!, courseId: refId!, paymentId: payment.id },
       });
       if (isNewPayment) {
-        const course = await prisma.course.findUnique({ where: { id: refId } });
+        const [course, buyer] = await Promise.all([
+          prisma.course.findUnique({ where: { id: refId } }),
+          getBuyerInfo(),
+        ]);
         // Not awaited - the webhook response must not wait on an SMTP
         // round-trip (Stripe times out and retries slow deliveries), and
         // sendPurchaseConfirmedEmail already can't throw (it only ever
         // calls sendMail, which swallows its own failures).
         void sendPurchaseConfirmedEmail({
-          toEmail: buyer?.email, toName: buyerName,
+          toEmail: buyer.email, toName: buyer.name,
           description: `Enrolled in: ${course?.title ?? 'your course'}`,
           amount: payment.amount.toNumber(), currency: payment.currency,
         });
@@ -141,9 +151,12 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
       // keeps it one-time even if Stripe retries this webhook.
       await awardXpOnce(prisma, userId!, 'EVENT_ATTENDED', refId!, EVENT_ATTENDED_XP);
       if (isNewPayment) {
-        const ticketedEvent = await prisma.event.findUnique({ where: { id: refId } });
+        const [ticketedEvent, buyer] = await Promise.all([
+          prisma.event.findUnique({ where: { id: refId } }),
+          getBuyerInfo(),
+        ]);
         void sendPurchaseConfirmedEmail({
-          toEmail: buyer?.email, toName: buyerName,
+          toEmail: buyer.email, toName: buyer.name,
           description: `Ticket: ${ticketedEvent?.title ?? 'your event'}`,
           amount: payment.amount.toNumber(), currency: payment.currency,
         });

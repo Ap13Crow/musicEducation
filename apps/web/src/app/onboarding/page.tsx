@@ -6,6 +6,19 @@ import { useRouter } from 'next/navigation';
 import { signIn, useSession } from 'next-auth/react';
 import { BookOpen, Mic, Globe, Music } from 'lucide-react';
 
+// aiReport is written server-side as JSON.stringify(...) (see
+// completeAssessment in assessments.ts) so it's always well-formed today,
+// but it's still DB-sourced data flowing through a client parse - a future
+// schema change or a hand-edited row shouldn't be able to crash this page.
+function safeParseFeedback(aiReport: string | null | undefined): string | null {
+  if (!aiReport) return null;
+  try {
+    return JSON.parse(aiReport).feedback ?? null;
+  } catch {
+    return null;
+  }
+}
+
 const START_ASSESSMENT = gql`
   mutation StartAssessment {
     startAssessment { id startedAt }
@@ -94,7 +107,7 @@ export default function OnboardingPage() {
   // one is the result "on file" (an abandoned, never-finished retake could
   // otherwise sort above it).
   const latestCompleted = (statusData?.myAssessments ?? []).find((a: any) => a.completedAt) ?? null;
-  const latestFeedback = latestCompleted?.aiReport ? JSON.parse(latestCompleted.aiReport).feedback : null;
+  const latestFeedback = safeParseFeedback(latestCompleted?.aiReport);
 
   const [startAssessment] = useMutation(START_ASSESSMENT);
   const [submitAnswer] = useMutation(SUBMIT_ANSWER);
@@ -167,7 +180,7 @@ export default function OnboardingPage() {
 
   const currentStep = steps[step];
   const progress = (step / (steps.length - 1)) * 100;
-  const feedback = result?.aiReport ? JSON.parse(result.aiReport).feedback : null;
+  const feedback = safeParseFeedback(result?.aiReport);
 
   // Already completed the one-time evaluation and hasn't explicitly chosen
   // to retake it - show the result on file instead of restarting the quiz.
