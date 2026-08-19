@@ -666,6 +666,12 @@ model Payment {
   description String?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+  // Durable "confirmation dispatched" marker for handleStripeWebhook - a
+  // retried delivery checks this instead of "did I just create the Payment
+  // row," so a delivery that created the row but crashed before setting
+  // this still gets a real retry at sending the confirmation, rather than
+  // silently never sending one (the gap an isNewPayment-only heuristic had).
+  confirmationEmailAt DateTime?
 
   user         User          @relation(fields: [userId], references: [id])
   enrollment   Enrollment?
