@@ -5,12 +5,13 @@ import { gql, useQuery } from '@apollo/client';
 import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Award, BookOpen, CalendarDays, MapPin, Music, Star, UserRound } from 'lucide-react';
+import { toYouTubeEmbedUrl } from '@/lib/youtube';
 
 const GET_TEACHER = gql`
   query PublicTeacher($id: ID!, $courseFilter: CourseFilterInput) {
     teacher(id: $id) {
       id userId headline teachingBio hourlyRate currency instruments specializations
-      teachingFormats isAvailable avgRating totalReviews yearsExperience
+      teachingFormats isAvailable avgRating totalReviews yearsExperience introVideoUrl
       locationCity locationCountry
       certifications { id title issuingBody issuedYear }
       availability { id dayOfWeek startTime endTime }
@@ -56,6 +57,7 @@ export default function PublicTeacherPage() {
               <div className="mt-3 flex flex-wrap gap-3 text-sm text-gray-600">
                 {teacher.locationCity && <span className="flex items-center gap-1"><MapPin className="h-4 w-4" />{teacher.locationCity}{teacher.locationCountry ? `, ${teacher.locationCountry}` : ''}</span>}
                 {teacher.avgRating > 0 && <span className="flex items-center gap-1"><Star className="h-4 w-4 text-amber-500" />{teacher.avgRating.toFixed(1)} ({teacher.totalReviews})</span>}
+                {teacher.yearsExperience != null && <span>{teacher.yearsExperience} yr experience</span>}
               </div>
             </div>
           </div>
@@ -68,6 +70,19 @@ export default function PublicTeacherPage() {
 
     <div className="mx-auto grid max-w-5xl gap-6 px-6 py-8 lg:grid-cols-[2fr_1fr]">
       <div className="space-y-6">
+        {teacher.introVideoUrl && toYouTubeEmbedUrl(teacher.introVideoUrl) && (
+          <section className="card overflow-hidden p-0">
+            <div className="aspect-video bg-gray-900">
+              <iframe
+                className="h-full w-full"
+                src={toYouTubeEmbedUrl(teacher.introVideoUrl)!}
+                title={`${teacher.user?.displayName ?? 'Teacher'} — presentation video`}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          </section>
+        )}
         <section className="card p-6"><h2 className="text-xl font-semibold">About</h2><p className="mt-3 whitespace-pre-line text-gray-700">{teacher.teachingBio ?? 'This teacher is preparing their profile.'}</p></section>
         <section className="card p-6"><h2 className="flex items-center gap-2 text-xl font-semibold"><BookOpen className="h-5 w-5" />Courses</h2>
           {courses.length ? <div className="mt-4 grid gap-3 sm:grid-cols-2">{courses.map((course:any)=><Link key={course.id} href={`/courses/${course.slug}`} className="rounded-xl border p-4 hover:border-primary-300"><strong>{course.title}</strong><p className="mt-1 text-sm text-gray-600">{course.shortSummary ?? course.level}</p></Link>)}</div> : <p className="mt-3 text-sm text-gray-500">No published courses yet.</p>}

@@ -181,6 +181,12 @@ model TeacherProfile {
   calendlyUsername String?
   avgRating        Float    @default(0)
   totalReviews     Int      @default(0)
+  // Copied from the approved TeacherApplication - years teaching, and a
+  // YouTube presentation/performance video the teacher can hide again at
+  // any time (introVideoVisible) without losing the link itself.
+  experienceYears    Int?
+  introVideoUrl      String?
+  introVideoVisible  Boolean  @default(true)
   // Stripe Connect Express account this teacher's share of course/booking/event
   // revenue is transferred to. Null until the teacher completes onboarding.
   stripeAccountId      String?  @unique
@@ -223,12 +229,19 @@ model TeacherApplication {
   // later phase, this is the quality/legal floor for now.
   address         String?
   birthdate       DateTime?                 @db.Date
+  // Private, admin-review-only - never copied onto the public TeacherProfile.
+  gender          String?
+  motivation      String?
   // Object storage URLs (see apps/api/src/lib/storage.ts) - populated via
   // requestUploadUrl(purpose: TEACHER_APPLICATION_*) then attached here on
   // submit. Never inline file data.
   cvUrl           String?
   audioSampleUrl  String?
   documentUrls    String[]                  @default([])
+  // YouTube link, not an uploaded file - keeps the site light (see
+  // apps/web/src/lib/youtube.ts). Required to apply; copied to
+  // TeacherProfile.introVideoUrl on approval.
+  videoUrl        String?
   status          TeacherApplicationStatus  @default(PENDING)
   reviewedBy      String?
   reviewedAt      DateTime?

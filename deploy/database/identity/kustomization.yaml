@@ -21,3 +21,4 @@ configMapGenerator:
       - 014-external-event-classification.sql
       - 015-teacher-application-address-birthdate.sql
       - 016-object-storage-uploads.sql
+      - 017-teacher-application-richer.sql

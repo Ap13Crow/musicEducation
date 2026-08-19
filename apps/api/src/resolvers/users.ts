@@ -173,11 +173,27 @@ export const userResolvers = {
 
     async updateTeacherProfile(_: unknown, args: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'TEACHER', 'ADMIN');
-      const { bio, hourlyRate, currency, instruments, musicStyles, languages, isAvailable, calendlyUsername } = args;
-      return prisma.teacherProfile.update({
-        where: { userId: user!.id },
-        data: { bio, hourlyRate, currency, instruments, musicStyles, languages, isAvailable, calendlyUsername },
-      });
+      // These names are the GraphQL-facing ones (see TeacherProfile /
+      // updateTeacherProfile in schema.graphql) - teachingBio/specializations
+      // map onto the Prisma columns bio/musicStyles, same renaming the
+      // TeacherProfile field resolvers below undo on the way out. Previously
+      // this destructured the *column* names instead (bio, currency,
+      // musicStyles, languages - none of which updateTeacherProfile actually
+      // accepts as args), so every field but hourlyRate/instruments/
+      // isAvailable/calendlyUsername was silently ignored.
+      const { headline, teachingBio, hourlyRate, instruments, specializations, isAvailable, calendlyUsername, introVideoVisible } = args;
+      const data: Record<string, unknown> = { hourlyRate, instruments, isAvailable, calendlyUsername, introVideoVisible };
+      if (teachingBio !== undefined) data.bio = teachingBio;
+      if (specializations !== undefined) data.musicStyles = specializations;
+      // headline has no independent column - TeacherProfile.headline is
+      // derived from bio's first line (see the headline resolver below) -
+      // so an explicit headline update folds into bio as its first line.
+      if (headline !== undefined) {
+        const existing = await prisma.teacherProfile.findUnique({ where: { userId: user!.id } });
+        const restOfBio = (existing?.bio ?? '').split(/\r?\n/).slice(1).join('\n');
+        data.bio = [headline, restOfBio].filter(Boolean).join('\n');
+      }
+      return prisma.teacherProfile.update({ where: { userId: user!.id }, data });
     },
 
     async addCertification(_: unknown, { title, issuingBody, issuedYear, documentUrl }: any, { prisma, user }: GraphQLContext) {
@@ -312,14 +328,24 @@ export const userResolvers = {
     teachingFormats() {
       return [];
     },
-    yearsExperience() {
-      return null;
+    yearsExperience(profile: any) {
+      return profile.experienceYears ?? null;
     },
     locationCity(profile: any) {
       return profile.user?.profile?.city ?? null;
     },
     locationCountry(profile: any) {
       return profile.user?.profile?.country ?? null;
+    },
+    // Null whenever there's nothing to show, regardless of *why* - no link
+    // set, or the teacher has toggled it off - so callers never need to
+    // check introVideoVisible separately to decide whether to render it.
+    // The owner/an admin still sees the raw link so they can flip the
+    // toggle without having to re-paste it.
+    introVideoUrl(profile: any, _: unknown, { user }: GraphQLContext) {
+      if (!profile.introVideoUrl) return null;
+      const isOwnerOrAdmin = user?.id === profile.userId || user?.role === 'ADMIN';
+      return profile.introVideoVisible || isOwnerOrAdmin ? profile.introVideoUrl : null;
     },
     stripeAccountId(profile: any, _: unknown, { user }: GraphQLContext) {
       const isOwnerOrAdmin = user?.id === profile.userId || user?.role === 'ADMIN';

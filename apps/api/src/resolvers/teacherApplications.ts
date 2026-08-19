@@ -1,6 +1,7 @@
 import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { isOwnedUploadUrl, type UploadPurpose } from '../lib/storage.js';
+import { isValidYouTubeUrl } from '../lib/youtube.js';
 import type { GraphQLContext } from '../types.js';
 
 const MIN_TEACHER_AGE_YEARS = 18;
@@ -76,6 +77,24 @@ export const teacherApplicationResolvers = {
         throw new GraphQLError(`You must be at least ${MIN_TEACHER_AGE_YEARS} years old to apply as a teacher.`, { extensions: { code: 'BAD_USER_INPUT' } });
       }
 
+      // Required - this becomes the public profile's presentation video once
+      // approved. A YouTube link, not an upload, so the site stays light.
+      if (!input.videoUrl || !isValidYouTubeUrl(input.videoUrl)) {
+        throw new GraphQLError('A YouTube link to a presentation or performance video is required to apply.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+
+      // The name that will show on the public teacher profile once approved -
+      // update it now rather than waiting for approval, so the applicant sees
+      // it reflected immediately.
+      const fullName = typeof input.fullName === 'string' ? input.fullName.trim() : '';
+      if (fullName) {
+        await prisma.userProfile.upsert({
+          where: { userId: user.id },
+          create: { userId: user.id, displayName: fullName, instruments: [], musicStyles: [] },
+          update: { displayName: fullName },
+        });
+      }
+
       // Each non-null URL must be one requestUploadUrl actually minted for
       // this user and this purpose - otherwise a client could submit any
       // external URL for a field an admin later opens in a new tab.
@@ -99,9 +118,12 @@ export const teacherApplicationResolvers = {
           experienceYears: input.experienceYears ?? null,
           address: input.address ?? null,
           birthdate,
+          gender: input.gender?.trim() || null,
+          motivation: input.motivation?.trim() || null,
           cvUrl,
           audioSampleUrl,
           documentUrls,
+          videoUrl: input.videoUrl,
         },
         update: {
           headline: input.headline ?? null,
@@ -110,9 +132,12 @@ export const teacherApplicationResolvers = {
           experienceYears: input.experienceYears ?? null,
           address: input.address ?? null,
           birthdate,
+          gender: input.gender?.trim() || null,
+          motivation: input.motivation?.trim() || null,
           cvUrl,
           audioSampleUrl,
           documentUrls,
+          videoUrl: input.videoUrl,
           status: 'PENDING',
           reviewedBy: null,
           reviewedAt: null,
@@ -146,8 +171,17 @@ export const teacherApplicationResolvers = {
               musicStyles: applicant.profile?.musicStyles ?? [],
               languages: [],
               isAvailable: true,
+              experienceYears: application.experienceYears,
+              introVideoUrl: application.videoUrl,
             },
-            update: {},
+            // A resubmission-then-reapproval refreshes the video link (the
+            // teacher may have replaced it) but leaves introVideoVisible
+            // alone - that's the teacher's own toggle, not something
+            // re-approval should silently reset.
+            update: {
+              experienceYears: application.experienceYears,
+              introVideoUrl: application.videoUrl,
+            },
           });
         }
 
