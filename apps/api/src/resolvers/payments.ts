@@ -86,7 +86,12 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
     // also what repairs a delivery that created the Payment row but then
     // crashed (process killed, DB hiccup) before reaching them, which an
     // early return would instead leave stuck half-processed forever.
-    let payment;
+    // Explicit annotation: claimConfirmationEmail below is a nested async
+    // closure over `payment`, and TS can't apply straight-line control-flow
+    // narrowing for an implicitly-typed `let` across a closure boundary the
+    // way it can for direct references - it fell back to erroring on the
+    // implicit `any` rather than silently inferring it.
+    let payment: Awaited<ReturnType<typeof prisma.payment.create>>;
     try {
       payment = await prisma.payment.create({
         data: {
@@ -107,12 +112,26 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
     // "did I just create the Payment row" - that heuristic has its own gap:
     // a delivery that creates the row and then crashes before sending the
     // email would never get a real retry at sending it (isNewPayment would
-    // be false on the retry, even though no email ever went out). This
-    // column is set immediately after the send attempt is issued, in the
-    // same statement group as the state-transition write below, so the
-    // only remaining gap is a crash inside that single await - much
-    // narrower than "anywhere before this whole handler finishes."
-    const needsConfirmation = !payment.confirmationEmailAt;
+    // be false on the retry, even though no email ever went out).
+    //
+    // Reading payment.confirmationEmailAt and later writing it in two
+    // separate statements (the previous approach) has its own race: two
+    // genuinely concurrent deliveries can both race past the P2002 catch
+    // above, both read confirmationEmailAt as still null, and both fire the
+    // email before either one's write lands. claimConfirmationEmail makes
+    // the check-and-set a single atomic UPDATE ... WHERE confirmationEmailAt
+    // IS NULL - only the delivery whose write actually flips the row wins
+    // the right to send, so at most one of any number of concurrent
+    // deliveries ever sends. The remaining gap - a crash between winning the
+    // claim and the fire-and-forget send actually going out - is accepted,
+    // same as before, in exchange for never double-sending.
+    async function claimConfirmationEmail(): Promise<boolean> {
+      const result = await prisma.payment.updateMany({
+        where: { id: payment.id, confirmationEmailAt: null },
+        data: { confirmationEmailAt: new Date() },
+      });
+      return result.count > 0;
+    }
     // Only ever needed for the purchase-confirmation email (course/event) -
     // not the booking branch (which does its own lookup inside
     // notifyBookingConfirmed). Lazy so a delivery that doesn't need it
@@ -128,7 +147,7 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
         update: { paymentId: payment.id },
         create: { userId: userId!, courseId: refId!, paymentId: payment.id },
       });
-      if (needsConfirmation) {
+      if (await claimConfirmationEmail()) {
         const [course, buyer] = await Promise.all([
           prisma.course.findUnique({ where: { id: refId } }),
           getBuyerInfo(),
@@ -142,13 +161,11 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
           description: `Enrolled in: ${course?.title ?? 'your course'}`,
           amount: payment.amount.toNumber(), currency: payment.currency,
         });
-        await prisma.payment.update({ where: { id: payment.id }, data: { confirmationEmailAt: new Date() } });
       }
     } else if (type === 'booking') {
       await prisma.booking.update({ where: { id: refId }, data: { paymentId: payment.id, status: 'CONFIRMED' } });
-      if (needsConfirmation) {
+      if (await claimConfirmationEmail()) {
         void notifyBookingConfirmed(prisma, refId!);
-        await prisma.payment.update({ where: { id: payment.id }, data: { confirmationEmailAt: new Date() } });
       }
     } else if (type === 'event') {
       await prisma.eventBooking.upsert({
@@ -159,7 +176,7 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
       // Mirrors the free-event award in events.ts bookEvent - refId=eventId
       // keeps it one-time even if Stripe retries this webhook.
       await awardXpOnce(prisma, userId!, 'EVENT_ATTENDED', refId!, EVENT_ATTENDED_XP);
-      if (needsConfirmation) {
+      if (await claimConfirmationEmail()) {
         const [ticketedEvent, buyer] = await Promise.all([
           prisma.event.findUnique({ where: { id: refId } }),
           getBuyerInfo(),
@@ -169,7 +186,6 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
           description: `Ticket: ${ticketedEvent?.title ?? 'your event'}`,
           amount: payment.amount.toNumber(), currency: payment.currency,
         });
-        await prisma.payment.update({ where: { id: payment.id }, data: { confirmationEmailAt: new Date() } });
       }
     }
   } else if (event.type === 'account.updated') {

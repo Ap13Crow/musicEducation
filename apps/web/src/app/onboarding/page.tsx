@@ -201,7 +201,7 @@ export default function OnboardingPage() {
         <div className="mx-auto max-w-2xl">
           <div className="card p-10 text-center">
             <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
-              <span className="text-4xl">🎵</span>
+              <span className="text-4xl" aria-hidden="true">🎵</span>
             </div>
             <h1 className="mb-2 text-3xl font-bold">You&rsquo;ve already completed onboarding</h1>
             <p className="mb-6 text-gray-600">
@@ -411,7 +411,7 @@ export default function OnboardingPage() {
         {step === steps.length && (
           <div className="card p-10 text-center">
             <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
-              <span className="text-4xl">🎵</span>
+              <span className="text-4xl" aria-hidden="true">🎵</span>
             </div>
             <h2 className="mb-2 text-2xl font-bold">Assessment Complete!</h2>
             {result && (
