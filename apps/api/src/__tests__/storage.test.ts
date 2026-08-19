@@ -72,4 +72,54 @@ describe('storage', () => {
     expect(a.key.startsWith('course-slides/teacher-a/')).toBe(true);
     expect(b.key.startsWith('course-slides/teacher-b/')).toBe(true);
   });
+
+  describe('isOwnedUploadUrl', () => {
+    it('accepts the exact fileUrl createUploadTarget returned', async () => {
+      clearStorageEnv();
+      setStorageEnv();
+      const { createUploadTarget, isOwnedUploadUrl } = await import('../lib/storage.js');
+      const target = await createUploadTarget('TEACHER_APPLICATION_CV', 'user-1', 'cv.pdf', 'application/pdf');
+      expect(isOwnedUploadUrl(target.fileUrl, 'TEACHER_APPLICATION_CV', 'user-1')).toBe(true);
+    });
+
+    it('rejects the presigned uploadUrl itself (query-string signature, not the plain fileUrl)', async () => {
+      clearStorageEnv();
+      setStorageEnv();
+      const { createUploadTarget, isOwnedUploadUrl } = await import('../lib/storage.js');
+      const target = await createUploadTarget('TEACHER_APPLICATION_CV', 'user-1', 'cv.pdf', 'application/pdf');
+      expect(target.uploadUrl).not.toBe(target.fileUrl);
+      expect(isOwnedUploadUrl(target.uploadUrl, 'TEACHER_APPLICATION_CV', 'user-1')).toBe(false);
+    });
+
+    it('rejects a fileUrl with an appended query string even if the path prefix matches', async () => {
+      clearStorageEnv();
+      setStorageEnv();
+      const { createUploadTarget, isOwnedUploadUrl } = await import('../lib/storage.js');
+      const target = await createUploadTarget('TEACHER_APPLICATION_CV', 'user-1', 'cv.pdf', 'application/pdf');
+      expect(isOwnedUploadUrl(`${target.fileUrl}?x=y`, 'TEACHER_APPLICATION_CV', 'user-1')).toBe(false);
+    });
+
+    it("rejects another user's legit-looking URL", async () => {
+      clearStorageEnv();
+      setStorageEnv();
+      const { createUploadTarget, isOwnedUploadUrl } = await import('../lib/storage.js');
+      const target = await createUploadTarget('TEACHER_APPLICATION_CV', 'user-1', 'cv.pdf', 'application/pdf');
+      expect(isOwnedUploadUrl(target.fileUrl, 'TEACHER_APPLICATION_CV', 'user-2')).toBe(false);
+    });
+
+    it('rejects a URL from an unrelated host even with a matching path', async () => {
+      clearStorageEnv();
+      setStorageEnv();
+      const { createUploadTarget, isOwnedUploadUrl } = await import('../lib/storage.js');
+      const target = await createUploadTarget('TEACHER_APPLICATION_CV', 'user-1', 'cv.pdf', 'application/pdf');
+      const path = new URL(target.fileUrl).pathname;
+      expect(isOwnedUploadUrl(`https://evil.example${path}`, 'TEACHER_APPLICATION_CV', 'user-1')).toBe(false);
+    });
+
+    it('is false whenever storage is not configured, even for an otherwise well-formed URL', async () => {
+      clearStorageEnv();
+      const { isOwnedUploadUrl } = await import('../lib/storage.js');
+      expect(isOwnedUploadUrl('https://fra1.digitaloceanspaces.com/mymusic-coach-development/teacher-applications/cv/user-1/x.pdf', 'TEACHER_APPLICATION_CV', 'user-1')).toBe(false);
+    });
+  });
 });

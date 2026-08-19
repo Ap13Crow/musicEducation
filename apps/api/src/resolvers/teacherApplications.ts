@@ -162,11 +162,19 @@ export const teacherApplicationResolvers = {
             data: { role: 'TEACHER' },
             include: { profile: true },
           });
+          // TeacherProfile.bio stores headline as its first line and
+          // teachingBio (self-presentation) as everything after it (see
+          // updateTeacherProfile / the teachingBio field resolver) -
+          // combine the application's two fields the same way, or a
+          // submitted headline never makes it onto the public profile at
+          // all and the teachingBio resolver would wrongly strip the first
+          // line of the actual self-presentation text instead.
+          const combinedBio = [application.headline, application.bio ?? applicant.profile?.bio].filter(Boolean).join('\n') || null;
           await tx.teacherProfile.upsert({
             where: { userId: application.userId },
             create: {
               userId: application.userId,
-              bio: application.bio ?? applicant.profile?.bio ?? null,
+              bio: combinedBio,
               instruments: application.instruments.length > 0 ? application.instruments : (applicant.profile?.instruments ?? []),
               musicStyles: applicant.profile?.musicStyles ?? [],
               languages: [],
@@ -174,11 +182,12 @@ export const teacherApplicationResolvers = {
               experienceYears: application.experienceYears,
               introVideoUrl: application.videoUrl,
             },
-            // A resubmission-then-reapproval refreshes the video link (the
-            // teacher may have replaced it) but leaves introVideoVisible
+            // A resubmission-then-reapproval refreshes the bio/video (the
+            // teacher may have edited either) but leaves introVideoVisible
             // alone - that's the teacher's own toggle, not something
             // re-approval should silently reset.
             update: {
+              bio: combinedBio,
               experienceYears: application.experienceYears,
               introVideoUrl: application.videoUrl,
             },

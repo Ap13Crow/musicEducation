@@ -183,15 +183,25 @@ export const userResolvers = {
       // isAvailable/calendlyUsername was silently ignored.
       const { headline, teachingBio, hourlyRate, instruments, specializations, isAvailable, calendlyUsername, introVideoVisible } = args;
       const data: Record<string, unknown> = { hourlyRate, instruments, isAvailable, calendlyUsername, introVideoVisible };
-      if (teachingBio !== undefined) data.bio = teachingBio;
       if (specializations !== undefined) data.musicStyles = specializations;
       // headline has no independent column - TeacherProfile.headline is
-      // derived from bio's first line (see the headline resolver below) -
-      // so an explicit headline update folds into bio as its first line.
-      if (headline !== undefined) {
-        const existing = await prisma.teacherProfile.findUnique({ where: { userId: user!.id } });
-        const restOfBio = (existing?.bio ?? '').split(/\r?\n/).slice(1).join('\n');
-        data.bio = [headline, restOfBio].filter(Boolean).join('\n');
+      // derived from bio's first line (see the headline resolver below), so
+      // an update needs to recompute both halves together. Rebuilding
+      // data.bio from *stored* bio whenever headline was given (regardless
+      // of whether teachingBio was given in the same call) discarded a
+      // same-call teachingBio edit - exactly what the dashboard's profile
+      // form does, sending both every save. Only fetch the existing row to
+      // fill in whichever half wasn't actually provided this call.
+      if (headline !== undefined || teachingBio !== undefined) {
+        let newHeadline = headline;
+        let newBody = teachingBio;
+        if (newHeadline === undefined || newBody === undefined) {
+          const existing = await prisma.teacherProfile.findUnique({ where: { userId: user!.id } });
+          const existingLines = (existing?.bio ?? '').split(/\r?\n/);
+          if (newHeadline === undefined) newHeadline = existingLines[0] ?? '';
+          if (newBody === undefined) newBody = existingLines.slice(1).join('\n');
+        }
+        data.bio = [newHeadline, newBody].filter(Boolean).join('\n');
       }
       return prisma.teacherProfile.update({ where: { userId: user!.id }, data });
     },
@@ -316,8 +326,14 @@ export const userResolvers = {
     },
   },
   TeacherProfile: {
+    // bio stores headline as its first line, teachingBio as everything
+    // after (see updateTeacherProfile) - teachingBio must strip that first
+    // line back off, or it duplicates the headline at the top of the
+    // self-presentation text every time it round-trips through a read.
     teachingBio(profile: any) {
-      return profile.bio ?? null;
+      if (!profile.bio) return null;
+      const body = profile.bio.split(/\r?\n/).slice(1).join('\n');
+      return body || null;
     },
     headline(profile: any) {
       return profile.bio ? profile.bio.split(/\r?\n/, 1)[0].slice(0, 120) : null;

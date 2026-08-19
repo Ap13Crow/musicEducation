@@ -101,10 +101,30 @@ export async function createUploadTarget(
 // namespace. Confirms the URL is actually one createUploadTarget minted for
 // this purpose and this ownerId. Also false whenever storage isn't
 // configured, so a stray URL can't sneak past the "uploads disabled" state.
+//
+// Parses both URLs rather than a raw startsWith on the full string: a plain
+// prefix check would also accept the *presigned* uploadUrl (same path
+// prefix, but with a `?X-Amz-...` signature query string) as if it were the
+// plain fileUrl - which would both leak that signature into a persisted/
+// rendered URL and eventually 403 once the signature expires. Rejecting any
+// query string or fragment, and matching origin/pathname separately, closes
+// that off.
 export function isOwnedUploadUrl(fileUrl: string, purpose: UploadPurpose, ownerId: string): boolean {
   if (!storageConfigured()) return false;
   const config = PURPOSES[purpose];
   if (!config) return false;
-  const expectedPrefix = `${process.env.S3_ENDPOINT!.replace(/\/$/, '')}/${process.env.S3_BUCKET}/${config.prefix}/${ownerId}/`;
-  return fileUrl.startsWith(expectedPrefix);
+
+  let parsed: URL;
+  let endpoint: URL;
+  try {
+    parsed = new URL(fileUrl);
+    endpoint = new URL(process.env.S3_ENDPOINT!);
+  } catch {
+    return false;
+  }
+  if (parsed.search || parsed.hash) return false;
+  if (parsed.origin !== endpoint.origin) return false;
+
+  const expectedPathPrefix = `/${process.env.S3_BUCKET}/${config.prefix}/${ownerId}/`;
+  return parsed.pathname.startsWith(expectedPathPrefix);
 }

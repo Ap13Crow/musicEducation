@@ -196,7 +196,11 @@ export default function BecomeTeacherPage() {
       return null;
     }
     if (index === 4) {
-      if (!application?.cvUrl && !cvFile) return 'Upload your CV.';
+      // Uploads aren't possible at all when storage isn't configured (the
+      // file inputs are hidden in that case - see the storageConfigured
+      // branch below) - requiring a CV then would make every application
+      // un-submittable on a deployment without S3_* set.
+      if (storageConfigured && !application?.cvUrl && !cvFile) return 'Upload your CV.';
       if (!videoEmbedUrl) return 'Add a link to a YouTube presentation or performance video.';
       return null;
     }
