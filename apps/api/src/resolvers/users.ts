@@ -63,9 +63,15 @@ export const userResolvers = {
     },
 
     async teachers(_: unknown, { filter, page = 1, limit = 20 }: any, { prisma }: GraphQLContext) {
-      // Repair previously promoted teachers that predate automatic profile provisioning.
+      // Repair previously promoted teachers that predate automatic profile
+      // provisioning. TEACHER only - unlike TEACHER, holding the ADMIN role
+      // is not itself an expression of intent to teach, so this must not
+      // silently provision (and thereby publicly list) a TeacherProfile for
+      // every admin who happens to lack one. An admin becomes discoverable
+      // below only once they actually have a TeacherProfile - typically via
+      // applyAsTeacher, which admins are also allowed to call.
       const missingProfiles = await prisma.user.findMany({
-        where: { role: { in: ['TEACHER', 'ADMIN'] }, teacherProfile: null },
+        where: { role: 'TEACHER', teacherProfile: null },
         include: { profile: true },
       });
       for (const candidate of missingProfiles) {
@@ -311,8 +317,13 @@ export const userResolvers = {
     async enrollments(u: any, { page = 1, limit = 10 }: any, { prisma }: GraphQLContext) {
       const skip = (page - 1) * limit;
       const where = { userId: u.id };
+      // include: { course: true } so Enrollment.course's fast path (see
+      // courses.ts) is hit for every row here instead of falling through to
+      // its own per-row findUnique - without it, a request for N
+      // enrollments' courses (e.g. the profile page) would issue N separate
+      // queries.
       const [nodes, totalCount] = await Promise.all([
-        prisma.enrollment.findMany({ where, skip, take: limit }),
+        prisma.enrollment.findMany({ where, skip, take: limit, include: { course: true } }),
         prisma.enrollment.count({ where }),
       ]);
       return { nodes, pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount } };

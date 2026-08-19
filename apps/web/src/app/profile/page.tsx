@@ -476,9 +476,15 @@ export default function ProfilePage() {
                     return (
                       <li key={e.id} className="rounded-lg border border-gray-100 p-3">
                         <div className="flex items-center justify-between gap-3">
-                          <a href={e.course?.slug ? `/courses/${e.course.slug}` : '#'} className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 hover:text-primary-700">
-                            {e.course?.title ?? 'Course'}
-                          </a>
+                          {e.course?.slug ? (
+                            <a href={`/courses/${e.course.slug}`} className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 hover:text-primary-700">
+                              {e.course?.title ?? 'Course'}
+                            </a>
+                          ) : (
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">
+                              {e.course?.title ?? 'Course'}
+                            </span>
+                          )}
                           <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
                             isComplete ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
                           }`}>
