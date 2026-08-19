@@ -1,9 +1,37 @@
 import { GraphQLError } from 'graphql';
 import { requireAuth } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
+import { sendBookingConfirmedEmails } from '../lib/emails.js';
 import type { GraphQLContext } from '../types.js';
 
 const TEACHER_FOUND_XP = 30;
+
+// Shared by bookSession (auto-confirmed when the teacher has no hourly rate)
+// and confirmBooking (a paid booking the teacher just accepted) - both are
+// "this booking just became CONFIRMED" moments, and both notify the same
+// two people. Best-effort: sendBookingConfirmedEmails never throws, so a
+// notification failure can't undo the confirmation that already happened.
+export async function notifyBookingConfirmed(prisma: GraphQLContext['prisma'], bookingId: string) {
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    include: { user: { include: { profile: true } }, teacherProfile: { include: { user: { include: { profile: true } } } } },
+  });
+  if (!booking) return;
+  // Same displayName fallback chain as the User.displayName field resolver
+  // in users.ts (profile.displayName -> local part of the email -> generic).
+  const studentName = booking.user.profile?.displayName || booking.user.email?.split('@')[0] || 'there';
+  const teacherName = booking.teacherProfile.user.profile?.displayName || booking.teacherProfile.user.email?.split('@')[0] || 'there';
+  await sendBookingConfirmedEmails({
+    studentEmail: booking.user.email,
+    studentName,
+    teacherEmail: booking.teacherProfile.user.email,
+    teacherName,
+    startsAt: booking.startsAt,
+    durationMin: booking.durationMin,
+    format: booking.format,
+    instrument: booking.instrument,
+  });
+}
 
 export const bookingResolvers = {
   Query: {
@@ -114,6 +142,11 @@ export const bookingResolvers = {
       // "Found a teacher" - the achievement is booking one at all, not
       // waiting on payment/confirmation; the 'self' key makes this one-time.
       await awardXpOnce(prisma, user.id, 'TEACHER_FOUND', 'self', TEACHER_FOUND_XP);
+      // A free teacher's booking is CONFIRMED immediately above - that's the
+      // moment to notify, same as confirmBooking below for a paid one.
+      if (booking.status === 'CONFIRMED') {
+        await notifyBookingConfirmed(prisma, booking.id);
+      }
       return booking;
     },
 
@@ -122,7 +155,9 @@ export const bookingResolvers = {
       const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { teacherProfile: true } });
       if (!booking) throw new GraphQLError('Booking not found.', { extensions: { code: 'NOT_FOUND' } });
       if (booking.teacherProfile.userId !== user.id) throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
-      return prisma.booking.update({ where: { id: bookingId }, data: { status: 'CONFIRMED' } });
+      const updated = await prisma.booking.update({ where: { id: bookingId }, data: { status: 'CONFIRMED' } });
+      await notifyBookingConfirmed(prisma, bookingId);
+      return updated;
     },
 
     async cancelBooking(_: unknown, { bookingId }: any, { prisma, user }: GraphQLContext) {

@@ -2,6 +2,8 @@ import Stripe from 'stripe';
 import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
+import { sendPurchaseConfirmedEmail } from '../lib/emails.js';
+import { notifyBookingConfirmed } from './bookings.js';
 import type { GraphQLContext } from '../types.js';
 
 const EVENT_ATTENDED_XP = 40;
@@ -67,6 +69,14 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
     const { userId, type, refId } = session.metadata ?? {};
+
+    // Stripe retries webhook deliveries that don't 2xx in time - without
+    // this check a retry would insert a second Payment row for the same
+    // checkout session and, more visibly, re-send the confirmation email
+    // below on every retry.
+    const alreadyProcessed = await prisma.payment.findFirst({ where: { provider: 'STRIPE', providerRef: session.id } });
+    if (alreadyProcessed) return;
+
     const payment = await prisma.payment.create({
       data: {
         userId: userId!,
@@ -78,14 +88,24 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
         description: `${type}:${refId}`,
       },
     });
+    const buyer = await prisma.user.findUnique({ where: { id: userId! }, include: { profile: true } });
+    const buyerName = buyer?.profile?.displayName || buyer?.email?.split('@')[0] || 'there';
+
     if (type === 'course') {
       await prisma.enrollment.upsert({
         where: { userId_courseId: { userId: userId!, courseId: refId! } },
         update: { paymentId: payment.id },
         create: { userId: userId!, courseId: refId!, paymentId: payment.id },
       });
+      const course = await prisma.course.findUnique({ where: { id: refId } });
+      await sendPurchaseConfirmedEmail({
+        toEmail: buyer?.email, toName: buyerName,
+        description: `Enrolled in: ${course?.title ?? 'your course'}`,
+        amount: payment.amount.toNumber(), currency: payment.currency,
+      });
     } else if (type === 'booking') {
       await prisma.booking.update({ where: { id: refId }, data: { paymentId: payment.id, status: 'CONFIRMED' } });
+      await notifyBookingConfirmed(prisma, refId!);
     } else if (type === 'event') {
       await prisma.eventBooking.upsert({
         where: { userId_eventId: { userId: userId!, eventId: refId! } },
@@ -95,6 +115,12 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
       // Mirrors the free-event award in events.ts bookEvent - refId=eventId
       // keeps it one-time even if Stripe retries this webhook.
       await awardXpOnce(prisma, userId!, 'EVENT_ATTENDED', refId!, EVENT_ATTENDED_XP);
+      const ticketedEvent = await prisma.event.findUnique({ where: { id: refId } });
+      await sendPurchaseConfirmedEmail({
+        toEmail: buyer?.email, toName: buyerName,
+        description: `Ticket: ${ticketedEvent?.title ?? 'your event'}`,
+        amount: payment.amount.toNumber(), currency: payment.currency,
+      });
     }
   } else if (event.type === 'account.updated') {
     // Keep payout eligibility in sync with the connected account's own
