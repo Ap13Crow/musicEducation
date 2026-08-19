@@ -9,7 +9,17 @@ const GET = gql`
   query PayoutStatus {
     me {
       id
-      teacherProfile { id stripeAccountId stripePayoutsEnabled }
+      teacherProfile { id stripeAccountId }
+    }
+    # Always live from Stripe (see stripeConnectStatus in payments.ts) -
+    # never a cached DB flag, so this page reflects Stripe's own current
+    # requirements/verification state rather than what it was the last time
+    # a webhook happened to fire.
+    stripeConnectStatus {
+      hasAccount
+      onboardingComplete
+      readyToReceivePayments
+      requirementsStatus
     }
   }
 `;
@@ -17,7 +27,7 @@ const PROVISION = gql`mutation Provision { applyAsTeacher { id } }`;
 const CREATE_LINK = gql`mutation ConnectPayouts { createStripeConnectOnboardingLink { url } }`;
 
 export default function PayoutsPage() {
-  const { data, loading, error, refetch } = useQuery(GET, { fetchPolicy: 'cache-and-network' });
+  const { data, loading, error, refetch } = useQuery(GET, { fetchPolicy: 'network-only' });
   const [provision] = useMutation(PROVISION);
   const [createLink, { loading: linking }] = useMutation(CREATE_LINK);
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -27,8 +37,9 @@ export default function PayoutsPage() {
   }, []);
 
   const profile = data?.me?.teacherProfile;
-  const connected = Boolean(profile?.stripeAccountId);
-  const payoutsEnabled = Boolean(profile?.stripePayoutsEnabled);
+  const status = data?.stripeConnectStatus;
+  const connected = Boolean(profile?.stripeAccountId) || Boolean(status?.hasAccount);
+  const payoutsEnabled = Boolean(status?.readyToReceivePayments);
 
   async function connect() {
     setLinkError(null);
@@ -81,7 +92,10 @@ export default function PayoutsPage() {
                 <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
                 <div>
                   <p className="font-semibold text-gray-900">Verification pending</p>
-                  <p className="text-sm text-gray-600">Stripe still needs a few details before payouts can start.</p>
+                  <p className="text-sm text-gray-600">
+                    Stripe still needs a few details before payouts can start.
+                    {status?.requirementsStatus === 'past_due' && ' Some information is now past due — please finish this soon.'}
+                  </p>
                 </div>
               </div>
               <button className="btn-primary mt-4 rounded-lg px-4 py-2" disabled={linking} onClick={connect}>

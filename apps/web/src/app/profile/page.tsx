@@ -31,13 +31,22 @@ const GET_PROFILE = gql`
       gamification {
         level xp totalPoints currentStreak skillLevel
       }
+      enrollments(limit: 20) {
+        nodes {
+          id progress completedAt createdAt
+          course { id slug title thumbnailUrl status }
+        }
+      }
     }
     myBookings(page: 1, limit: 20) {
       id status instrument startsAt endsAt format
       teacher {
         id headline avgRating
-        user { displayName avatarUrl }
+        user { id displayName avatarUrl }
       }
+    }
+    myAssessments {
+      id completedAt skillLevel xpAwarded
     }
   }
 `;
@@ -99,10 +108,21 @@ export default function ProfilePage() {
 
   const me = data?.me;
   const bookings = data?.myBookings ?? [];
+  const enrollments = me?.enrollments?.nodes ?? [];
+  const latestAssessment = [...(data?.myAssessments ?? [])]
+    .filter((a: any) => a.completedAt)
+    .sort((a: any, b: any) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())[0] ?? null;
 
   // Booked sessions with a teacher, soonest first, excluding cancelled ones.
+  // myBookings returns both "sessions I booked as a student" AND, when the
+  // viewer is themselves a teacher, "sessions students booked with me" (see
+  // myBookings in bookings.ts) - the latter's `teacher` field always
+  // resolves to the viewer's own TeacherProfile, which without this filter
+  // rendered as what looked exactly like a session booked with yourself.
+  // This section is the student view only; a teacher's own dashboard has
+  // the incoming-bookings list.
   const mySessions = [...bookings]
-    .filter((b: any) => b.teacher && b.status !== 'CANCELLED')
+    .filter((b: any) => b.teacher && b.teacher.user?.id !== me?.id && b.status !== 'CANCELLED')
     .sort((a: any, b: any) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
 
   function startEdit() {
@@ -431,6 +451,59 @@ export default function ProfilePage() {
                 </ul>
               )}
             </section>
+
+            {/* My courses */}
+            <section className="card p-6">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="flex items-center gap-2 font-semibold text-gray-900">
+                  <GraduationCap className="h-4 w-4 text-primary-600" /> My courses
+                </h2>
+                <a href={externalLinks.learn}
+                  className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline">
+                  Browse courses <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+              {enrollments.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center">
+                  <p className="text-sm text-gray-500">No courses yet.</p>
+                  <a href="/courses" className="mt-1 inline-block text-xs font-medium text-primary-600 hover:underline">Browse courses →</a>
+                </div>
+              ) : (
+                <ul className="space-y-3">
+                  {(enrollments as any[]).map((e: any) => {
+                    const pct = Math.round((e.progress ?? 0) * 100);
+                    const isComplete = Boolean(e.completedAt);
+                    return (
+                      <li key={e.id} className="rounded-lg border border-gray-100 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          {e.course?.slug ? (
+                            <a href={`/courses/${e.course.slug}`} className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 hover:text-primary-700">
+                              {e.course?.title ?? 'Course'}
+                            </a>
+                          ) : (
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">
+                              {e.course?.title ?? 'Course'}
+                            </span>
+                          )}
+                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                            isComplete ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+                          }`}>
+                            {isComplete ? 'Completed' : 'In progress'}
+                          </span>
+                        </div>
+                        <div className="mt-2 h-1.5 rounded-full bg-gray-100">
+                          <div className="h-1.5 rounded-full bg-primary-600" style={{ width: `${pct}%` }} />
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {pct}% complete
+                          {isComplete && e.completedAt ? ` · finished ${new Date(e.completedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}` : ''}
+                        </p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
           </div>
 
           {/* ── Right column: stats + security ── */}
@@ -460,6 +533,33 @@ export default function ProfilePage() {
                 </div>
               ) : (
                 <p className="text-sm text-gray-400">No progress data yet.</p>
+              )}
+            </section>
+
+            {/* My evaluation - the onboarding assessment is a one-time
+                introductory evaluation, not something retaken on every
+                visit (see /onboarding), so its result lives here as part
+                of ongoing evolution tracking rather than disappearing. */}
+            <section className="card p-6">
+              <h2 className="mb-4 flex items-center gap-2 font-semibold text-gray-900">
+                <Star className="h-4 w-4 text-amber-500" /> My evaluation
+              </h2>
+              {latestAssessment ? (
+                <div className="space-y-2">
+                  <span className="inline-block rounded-full bg-primary-50 px-3 py-1 text-sm font-medium text-primary-700">
+                    {latestAssessment.skillLevel}
+                  </span>
+                  <p className="text-xs text-gray-500">
+                    Completed {new Date(latestAssessment.completedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}
+                    {typeof latestAssessment.xpAwarded === 'number' ? ` · +${latestAssessment.xpAwarded} XP` : ''}
+                  </p>
+                  <a href="/onboarding" className="mt-1 inline-block text-xs font-medium text-primary-600 hover:underline">View details →</a>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-sm text-gray-400">You haven&rsquo;t completed the introductory evaluation yet.</p>
+                  <a href="/onboarding" className="mt-1 inline-block text-xs font-medium text-primary-600 hover:underline">Take the assessment →</a>
+                </div>
               )}
             </section>
 

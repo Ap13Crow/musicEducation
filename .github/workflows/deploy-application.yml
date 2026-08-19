@@ -325,6 +325,7 @@ jobs:
         env:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          STRIPE_WEBHOOK_SECRET_V2: ${{ secrets.STRIPE_WEBHOOK_SECRET_V2 }}
           TICKETMASTER_API_KEY: ${{ secrets.TICKETMASTER_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DEEPSEEK_API_URL: ${{ secrets.DEEPSEEK_API_URL }}
@@ -334,6 +335,7 @@ jobs:
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
           S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
           S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
@@ -351,6 +353,7 @@ jobs:
           }
           effective_stripe_secret_key="${STRIPE_SECRET_KEY:-$(existing_value STRIPE_SECRET_KEY)}"
           effective_stripe_webhook_secret="${STRIPE_WEBHOOK_SECRET:-$(existing_value STRIPE_WEBHOOK_SECRET)}"
+          effective_stripe_webhook_secret_v2="${STRIPE_WEBHOOK_SECRET_V2:-$(existing_value STRIPE_WEBHOOK_SECRET_V2)}"
           effective_ticketmaster_key="${TICKETMASTER_API_KEY:-$(existing_value TICKETMASTER_API_KEY)}"
           effective_deepseek_key="${DEEPSEEK_API_KEY:-$(existing_value DEEPSEEK_API_KEY)}"
           effective_deepseek_url="${DEEPSEEK_API_URL:-$(existing_value DEEPSEEK_API_URL)}"
@@ -360,6 +363,7 @@ jobs:
           effective_s3_bucket="${S3_BUCKET:-$(existing_value S3_BUCKET)}"
           effective_s3_access_key_id="${S3_ACCESS_KEY_ID:-$(existing_value S3_ACCESS_KEY_ID)}"
           effective_s3_secret_access_key="${S3_SECRET_ACCESS_KEY:-$(existing_value S3_SECRET_ACCESS_KEY)}"
+          effective_smtp_password="${SMTP_PASSWORD:-$(existing_value SMTP_PASSWORD)}"
 
           args=()
           if [[ -n "$effective_stripe_secret_key" && -n "$effective_stripe_webhook_secret" ]]; then
@@ -368,6 +372,17 @@ jobs:
             echo 'Stripe credentials configured.'
           else
             echo 'Stripe remains disabled because one or both Stripe secrets are absent.'
+          fi
+          if [[ -n "$effective_stripe_secret_key" && -n "$effective_stripe_webhook_secret_v2" ]]; then
+            # Separate from the check above: the v1 secret pair alone
+            # already lets checkout/payouts work, this second signing
+            # secret only turns on the Connect-requirements thin-event
+            # listener (handleStripeV2Webhook) - not required for the rest
+            # of Stripe to function.
+            args+=(--from-literal=STRIPE_WEBHOOK_SECRET_V2="$effective_stripe_webhook_secret_v2")
+            echo 'Stripe Connect v2 requirements webhook configured.'
+          else
+            echo 'Stripe Connect v2 requirements webhook remains disabled because STRIPE_WEBHOOK_SECRET_V2 (or the base Stripe key) is absent.'
           fi
           if [[ -n "$effective_ticketmaster_key" ]]; then
             args+=(--from-literal=TICKETMASTER_API_KEY="$effective_ticketmaster_key")
@@ -399,6 +414,21 @@ jobs:
             echo 'Object storage (S3-compatible) configured.'
           else
             echo 'Object storage remains disabled because one or more S3_* secrets are absent.'
+          fi
+          if [[ -n "$effective_smtp_password" ]]; then
+            # HOST/PORT/USER/FROM are fixed for this integration (Google
+            # Workspace's documented SMTP relay, see deploy/README.md) - only
+            # the app password is actually a secret, so only that needs a
+            # GitHub secret of its own.
+            args+=(--from-literal=SMTP_HOST="smtp-relay.gmail.com")
+            args+=(--from-literal=SMTP_PORT="587")
+            args+=(--from-literal=SMTP_USER="camille@mymusic.coach")
+            args+=(--from-literal=SMTP_FROM="camille@mymusic.coach")
+            args+=(--from-literal=SMTP_FROM_NAME="MyMusic.Coach")
+            args+=(--from-literal=SMTP_PASSWORD="$effective_smtp_password")
+            echo 'SMTP (Google Workspace relay) configured.'
+          else
+            echo 'SMTP remains disabled because SMTP_PASSWORD is absent.'
           fi
 
           if [[ ${#args[@]} -eq 0 ]]; then
@@ -492,7 +522,7 @@ jobs:
             || true
           echo 'API environment contract (values are not printed):'
           kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
-            "for (const key of ['PGHOST','PGPORT','PGDATABASE','PGUSER','PGPASSWORD','PGSSLROOTCERT','KEYCLOAK_ISSUER','KEYCLOAK_CLIENT_ID','DEEPSEEK_API_KEY','DEEPSEEK_API_URL','OPENAI_API_KEY','S3_ENDPOINT','S3_REGION','S3_BUCKET','S3_ACCESS_KEY_ID','S3_SECRET_ACCESS_KEY']) console.log(key + '=' + (process.env[key] ? 'configured' : 'missing'))"
+            "for (const key of ['PGHOST','PGPORT','PGDATABASE','PGUSER','PGPASSWORD','PGSSLROOTCERT','KEYCLOAK_ISSUER','KEYCLOAK_CLIENT_ID','DEEPSEEK_API_KEY','DEEPSEEK_API_URL','OPENAI_API_KEY','S3_ENDPOINT','S3_REGION','S3_BUCKET','S3_ACCESS_KEY_ID','S3_SECRET_ACCESS_KEY','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','SMTP_FROM']) console.log(key + '=' + (process.env[key] ? 'configured' : 'missing'))"
           echo 'Database readiness from the running API process:'
           kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
             "fetch('http://127.0.0.1:4000/health/ready').then(async r => { console.log(await r.text()); if (!r.ok) process.exit(1) })"

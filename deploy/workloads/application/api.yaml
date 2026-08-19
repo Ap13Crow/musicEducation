@@ -64,6 +64,16 @@ spec:
                   name: application-integrations
                   key: STRIPE_WEBHOOK_SECRET
                   optional: true
+            # Separate signing secret for the v2 thin-event Connect
+            # requirements webhook (/webhooks/stripe-v2) - absent, that
+            # route stays disabled but checkout/payouts still work off the
+            # two keys above.
+            - name: STRIPE_WEBHOOK_SECRET_V2
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: STRIPE_WEBHOOK_SECRET_V2
+                  optional: true
             - name: TICKETMASTER_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -122,6 +132,45 @@ spec:
                 secretKeyRef:
                   name: application-integrations
                   key: S3_SECRET_ACCESS_KEY
+                  optional: true
+            # Transactional email via the Google Workspace SMTP relay (see
+            # apps/api/src/lib/mailer.ts) - absent, sendMail() no-ops and
+            # bookings/purchases still succeed without a notification.
+            - name: SMTP_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: SMTP_HOST
+                  optional: true
+            - name: SMTP_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: SMTP_PORT
+                  optional: true
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: SMTP_USER
+                  optional: true
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: SMTP_PASSWORD
+                  optional: true
+            - name: SMTP_FROM
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: SMTP_FROM
+                  optional: true
+            - name: SMTP_FROM_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: SMTP_FROM_NAME
                   optional: true
           volumeMounts:
             - name: postgres-ca

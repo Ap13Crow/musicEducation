@@ -656,6 +656,19 @@ type StripeConnectLink {
   url: String!
 }
 
+# Always resolved live against the Stripe API (v2 core accounts), never
+# cached in the database - onboarding/compliance status can change on
+# Stripe's side at any time independent of anything this app did.
+type StripeConnectStatus {
+  hasAccount: Boolean!
+  onboardingComplete: Boolean!
+  readyToReceivePayments: Boolean!
+  # Stripe's own requirements.summary.minimum_deadline.status
+  # ("currently_due" | "past_due" | ...), null once nothing is outstanding
+  # or there's no account yet.
+  requirementsStatus: String
+}
+
 # ── Social Feed ──────────────────────
 
 type FeedPost {
@@ -1059,6 +1072,11 @@ type Query {
 
   # Public homepage counters - real counts, no auth required.
   platformStats: PlatformStats!
+
+  # The caller's own Stripe Connect payout status, fetched live - see
+  # StripeConnectStatus. TEACHER/ADMIN only, same as
+  # createStripeConnectOnboardingLink.
+  stripeConnectStatus: StripeConnectStatus!
 }
 
 # ── Mutations ───────────────────────

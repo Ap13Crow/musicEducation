@@ -47,6 +47,8 @@ spec:
               psql --set=ON_ERROR_STOP=1 --file=/schema/015-teacher-application-address-birthdate.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/016-object-storage-uploads.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/017-teacher-application-richer.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/018-payment-provider-ref-unique.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/019-payment-confirmation-email-marker.sql
           envFrom:
             - secretRef:
                 name: postgres-mymusiccoach

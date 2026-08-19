@@ -63,7 +63,13 @@ export const userResolvers = {
     },
 
     async teachers(_: unknown, { filter, page = 1, limit = 20 }: any, { prisma }: GraphQLContext) {
-      // Repair previously promoted teachers that predate automatic profile provisioning.
+      // Repair previously promoted teachers that predate automatic profile
+      // provisioning. TEACHER only - unlike TEACHER, holding the ADMIN role
+      // is not itself an expression of intent to teach, so this must not
+      // silently provision (and thereby publicly list) a TeacherProfile for
+      // every admin who happens to lack one. An admin becomes discoverable
+      // below only once they actually have a TeacherProfile - typically via
+      // applyAsTeacher, which admins are also allowed to call.
       const missingProfiles = await prisma.user.findMany({
         where: { role: 'TEACHER', teacherProfile: null },
         include: { profile: true },
@@ -82,11 +88,14 @@ export const userResolvers = {
         });
       }
 
-      // Only users who currently hold the TEACHER role are publicly discoverable.
-      // A TeacherProfile row is never deleted on demotion (it's history — past
-      // courses/bookings still reference it), so this check — not row
+      // Users who currently hold the TEACHER role are publicly discoverable,
+      // and so is an ADMIN who has gone through applyAsTeacher/set up a
+      // TeacherProfile (admins are allowed to teach too - requireRole allows
+      // TEACHER or ADMIN on every teacher-profile mutation). A TeacherProfile
+      // row is never deleted on demotion (it's history — past courses/
+      // bookings still reference it), so this role check — not row
       // existence — is what "is this person a teacher right now" means.
-      const where: any = { isAvailable: true, user: { role: 'TEACHER' } };
+      const where: any = { isAvailable: true, user: { role: { in: ['TEACHER', 'ADMIN'] } } };
       if (filter) {
         if (filter.instrument) where.instruments = { has: filter.instrument };
         if (filter.maxHourlyRate !== undefined) where.hourlyRate = { lte: filter.maxHourlyRate };
@@ -116,7 +125,7 @@ export const userResolvers = {
       // Same rule as the `teachers` list: a demoted user's TeacherProfile row
       // survives (history), but they stop being discoverable as a teacher.
       return prisma.teacherProfile.findFirst({
-        where: { id, user: { role: 'TEACHER' } },
+        where: { id, user: { role: { in: ['TEACHER', 'ADMIN'] } } },
         include: { certifications: true, availability: true },
       });
     },
@@ -308,8 +317,13 @@ export const userResolvers = {
     async enrollments(u: any, { page = 1, limit = 10 }: any, { prisma }: GraphQLContext) {
       const skip = (page - 1) * limit;
       const where = { userId: u.id };
+      // include: { course: true } so Enrollment.course's fast path (see
+      // courses.ts) is hit for every row here instead of falling through to
+      // its own per-row findUnique - without it, a request for N
+      // enrollments' courses (e.g. the profile page) would issue N separate
+      // queries.
       const [nodes, totalCount] = await Promise.all([
-        prisma.enrollment.findMany({ where, skip, take: limit }),
+        prisma.enrollment.findMany({ where, skip, take: limit, include: { course: true } }),
         prisma.enrollment.count({ where }),
       ]);
       return { nodes, pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount } };

@@ -98,6 +98,8 @@ export default function BecomeTeacherPage() {
   const [stepError, setStepError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [refreshingPhoto, setRefreshingPhoto] = useState(false);
+  const [refreshPhotoError, setRefreshPhotoError] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     fullName: '', address: '', birthdate: '', gender: '',
@@ -132,6 +134,27 @@ export default function BecomeTeacherPage() {
 
   function toggleInstrument(inst: string) {
     setSelectedInstruments((prev) => (prev.includes(inst) ? prev.filter((i) => i !== inst) : [...prev, inst]));
+  }
+
+  // The button previously just fired refetch() with no feedback of any
+  // kind - a slow or failing request (e.g. the photo was never actually
+  // saved on /dashboard/profile) looked identical to a working one, so it
+  // read as "the button doesn't do anything." Surface both outcomes now.
+  async function refreshPhotoStatus() {
+    setRefreshingPhoto(true);
+    setRefreshPhotoError(null);
+    try {
+      const result = await refetch();
+      if (!result.data?.me?.avatarUrl) {
+        setRefreshPhotoError('No photo found on your account yet. Add one on the profile page, save it there, then try again.');
+      } else {
+        setStepError(null);
+      }
+    } catch (err: any) {
+      setRefreshPhotoError(err?.message ?? 'Could not check your account just now. Try again.');
+    } finally {
+      setRefreshingPhoto(false);
+    }
   }
 
   function requestUrlFor(purpose: string) {
@@ -323,20 +346,25 @@ export default function BecomeTeacherPage() {
                     />
                     <span className="mt-1 block text-xs text-gray-400">Not shown publicly — for our records only.</span>
                   </label>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block text-sm font-medium">
+                  {/* min-w-0 on both grid items: a native <input type="date">
+                      has an intrinsic minimum content width that CSS Grid
+                      otherwise respects over the column's actual width,
+                      letting it overflow into the Gender column next to it
+                      instead of shrinking to fit. */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <label className="block min-w-0 text-sm font-medium">
                       Date of birth
                       <input
                         type="date"
-                        className="input mt-1 w-full"
+                        className="input mt-1 w-full min-w-0"
                         value={form.birthdate}
                         onChange={(e) => setForm({ ...form, birthdate: e.target.value })}
                       />
                       <span className="mt-1 block text-xs text-gray-400">Applicants must be 18 or older. Not shown publicly.</span>
                     </label>
-                    <label className="block text-sm font-medium">
+                    <label className="block min-w-0 text-sm font-medium">
                       Gender
-                      <select className="input mt-1 w-full" value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+                      <select className="input mt-1 w-full min-w-0" value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
                         <option value="">Select…</option>
                         {GENDER_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
                       </select>
@@ -363,10 +391,11 @@ export default function BecomeTeacherPage() {
                     <Link href="/dashboard/profile" target="_blank" className="btn-secondary rounded-lg px-4 py-2 text-sm">
                       {me?.avatarUrl ? 'Change photo' : 'Add a photo'}
                     </Link>
-                    <button type="button" onClick={() => refetch()} className="btn-primary rounded-lg px-4 py-2 text-sm">
-                      I&rsquo;ve added my photo — refresh
+                    <button type="button" onClick={refreshPhotoStatus} disabled={refreshingPhoto} className="btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-60">
+                      {refreshingPhoto ? 'Checking…' : "I've added my photo — refresh"}
                     </button>
                   </div>
+                  {refreshPhotoError && <p className="text-sm text-red-600">{refreshPhotoError}</p>}
                 </div>
               )}
 
