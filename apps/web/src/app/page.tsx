@@ -1,5 +1,19 @@
+'use client';
+
 import Link from 'next/link';
+import { gql, useQuery } from '@apollo/client';
 import { BookOpen, Music, Calendar, Star, Users, TrendingUp } from 'lucide-react';
+
+const GET_PLATFORM_STATS = gql`
+  query HomepagePlatformStats {
+    platformStats { totalCourses totalTeachers totalEvents totalStudents }
+  }
+`;
+
+function formatCount(n: number | undefined): string {
+  if (n === undefined) return '—';
+  return n.toLocaleString('en-US');
+}
 
 const features = [
   {
@@ -25,14 +39,17 @@ const features = [
   },
 ];
 
-const stats = [
-  { value: '500+', label: 'Courses' },
-  { value: '200+', label: 'Certified Teachers' },
-  { value: '1,000+', label: 'Events' },
-  { value: '50,000+', label: 'Students' },
-];
-
 export default function HomePage() {
+  const liveApiEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_API === 'true';
+  const { data } = useQuery(GET_PLATFORM_STATS, { skip: !liveApiEnabled });
+  const platformStats = data?.platformStats;
+  const stats = [
+    { value: formatCount(platformStats?.totalCourses), label: 'Courses' },
+    { value: formatCount(platformStats?.totalTeachers), label: 'Teachers' },
+    { value: formatCount(platformStats?.totalEvents), label: 'Events' },
+    { value: formatCount(platformStats?.totalStudents), label: 'Students' },
+  ];
+
   return (
     <main>
       {/* Hero */}

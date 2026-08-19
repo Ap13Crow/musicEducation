@@ -173,11 +173,61 @@ export const userResolvers = {
 
     async updateTeacherProfile(_: unknown, args: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'TEACHER', 'ADMIN');
-      const { bio, hourlyRate, currency, instruments, musicStyles, languages, isAvailable, calendlyUsername } = args;
-      return prisma.teacherProfile.update({
-        where: { userId: user!.id },
-        data: { bio, hourlyRate, currency, instruments, musicStyles, languages, isAvailable, calendlyUsername },
-      });
+      // These names are the GraphQL-facing ones (see TeacherProfile /
+      // updateTeacherProfile in schema.graphql) - teachingBio/specializations
+      // map onto the Prisma columns bio/musicStyles, same renaming the
+      // TeacherProfile field resolvers below undo on the way out. Previously
+      // this destructured the *column* names instead (bio, currency,
+      // musicStyles, languages - none of which updateTeacherProfile actually
+      // accepts as args), so every field but hourlyRate/instruments/
+      // isAvailable/calendlyUsername was silently ignored.
+      const { headline, teachingBio, hourlyRate, instruments, specializations, isAvailable, calendlyUsername, introVideoVisible } = args;
+      const data: Record<string, unknown> = {};
+      // hourlyRate/calendlyUsername are nullable columns - an explicit null
+      // is a legitimate "clear this" and Prisma accepts it.
+      if (hourlyRate !== undefined) data.hourlyRate = hourlyRate;
+      if (calendlyUsername !== undefined) data.calendlyUsername = calendlyUsername;
+      // instruments/isAvailable/introVideoVisible/musicStyles are non-nullable
+      // columns (String[]/Boolean with a default). The GraphQL args are still
+      // nullable, so a client can send an explicit null even though the
+      // schema doesn't attach any "clear it" meaning to that for these
+      // fields - Prisma would otherwise reject writing null into a
+      // non-nullable column with an opaque validation error. Treat an
+      // explicit null the same as omitting the field (no-op) rather than
+      // letting it reach Prisma.
+      if (instruments !== undefined && instruments !== null) data.instruments = instruments;
+      if (isAvailable !== undefined && isAvailable !== null) data.isAvailable = isAvailable;
+      if (introVideoVisible !== undefined && introVideoVisible !== null) data.introVideoVisible = introVideoVisible;
+      if (specializations !== undefined && specializations !== null) data.musicStyles = specializations;
+      // headline has no independent column - TeacherProfile.headline is
+      // derived from bio's first line (see the headline resolver below), so
+      // an update needs to recompute both halves together. Rebuilding
+      // data.bio from *stored* bio whenever headline was given (regardless
+      // of whether teachingBio was given in the same call) discarded a
+      // same-call teachingBio edit - exactly what the dashboard's profile
+      // form does, sending both every save. Only fetch the existing row to
+      // fill in whichever half wasn't actually provided this call.
+      if (headline !== undefined || teachingBio !== undefined) {
+        let newHeadline = headline;
+        let newBody = teachingBio;
+        if (newHeadline === undefined || newBody === undefined) {
+          const existing = await prisma.teacherProfile.findUnique({ where: { userId: user!.id } });
+          const existingLines = (existing?.bio ?? '').split(/\r?\n/);
+          if (newHeadline === undefined) newHeadline = existingLines[0] ?? '';
+          if (newBody === undefined) newBody = existingLines.slice(1).join('\n');
+        }
+        // filter(Boolean) here would drop an *intentionally cleared* empty
+        // headline whenever the body is non-empty, collapsing bio down to
+        // just the body - and headline() derives from bio's own first line,
+        // so the body's own first line would then read back as a bogus
+        // headline. Keep the headline slot (even empty) whenever there's a
+        // body to protect, and only fall back to null when there's truly
+        // nothing to store.
+        const headlineLine = newHeadline ?? '';
+        const bodyText = newBody ?? '';
+        data.bio = headlineLine || bodyText ? `${headlineLine}\n${bodyText}` : null;
+      }
+      return prisma.teacherProfile.update({ where: { userId: user!.id }, data });
     },
 
     async addCertification(_: unknown, { title, issuingBody, issuedYear, documentUrl }: any, { prisma, user }: GraphQLContext) {
@@ -300,11 +350,22 @@ export const userResolvers = {
     },
   },
   TeacherProfile: {
+    // bio stores headline as its first line, teachingBio as everything
+    // after (see updateTeacherProfile) - teachingBio must strip that first
+    // line back off, or it duplicates the headline at the top of the
+    // self-presentation text every time it round-trips through a read.
     teachingBio(profile: any) {
-      return profile.bio ?? null;
+      if (!profile.bio) return null;
+      const body = profile.bio.split(/\r?\n/).slice(1).join('\n');
+      return body || null;
     },
     headline(profile: any) {
-      return profile.bio ? profile.bio.split(/\r?\n/, 1)[0].slice(0, 120) : null;
+      if (!profile.bio) return null;
+      // An intentionally-cleared headline is stored as an empty first line
+      // (see updateTeacherProfile) so it doesn't get confused with the
+      // body's own first line - read back as null, not ''.
+      const first = profile.bio.split(/\r?\n/, 1)[0].slice(0, 120);
+      return first || null;
     },
     specializations(profile: any) {
       return profile.musicStyles ?? [];
@@ -312,14 +373,24 @@ export const userResolvers = {
     teachingFormats() {
       return [];
     },
-    yearsExperience() {
-      return null;
+    yearsExperience(profile: any) {
+      return profile.experienceYears ?? null;
     },
     locationCity(profile: any) {
       return profile.user?.profile?.city ?? null;
     },
     locationCountry(profile: any) {
       return profile.user?.profile?.country ?? null;
+    },
+    // Null whenever there's nothing to show, regardless of *why* - no link
+    // set, or the teacher has toggled it off - so callers never need to
+    // check introVideoVisible separately to decide whether to render it.
+    // The owner/an admin still sees the raw link so they can flip the
+    // toggle without having to re-paste it.
+    introVideoUrl(profile: any, _: unknown, { user }: GraphQLContext) {
+      if (!profile.introVideoUrl) return null;
+      const isOwnerOrAdmin = user?.id === profile.userId || user?.role === 'ADMIN';
+      return profile.introVideoVisible || isOwnerOrAdmin ? profile.introVideoUrl : null;
     },
     stripeAccountId(profile: any, _: unknown, { user }: GraphQLContext) {
       const isOwnerOrAdmin = user?.id === profile.userId || user?.role === 'ADMIN';

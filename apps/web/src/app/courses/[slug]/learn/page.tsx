@@ -21,6 +21,8 @@ const GET_COURSE = gql`
         lessons {
           id title description videoUrl contentType durationMin isFreePreview order xpReward feedbackMode
           quizQuestions { id text type points order options { id text } }
+          slides { id order fileUrl title }
+          myViewedSlideIds
         }
       }
     }
@@ -75,6 +77,11 @@ const COMPLETE_QUIZ_ATTEMPT = gql`
       id score maxScore completedAt
       answers { id questionId selectedOptionIds isCorrect pointsAwarded }
     }
+  }
+`;
+const VIEW_SLIDE = gql`
+  mutation ViewLessonSlideFromLearn($slideId: ID!) {
+    viewLessonSlide(slideId: $slideId)
   }
 `;
 
@@ -141,6 +148,28 @@ export default function CourseLearnPage() {
   useEffect(() => {
     setQuizSelections({});
   }, [currentLesson?.id]);
+
+  // Slide deck (contentType SLIDES) - each slide its own uploaded file,
+  // viewed one at a time. myViewedSlideIds seeds local state on lesson
+  // change; viewing advances it optimistically rather than refetching the
+  // whole course query on every slide.
+  const slides = currentLesson?.slides ?? [];
+  const [slideIndex, setSlideIndex] = useState(0);
+  const [viewedSlideIds, setViewedSlideIds] = useState<Set<string>>(new Set());
+  const [viewSlide] = useMutation(VIEW_SLIDE);
+
+  useEffect(() => {
+    setSlideIndex(0);
+    setViewedSlideIds(new Set(currentLesson?.myViewedSlideIds ?? []));
+  }, [currentLesson?.id]);
+
+  const currentSlide = slides[slideIndex];
+  useEffect(() => {
+    if (!enrolled || !currentSlide || viewedSlideIds.has(currentSlide.id)) return;
+    viewSlide({ variables: { slideId: currentSlide.id } })
+      .then(() => setViewedSlideIds((prev) => new Set(prev).add(currentSlide.id)))
+      .catch(() => {});
+  }, [currentSlide?.id, enrolled]);
 
   function toggleOption(question: any, optionId: string) {
     setQuizSelections((prev) => {
@@ -254,6 +283,42 @@ export default function CourseLearnPage() {
               <div className="card p-6">
                 <h1 className="text-2xl font-bold">{currentLesson.title}</h1>
 
+                {currentLesson.contentType === 'SLIDES' && canWatchCurrent ? (
+                  <div className="mt-4">
+                    <div className="flex aspect-video items-center justify-center overflow-hidden rounded-xl bg-gray-900">
+                      {!currentSlide ? (
+                        <p className="text-sm text-gray-400">No slides uploaded yet.</p>
+                      ) : currentSlide.fileUrl.toLowerCase().endsWith('.pdf') ? (
+                        <iframe key={currentSlide.id} src={currentSlide.fileUrl} className="h-full w-full" title={currentSlide.title ?? `Slide ${slideIndex + 1}`} />
+                      ) : (
+                        <img key={currentSlide.id} src={currentSlide.fileUrl} alt={currentSlide.title ?? `Slide ${slideIndex + 1}`} className="max-h-full max-w-full object-contain" />
+                      )}
+                    </div>
+                    {slides.length > 0 && (
+                      <div className="mt-3 flex items-center justify-between text-sm">
+                        <button
+                          onClick={() => setSlideIndex((i) => Math.max(0, i - 1))}
+                          disabled={slideIndex === 0}
+                          className="btn-secondary rounded-lg px-3 py-1.5 disabled:opacity-40"
+                        >
+                          Previous
+                        </button>
+                        <span className="text-gray-500">
+                          Slide {slideIndex + 1} of {slides.length}
+                          {enrolled ? ` · ${viewedSlideIds.size}/${slides.length} viewed` : ''}
+                        </span>
+                        <button
+                          onClick={() => setSlideIndex((i) => Math.min(slides.length - 1, i + 1))}
+                          disabled={slideIndex === slides.length - 1}
+                          className="btn-secondary rounded-lg px-3 py-1.5 disabled:opacity-40"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    )}
+                    {currentSlide?.title && <p className="mt-2 text-sm text-gray-600">{currentSlide.title}</p>}
+                  </div>
+                ) : (
                 <div className="mt-4 overflow-hidden rounded-xl bg-gray-900">
                   {canWatchCurrent && currentLesson.videoUrl && currentLesson.contentType === 'YOUTUBE' ? (
                     (() => {
@@ -302,6 +367,7 @@ export default function CourseLearnPage() {
                     </div>
                   )}
                 </div>
+                )}
 
                 {currentLesson.description && (
                   <p className="mt-4 whitespace-pre-line text-sm text-gray-600">{currentLesson.description}</p>

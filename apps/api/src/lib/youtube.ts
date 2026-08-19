@@ -1,16 +1,13 @@
-/**
- * Turns whatever a teacher pastes into the YouTube lesson-content field —
- * a watch URL, a youtu.be short link, an embed URL, or a bare video ID —
- * into an embeddable https://www.youtube.com/embed/<id> URL.
- * Returns null when nothing resembling a video ID can be found, so callers
- * can fall back to an error state instead of rendering a broken iframe.
- */
+// Server-side copy of apps/web/src/lib/youtube.ts's toYouTubeEmbedUrl -
+// kept in sync deliberately rather than shared, same pattern as
+// apps/worker/src/lib/ai.ts mirroring apps/api/src/lib/ai.ts. Used to
+// validate a teacher application's required presentation-video link
+// without storing an arbitrary/unplayable URL.
 export function toYouTubeEmbedUrl(input: string | null | undefined): string | null {
   if (!input) return null;
   const value = input.trim();
   if (!value) return null;
 
-  // Bare 11-character video ID, no URL at all.
   if (/^[\w-]{11}$/.test(value)) {
     return `https://www.youtube.com/embed/${value}`;
   }
@@ -19,7 +16,7 @@ export function toYouTubeEmbedUrl(input: string | null | undefined): string | nu
     const url = new URL(value);
     // Exact host or a real subdomain only - `endsWith('youtube.com')` would
     // also match a lookalike like evilyoutube.com, which would then get
-    // embedded in an iframe as if it were trusted.
+    // persisted as a "verified" presentation video and later embedded.
     const isYouTubeHost = url.hostname === 'youtube.com' || url.hostname.endsWith('.youtube.com');
     if (url.hostname === 'youtu.be') {
       const id = url.pathname.slice(1);
@@ -48,4 +45,8 @@ export function toYouTubeEmbedUrl(input: string | null | undefined): string | nu
 
 function isVideoId(id: string | null | undefined): id is string {
   return typeof id === 'string' && /^[\w-]{11}$/.test(id);
+}
+
+export function isValidYouTubeUrl(input: string | null | undefined): boolean {
+  return toYouTubeEmbedUrl(input) !== null;
 }

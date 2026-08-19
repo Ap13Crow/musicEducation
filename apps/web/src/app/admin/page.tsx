@@ -241,7 +241,8 @@ function UsersTab() {
 const GET_TEACHER_APPLICATIONS = gql`
   query TeacherApplicationsQueue($status: TeacherApplicationStatus) {
     teacherApplications(status: $status) {
-      id headline bio instruments experienceYears status createdAt address birthdate
+      id headline bio instruments experienceYears status createdAt address birthdate gender motivation
+      cvUrl audioSampleUrl documentUrls videoUrl
       user { id displayName email }
     }
   }
@@ -318,9 +319,23 @@ function ApplicationsTab() {
                   {app.instruments?.join(', ') || 'No instruments listed'}
                   {app.experienceYears != null ? ` · ${app.experienceYears} yr experience` : ''}
                   {app.birthdate ? ` · age ${ageFromBirthdate(app.birthdate)}` : ' · no date of birth on file'}
+                  {app.gender ? ` · ${app.gender}` : ''}
                   {' · applied '}{new Date(app.createdAt).toLocaleDateString()}
                 </p>
                 {app.address && <p className="mt-1 text-xs text-gray-400">{app.address}</p>}
+                {app.motivation && (
+                  <p className="mt-2 text-xs text-gray-500"><span className="font-medium text-gray-600">Motivation: </span>{app.motivation}</p>
+                )}
+                {(app.cvUrl || app.audioSampleUrl || app.documentUrls?.length > 0 || app.videoUrl) && (
+                  <p className="mt-2 flex flex-wrap gap-3 text-xs">
+                    {app.cvUrl && <a href={app.cvUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">CV</a>}
+                    {app.videoUrl && <a href={app.videoUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Presentation video</a>}
+                    {app.audioSampleUrl && <a href={app.audioSampleUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Audio sample</a>}
+                    {app.documentUrls?.map((url: string, i: number) => (
+                      <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Document {i + 1}</a>
+                    ))}
+                  </p>
+                )}
               </div>
               {app.status === 'PENDING' && (
                 <div className="flex shrink-0 gap-2">

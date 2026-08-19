@@ -28,6 +28,26 @@ enum LessonContentType {
   VIDEO
   YOUTUBE
   AUDIO
+  SLIDES
+}
+
+# What a requestUploadUrl call is for - the resolver uses this to pick the
+# storage key prefix, the allowed content types, and the authorization rule
+# (a signed-in caller may upload their own teacher-application files; only a
+# course's teacher/an admin may upload a COURSE_SLIDE).
+enum UploadPurpose {
+  TEACHER_APPLICATION_CV
+  TEACHER_APPLICATION_AUDIO
+  TEACHER_APPLICATION_DOCUMENT
+  COURSE_SLIDE
+}
+
+type UploadTarget {
+  # Presigned PUT URL, valid briefly - PUT the file's raw bytes here with
+  # the same contentType requested, then use fileUrl in the owning mutation.
+  uploadUrl: String!
+  fileUrl: String!
+  key: String!
 }
 
 enum QuizQuestionType {
@@ -170,6 +190,12 @@ type TeacherProfile {
   locationCity: String
   locationCountry: String
   calendlyUsername: String
+  # YouTube presentation/performance video copied from the approved
+  # application - null once the teacher hides it via updateTeacherProfile
+  # even though the underlying link is kept, so introVideoUrl is null
+  # whenever there's nothing to show regardless of visibility state.
+  introVideoUrl: String
+  introVideoVisible: Boolean!
   certifications: [TeacherCertification!]
   availability: [TeacherAvailability!]
   # Stripe Connect payout status. Only resolved for the teacher themself or an
@@ -260,6 +286,17 @@ type TeacherApplication {
   experienceYears: Int
   address: String
   birthdate: DateTime
+  # Private - admin review only, never copied onto the public TeacherProfile.
+  gender: String
+  motivation: String
+  # Populated via requestUploadUrl(purpose: TEACHER_APPLICATION_*) then
+  # attached here on submit - object storage, never inline file data.
+  cvUrl: String
+  audioSampleUrl: String
+  documentUrls: [String!]!
+  # YouTube link, required to apply - copied to TeacherProfile.introVideoUrl
+  # on approval (the teacher can hide it again via updateTeacherProfile).
+  videoUrl: String
   status: TeacherApplicationStatus!
   createdAt: DateTime!
   updatedAt: DateTime!
@@ -267,6 +304,9 @@ type TeacherApplication {
 }
 
 input TeacherApplicationInput {
+  # Updates the applicant's UserProfile.displayName when provided - the
+  # name that ultimately appears on their public teacher profile.
+  fullName: String
   headline: String
   bio: String
   instruments: [String!]
@@ -275,6 +315,13 @@ input TeacherApplicationInput {
   # Required - applyForTeacher rejects an application without one, or from
   # someone under 18.
   birthdate: DateTime
+  gender: String
+  motivation: String
+  cvUrl: String
+  audioSampleUrl: String
+  documentUrls: [String!]
+  # Required - a YouTube link (watch/share/shorts URL or bare video id).
+  videoUrl: String
 }
 
 # ── Courses ────────────────────────
@@ -336,6 +383,21 @@ type Lesson {
   xpReward: Int!
   feedbackMode: QuizFeedbackMode!
   quizQuestions: [QuizQuestion!]!
+  # Populated for contentType SLIDES - ordered slide deck, each slide its
+  # own uploaded file (image or single-page PDF) in object storage.
+  slides: [LessonSlide!]!
+  # Slide ids the current caller has viewed in this lesson - [] when signed
+  # out or not enrolled. Drives the slide viewer's progress bar.
+  myViewedSlideIds: [ID!]!
+}
+
+type LessonSlide {
+  id: ID!
+  lessonId: ID!
+  order: Int!
+  fileUrl: String!
+  title: String
+  createdAt: DateTime!
 }
 
 type QuizOption {
@@ -660,6 +722,16 @@ type AdminStats {
   totalRevenue: Float!
 }
 
+# Public headline counters for the homepage - unlike AdminStats, scoped to
+# what's actually live/visible (published courses, upcoming events) rather
+# than raw row counts, and open to signed-out visitors.
+type PlatformStats {
+  totalCourses: Int!
+  totalTeachers: Int!
+  totalEvents: Int!
+  totalStudents: Int!
+}
+
 # ── Input Types ──────────────────────
 
 input RegisterInput {
@@ -744,6 +816,13 @@ input CreateLessonInput {
 }
 
 input UpdateSectionInput {
+  title: String
+  order: Int
+}
+
+input AddLessonSlideInput {
+  lessonId: ID!
+  fileUrl: String!
   title: String
   order: Int
 }
@@ -973,6 +1052,13 @@ type Query {
   adminStats: AdminStats!
   adminSettings: [AdminSetting!]!
   adminUsers(role: Role, search: String, page: Int, limit: Int): [User!]!
+
+  # Object storage - false when S3_* isn't configured, so callers can hide
+  # upload UI rather than let requestUploadUrl fail.
+  storageConfigured: Boolean!
+
+  # Public homepage counters - real counts, no auth required.
+  platformStats: PlatformStats!
 }
 
 # ── Mutations ───────────────────────
@@ -1003,6 +1089,10 @@ type Mutation {
     teachingFormats: [String!]
     isAvailable: Boolean
     calendlyUsername: String
+    # Show/hide the intro video copied from the approved application - the
+    # teacher's own call, per the product decision that they decide whether
+    # it's public. The link itself is kept either way.
+    introVideoVisible: Boolean
   ): TeacherProfile!
   addCertification(title: String!, issuingBody: String, issuedYear: Int, documentUrl: String): TeacherCertification!
   setAvailability(slots: [AvailabilitySlotInput!]!): [TeacherAvailability!]!
@@ -1013,6 +1103,11 @@ type Mutation {
   completeOnboarding: User!
   followUser(userId: ID!): User!
   unfollowUser(userId: ID!): User!
+
+  # Object storage - obtain a short-lived presigned PUT URL, upload directly
+  # to it client-side, then pass the returned fileUrl into applyForTeacher /
+  # addLessonSlide. Throws if S3_* isn't configured (see storageConfigured).
+  requestUploadUrl(purpose: UploadPurpose!, filename: String!, contentType: String!): UploadTarget!
 
   # Courses
   createCourse(input: CreateCourseInput!): Course!
@@ -1033,6 +1128,15 @@ type Mutation {
   startQuizAttempt(lessonId: ID!): QuizAttempt!
   submitQuizAnswer(input: SubmitQuizAnswerInput!): QuizAnswer!
   completeQuizAttempt(attemptId: ID!): QuizAttempt!
+  # Slide deck management (contentType SLIDES) - fileUrl comes from a prior
+  # requestUploadUrl(purpose: COURSE_SLIDE) round trip.
+  addLessonSlide(input: AddLessonSlideInput!): LessonSlide!
+  reorderLessonSlides(lessonId: ID!, slideIds: [ID!]!): [LessonSlide!]!
+  deleteLessonSlide(id: ID!): Boolean!
+  # Records that the current student viewed one slide - idempotent, drives
+  # myViewedSlideIds. Does not itself complete the lesson; call
+  # markLessonComplete once every slide has been viewed.
+  viewLessonSlide(slideId: ID!): Boolean!
 
   # Bookings
   bookSession(input: BookSessionInput!): Booking!

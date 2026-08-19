@@ -157,7 +157,7 @@ export const paymentResolvers = {
           line_items: [{ price_data: { currency, product_data: { name: description }, unit_amount: amount }, quantity: 1 }],
           mode: 'payment',
           success_url: `${frontendUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}&type=${type}&ref=${refId}`,
-          cancel_url: `${frontendUrl}/payment/cancel`,
+          cancel_url: `${frontendUrl}/payment/cancel?type=${type}&ref=${refId}`,
           metadata: { userId: user.id, type, refId },
           ...(payoutReady && amount > 0
             ? {
