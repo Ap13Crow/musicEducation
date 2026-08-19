@@ -1,5 +1,6 @@
 import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { isOwnedUploadUrl } from '../lib/storage.js';
 import type { GraphQLContext } from '../types.js';
 
 export async function requireOwnedCourse(prisma: any, user: any, courseId: string) {
@@ -306,7 +307,16 @@ export const courseResolvers = {
       const lesson = await prisma.lesson.findUnique({ where: { id: input.lessonId }, include: { section: true } });
       if (!lesson) throw new GraphQLError('Lesson not found.', { extensions: { code: 'NOT_FOUND' } });
       await requireOwnedCourse(prisma, user!, lesson.section.courseId);
-      const order = input.order ?? (await prisma.lessonSlide.count({ where: { lessonId: input.lessonId } }));
+      if (!isOwnedUploadUrl(input.fileUrl, 'COURSE_SLIDE', user!.id)) {
+        throw new GraphQLError('fileUrl must come from requestUploadUrl(purpose: COURSE_SLIDE).', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      // max(order)+1 rather than count(): count() reproduces an existing
+      // order once a slide has been deleted from the middle (orders 0,2,3 ->
+      // count()=3, but 3 is used again by a later insert), so two slides can
+      // end up with the same order and the deck's sequence becomes unstable.
+      const order =
+        input.order ??
+        ((await prisma.lessonSlide.aggregate({ where: { lessonId: input.lessonId }, _max: { order: true } }))._max.order ?? -1) + 1;
       return prisma.lessonSlide.create({
         data: { lessonId: input.lessonId, fileUrl: input.fileUrl, title: input.title ?? null, order },
       });
@@ -417,14 +427,18 @@ export const courseResolvers = {
       return prisma.quizQuestion.findMany({ where: { lessonId: lesson.id }, orderBy: { order: 'asc' } });
     },
     // Same gating as videoUrl/quizQuestions - a locked lesson's slide deck
-    // shouldn't be visible before enrollment either.
+    // shouldn't be visible before enrollment either. Every lesson in a
+    // course's curriculum is queried through this field regardless of
+    // contentType, so bail before any DB round trip for the video/audio/
+    // youtube majority - only a SLIDES lesson can have slide rows at all.
     async slides(lesson: any, _: unknown, { prisma, user }: GraphQLContext) {
+      if (lesson.contentType !== 'SLIDES') return [];
       const { allowed } = await resolveLessonAccess(prisma, user, lesson);
       if (!allowed) return [];
       return prisma.lessonSlide.findMany({ where: { lessonId: lesson.id }, orderBy: { order: 'asc' } });
     },
     async myViewedSlideIds(lesson: any, _: unknown, { prisma, user }: GraphQLContext) {
-      if (!user) return [];
+      if (lesson.contentType !== 'SLIDES' || !user) return [];
       const section = await prisma.courseSection.findUnique({ where: { id: lesson.sectionId } });
       if (!section) return [];
       const enrollment = await prisma.enrollment.findUnique({

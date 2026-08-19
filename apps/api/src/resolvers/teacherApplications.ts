@@ -1,8 +1,22 @@
 import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { isOwnedUploadUrl, type UploadPurpose } from '../lib/storage.js';
 import type { GraphQLContext } from '../types.js';
 
 const MIN_TEACHER_AGE_YEARS = 18;
+
+// Rejects a URL the client didn't actually get from requestUploadUrl for
+// this purpose and this user - without it, a client could submit an
+// arbitrary external URL for a field an admin later opens (cvUrl,
+// audioSampleUrl, documentUrls), or one from someone else's upload
+// namespace. Also rejects everything once storage isn't configured, so a
+// stray URL can't sneak past the "uploads disabled" state.
+function requireOwnedUploadUrl(url: string, purpose: UploadPurpose, userId: string, label: string): string {
+  if (!isOwnedUploadUrl(url, purpose, userId)) {
+    throw new GraphQLError(`${label} must come from requestUploadUrl(purpose: ${purpose}).`, { extensions: { code: 'BAD_USER_INPUT' } });
+  }
+  return url;
+}
 
 // Full identity verification is a later phase; this is the quality/legal
 // floor for a self-employed teacher applying now - exact age, not just
@@ -62,6 +76,17 @@ export const teacherApplicationResolvers = {
         throw new GraphQLError(`You must be at least ${MIN_TEACHER_AGE_YEARS} years old to apply as a teacher.`, { extensions: { code: 'BAD_USER_INPUT' } });
       }
 
+      // Each non-null URL must be one requestUploadUrl actually minted for
+      // this user and this purpose - otherwise a client could submit any
+      // external URL for a field an admin later opens in a new tab.
+      const cvUrl = input.cvUrl ? requireOwnedUploadUrl(input.cvUrl, 'TEACHER_APPLICATION_CV', user.id, 'CV') : null;
+      const audioSampleUrl = input.audioSampleUrl
+        ? requireOwnedUploadUrl(input.audioSampleUrl, 'TEACHER_APPLICATION_AUDIO', user.id, 'Audio sample')
+        : null;
+      const documentUrls: string[] = (input.documentUrls ?? []).map((url: string) =>
+        requireOwnedUploadUrl(url, 'TEACHER_APPLICATION_DOCUMENT', user.id, 'Document'),
+      );
+
       // Upsert rather than create-only: a previously rejected applicant can
       // resubmit, which resets status to PENDING and clears the prior review.
       return prisma.teacherApplication.upsert({
@@ -74,9 +99,9 @@ export const teacherApplicationResolvers = {
           experienceYears: input.experienceYears ?? null,
           address: input.address ?? null,
           birthdate,
-          cvUrl: input.cvUrl ?? null,
-          audioSampleUrl: input.audioSampleUrl ?? null,
-          documentUrls: input.documentUrls ?? [],
+          cvUrl,
+          audioSampleUrl,
+          documentUrls,
         },
         update: {
           headline: input.headline ?? null,
@@ -85,9 +110,9 @@ export const teacherApplicationResolvers = {
           experienceYears: input.experienceYears ?? null,
           address: input.address ?? null,
           birthdate,
-          cvUrl: input.cvUrl ?? null,
-          audioSampleUrl: input.audioSampleUrl ?? null,
-          documentUrls: input.documentUrls ?? [],
+          cvUrl,
+          audioSampleUrl,
+          documentUrls,
           status: 'PENDING',
           reviewedBy: null,
           reviewedAt: null,

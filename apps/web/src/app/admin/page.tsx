@@ -324,10 +324,10 @@ function ApplicationsTab() {
                 {app.address && <p className="mt-1 text-xs text-gray-400">{app.address}</p>}
                 {(app.cvUrl || app.audioSampleUrl || app.documentUrls?.length > 0) && (
                   <p className="mt-2 flex flex-wrap gap-3 text-xs">
-                    {app.cvUrl && <a href={app.cvUrl} target="_blank" rel="noreferrer" className="font-medium text-primary-700 underline">CV</a>}
-                    {app.audioSampleUrl && <a href={app.audioSampleUrl} target="_blank" rel="noreferrer" className="font-medium text-primary-700 underline">Audio sample</a>}
+                    {app.cvUrl && <a href={app.cvUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">CV</a>}
+                    {app.audioSampleUrl && <a href={app.audioSampleUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Audio sample</a>}
                     {app.documentUrls?.map((url: string, i: number) => (
-                      <a key={url} href={url} target="_blank" rel="noreferrer" className="font-medium text-primary-700 underline">Document {i + 1}</a>
+                      <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Document {i + 1}</a>
                     ))}
                   </p>
                 )}

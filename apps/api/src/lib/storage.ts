@@ -93,3 +93,18 @@ export async function createUploadTarget(
   const fileUrl = `${process.env.S3_ENDPOINT!.replace(/\/$/, '')}/${process.env.S3_BUCKET}/${key}`;
   return { uploadUrl, fileUrl, key };
 }
+
+// Callers (applyForTeacher, addLessonSlide) persist a fileUrl the browser
+// hands back after a PUT - without this check a client could submit any
+// external URL for a field that's later rendered to an admin/student
+// (iframe/img), or one under the right prefix but a different caller's
+// namespace. Confirms the URL is actually one createUploadTarget minted for
+// this purpose and this ownerId. Also false whenever storage isn't
+// configured, so a stray URL can't sneak past the "uploads disabled" state.
+export function isOwnedUploadUrl(fileUrl: string, purpose: UploadPurpose, ownerId: string): boolean {
+  if (!storageConfigured()) return false;
+  const config = PURPOSES[purpose];
+  if (!config) return false;
+  const expectedPrefix = `${process.env.S3_ENDPOINT!.replace(/\/$/, '')}/${process.env.S3_BUCKET}/${config.prefix}/${ownerId}/`;
+  return fileUrl.startsWith(expectedPrefix);
+}
