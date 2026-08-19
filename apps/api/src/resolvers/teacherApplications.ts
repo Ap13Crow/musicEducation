@@ -165,11 +165,15 @@ export const teacherApplicationResolvers = {
           // TeacherProfile.bio stores headline as its first line and
           // teachingBio (self-presentation) as everything after it (see
           // updateTeacherProfile / the teachingBio field resolver) -
-          // combine the application's two fields the same way, or a
-          // submitted headline never makes it onto the public profile at
-          // all and the teachingBio resolver would wrongly strip the first
-          // line of the actual self-presentation text instead.
-          const combinedBio = [application.headline, application.bio ?? applicant.profile?.bio].filter(Boolean).join('\n') || null;
+          // combine the application's two fields the same way. filter(Boolean)
+          // would drop an empty/missing headline whenever bio has content,
+          // collapsing bio down to just the body - and the teachingBio
+          // resolver always strips bio's first line regardless, so it would
+          // wrongly eat the real first line of the self-presentation text.
+          // Keep the headline slot (even empty) whenever there's a body.
+          const headlineLine = application.headline ?? '';
+          const bodyText = application.bio ?? applicant.profile?.bio ?? '';
+          const combinedBio = headlineLine || bodyText ? `${headlineLine}\n${bodyText}` : null;
           await tx.teacherProfile.upsert({
             where: { userId: application.userId },
             create: {

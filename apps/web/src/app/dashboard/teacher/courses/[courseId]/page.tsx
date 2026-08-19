@@ -65,6 +65,7 @@ export default function CourseBuilderPage(){
  async function removeQuestion(id:string){await deleteQuizQuestion({variables:{id}});await refetch();}
  const slidesLesson=course?.sections?.flatMap((s:any)=>s.lessons??[]).find((l:any)=>l.id===slidesLessonId);
  async function uploadSlide(file:File){
+  if(!slidesLessonId)return; // modal closed (or never opened) - nothing to attach this slide to
   setSlideUploadError(null);setUploadingSlide(true);
   try{
    const {data}=await requestUploadUrl({variables:{purpose:'COURSE_SLIDE',filename:file.name,contentType:file.type}});
@@ -78,6 +79,7 @@ export default function CourseBuilderPage(){
  }
  async function removeSlide(id:string){await deleteLessonSlide({variables:{id}});await refetch();}
  async function moveSlide(slideId:string,direction:-1|1){
+  if(!slidesLessonId)return;
   const ids=(slidesLesson?.slides??[]).map((s:any)=>s.id);
   const i=ids.indexOf(slideId);const j=i+direction;if(j<0||j>=ids.length)return;
   [ids[i],ids[j]]=[ids[j],ids[i]];
