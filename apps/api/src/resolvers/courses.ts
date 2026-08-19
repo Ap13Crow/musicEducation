@@ -83,15 +83,14 @@ export async function completeLessonForUser(prisma: any, userId: string, lessonI
 export const courseResolvers = {
   Query: {
     async courses(_: unknown, { filter, page = 1, limit = 20 }: any, { prisma, user }: GraphQLContext) {
-      const where: any = {};
-
-      // Guests can only see published, free-tier courses
-      if (!user) {
-        where.status = 'PUBLISHED';
-        where.isFreeTier = true;
-      } else {
-        where.status = 'PUBLISHED';
-      }
+      // The catalog is public - every published course (paid or free) is
+      // browsable by anyone, signed in or not, same as course(id/slug)
+      // below. What actually requires enrollment is the lesson *content*
+      // (see resolveLessonAccess in this file), not the listing/detail
+      // page. Previously guests were restricted to isFreeTier courses only,
+      // which hid every paid published course (e.g. "Piano 101") from
+      // logged-out visitors entirely.
+      const where: any = { status: 'PUBLISHED' };
 
       if (filter) {
         if (filter.level) where.level = filter.level;
@@ -466,6 +465,15 @@ export const courseResolvers = {
     async user(enrollment: any, _: unknown, { prisma }: GraphQLContext) {
       if (enrollment.user) return enrollment.user;
       return prisma.user.findUnique({ where: { id: enrollment.userId }, include: { profile: true } });
+    },
+    // Without this, User.enrollments (used e.g. on the student's own profile
+    // page to show course status) always resolved course: null - the
+    // enrollments field resolver doesn't `include: { course: true }`, and
+    // GraphQL's default resolver only looks for an already-populated
+    // `enrollment.course` property, which was never there.
+    async course(enrollment: any, _: unknown, { prisma }: GraphQLContext) {
+      if (enrollment.course) return enrollment.course;
+      return prisma.course.findUnique({ where: { id: enrollment.courseId } });
     },
   },
 };

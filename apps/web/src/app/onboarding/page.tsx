@@ -46,6 +46,24 @@ const COMPLETE_ASSESSMENT = gql`
   }
 `;
 
+// Onboarding is a one-time introductory evaluation, not something to
+// re-trigger on every visit - completeAssessment already sets
+// profile.onboardingDone, but nothing ever checked it. This is what makes
+// the resume screen below possible: the latest completed assessment's own
+// result stands in for "your evaluation, on file" instead of the quiz
+// re-running from scratch.
+const GET_ONBOARDING_STATUS = gql`
+  query GetOnboardingStatus {
+    me {
+      id
+      profile { onboardingDone }
+    }
+    myAssessments {
+      id completedAt skillLevel xpAwarded aiReport
+    }
+  }
+`;
+
 const steps = [
   { id: 'welcome', title: 'Welcome!', icon: Music },
   { id: 'theory', title: 'Music Theory', icon: BookOpen },
@@ -66,6 +84,17 @@ export default function OnboardingPage() {
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>([]);
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
   const [result, setResult] = useState<any>(null);
+
+  const { data: statusData, loading: statusLoading } = useQuery(GET_ONBOARDING_STATUS, {
+    skip: status !== 'authenticated',
+    fetchPolicy: 'network-only',
+  });
+  const alreadyOnboarded = Boolean(statusData?.me?.profile?.onboardingDone);
+  // myAssessments is ordered startedAt desc; the most recent *completed*
+  // one is the result "on file" (an abandoned, never-finished retake could
+  // otherwise sort above it).
+  const latestCompleted = (statusData?.myAssessments ?? []).find((a: any) => a.completedAt) ?? null;
+  const latestFeedback = latestCompleted?.aiReport ? JSON.parse(latestCompleted.aiReport).feedback : null;
 
   const [startAssessment] = useMutation(START_ASSESSMENT);
   const [submitAnswer] = useMutation(SUBMIT_ANSWER);
@@ -139,6 +168,60 @@ export default function OnboardingPage() {
   const currentStep = steps[step];
   const progress = (step / (steps.length - 1)) * 100;
   const feedback = result?.aiReport ? JSON.parse(result.aiReport).feedback : null;
+
+  // Already completed the one-time evaluation and hasn't explicitly chosen
+  // to retake it - show the result on file instead of restarting the quiz.
+  // Gated on step === 0 so this only applies before the flow begins; there's
+  // no "back to welcome" path once step has moved past 0 during a retake.
+  if (status === 'authenticated' && step === 0 && (statusLoading || alreadyOnboarded)) {
+    if (statusLoading) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white px-4 py-12">
+          <div className="mx-auto max-w-2xl">
+            <div className="card h-64 animate-pulse p-10" />
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white px-4 py-12">
+        <div className="mx-auto max-w-2xl">
+          <div className="card p-10 text-center">
+            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
+              <span className="text-4xl">🎵</span>
+            </div>
+            <h1 className="mb-2 text-3xl font-bold">You&rsquo;ve already completed onboarding</h1>
+            <p className="mb-6 text-gray-600">
+              This is a one-time introductory evaluation, not something to redo on every visit. Here&rsquo;s the result on file:
+            </p>
+            {latestCompleted ? (
+              <div className="mb-8">
+                <p className="mb-1 text-gray-600">Your level:</p>
+                <span className="inline-block rounded-full bg-primary-100 px-4 py-1 text-lg font-semibold text-primary-700">
+                  {latestCompleted.skillLevel}
+                </span>
+                <p className="mt-3 text-sm text-gray-500">
+                  Completed {new Date(latestCompleted.completedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}
+                  {typeof latestCompleted.xpAwarded === 'number' ? ` · +${latestCompleted.xpAwarded} XP earned` : ''}
+                </p>
+                {latestFeedback && <p className="mx-auto mt-4 max-w-md text-sm text-gray-600">{latestFeedback}</p>}
+              </div>
+            ) : (
+              <p className="mb-8 text-sm text-gray-500">No assessment result is on file, but your profile is set up.</p>
+            )}
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button onClick={() => router.push('/dashboard')} className="btn-primary px-8 py-3 text-base">
+                View My Dashboard
+              </button>
+              <button onClick={handleStart} className="btn-secondary px-8 py-3 text-base">
+                Retake assessment
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white px-4 py-12">

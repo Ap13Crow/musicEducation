@@ -65,7 +65,7 @@ export const userResolvers = {
     async teachers(_: unknown, { filter, page = 1, limit = 20 }: any, { prisma }: GraphQLContext) {
       // Repair previously promoted teachers that predate automatic profile provisioning.
       const missingProfiles = await prisma.user.findMany({
-        where: { role: 'TEACHER', teacherProfile: null },
+        where: { role: { in: ['TEACHER', 'ADMIN'] }, teacherProfile: null },
         include: { profile: true },
       });
       for (const candidate of missingProfiles) {
@@ -82,11 +82,14 @@ export const userResolvers = {
         });
       }
 
-      // Only users who currently hold the TEACHER role are publicly discoverable.
-      // A TeacherProfile row is never deleted on demotion (it's history — past
-      // courses/bookings still reference it), so this check — not row
+      // Users who currently hold the TEACHER role are publicly discoverable,
+      // and so is an ADMIN who has gone through applyAsTeacher/set up a
+      // TeacherProfile (admins are allowed to teach too - requireRole allows
+      // TEACHER or ADMIN on every teacher-profile mutation). A TeacherProfile
+      // row is never deleted on demotion (it's history — past courses/
+      // bookings still reference it), so this role check — not row
       // existence — is what "is this person a teacher right now" means.
-      const where: any = { isAvailable: true, user: { role: 'TEACHER' } };
+      const where: any = { isAvailable: true, user: { role: { in: ['TEACHER', 'ADMIN'] } } };
       if (filter) {
         if (filter.instrument) where.instruments = { has: filter.instrument };
         if (filter.maxHourlyRate !== undefined) where.hourlyRate = { lte: filter.maxHourlyRate };
@@ -116,7 +119,7 @@ export const userResolvers = {
       // Same rule as the `teachers` list: a demoted user's TeacherProfile row
       // survives (history), but they stop being discoverable as a teacher.
       return prisma.teacherProfile.findFirst({
-        where: { id, user: { role: 'TEACHER' } },
+        where: { id, user: { role: { in: ['TEACHER', 'ADMIN'] } } },
         include: { certifications: true, availability: true },
       });
     },

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { gql, useQuery } from '@apollo/client';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
-import { CalendarX, Search, SlidersHorizontal, Sparkles, X } from 'lucide-react';
+import { Calendar, CalendarX, Search, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 
 // Same vocabulary the onboarding assessment and profile use, and what the
 // worker's event-classification job is instructed to tag external events
@@ -228,13 +228,21 @@ export default function EventsPage() {
                   className="input w-full pl-10"
                 />
               </div>
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="input w-40"
-                aria-label="From date"
-              />
+              {/* A bare <input type="date"> shows no hint of its purpose
+                  until it's clicked open in some browsers (no visible
+                  placeholder text for date inputs) - a permanent "From"
+                  label removes the guesswork instead of relying on that. */}
+              <div className="flex w-48 shrink-0 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500">
+                <Calendar className="h-4 w-4 shrink-0 text-gray-400" />
+                <span className="shrink-0 text-gray-500">From</span>
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="w-full min-w-0 border-0 bg-transparent p-0 text-sm text-gray-900 focus:outline-none focus:ring-0"
+                  aria-label="From date"
+                />
+              </div>
               <button
                 onClick={() => setShowFilters(!showFilters)}
                 className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
@@ -289,54 +297,66 @@ export default function EventsPage() {
           </div>
         )}
 
-        {/* Native events on My Music Coach */}
-        <h2 className="mb-4 text-2xl font-bold">Upcoming Events</h2>
-        {loading ? (
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="card p-6 animate-pulse">
-                <div className="h-5 w-2/3 rounded bg-gray-200 mb-2" />
-                <div className="h-4 w-1/3 rounded bg-gray-200" />
+        {/* Native events on My Music Coach - skip this heading/empty-state
+            entirely once loading settles with zero native events but real
+            external events to show below (this dev environment has 1000+
+            Ticketmaster listings and zero teacher-published native events
+            yet): the external section becomes the primary "Upcoming
+            Events" list instead of the page looking empty/broken behind a
+            "check back soon" wall. */}
+        {(loading || events.length > 0 || externalEvents.length === 0) && (
+          <>
+            <h2 className="mb-4 text-2xl font-bold">Upcoming Events</h2>
+            {loading ? (
+              <div className="space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="card p-6 animate-pulse">
+                    <div className="h-5 w-2/3 rounded bg-gray-200 mb-2" />
+                    <div className="h-4 w-1/3 rounded bg-gray-200" />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        ) : events.length > 0 ? (
-          <div className="space-y-4">
-            {events.map((eventItem) => (
-              <article key={eventItem.id} className="card p-6 sm:flex sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold">{eventItem.title}</h2>
-                  <p className="mt-1 text-sm text-gray-600">
-                    {eventItem.city} · {formatDate(eventItem.startsAt)}
-                  </p>
-                  <p className="mt-2 inline-block rounded-full bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700">
-                    {TYPE_LABELS[eventItem.type] ?? eventItem.type}
-                  </p>
-                </div>
-                <button
-                  className="btn-primary mt-4 sm:mt-0"
-                  onClick={() => window.open(`${ticketsUrl}/mymusic-coach/`, '_blank', 'noopener')}
-                >
-                  Buy Ticket
-                </button>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="py-16 text-center">
-            <CalendarX className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-            <p className="text-gray-500">
-              {hasActiveFilters ? 'No events match your filters.' : 'No upcoming events published yet — check back soon.'}
-            </p>
-            {hasActiveFilters && (
-              <button onClick={clearFilters} className="mt-2 text-sm text-primary-600 hover:text-primary-800">Clear filters</button>
+            ) : events.length > 0 ? (
+              <div className="space-y-4">
+                {events.map((eventItem) => (
+                  <article key={eventItem.id} className="card p-6 sm:flex sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-xl font-semibold">{eventItem.title}</h2>
+                      <p className="mt-1 text-sm text-gray-600">
+                        {eventItem.city} · {formatDate(eventItem.startsAt)}
+                      </p>
+                      <p className="mt-2 inline-block rounded-full bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700">
+                        {TYPE_LABELS[eventItem.type] ?? eventItem.type}
+                      </p>
+                    </div>
+                    <button
+                      className="btn-primary mt-4 sm:mt-0"
+                      onClick={() => window.open(`${ticketsUrl}/mymusic-coach/`, '_blank', 'noopener')}
+                    >
+                      Buy Ticket
+                    </button>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="py-16 text-center">
+                <CalendarX className="mx-auto mb-4 h-12 w-12 text-gray-300" />
+                <p className="text-gray-500">
+                  {hasActiveFilters ? 'No events match your filters.' : 'No upcoming events published yet — check back soon.'}
+                </p>
+                {hasActiveFilters && (
+                  <button onClick={clearFilters} className="mt-2 text-sm text-primary-600 hover:text-primary-800">Clear filters</button>
+                )}
+              </div>
             )}
-          </div>
+          </>
         )}
 
         {externalEvents.length > 0 && (
-          <div className="mt-16">
-            <h2 className="mb-2 text-2xl font-bold">More events via external listings</h2>
+          <div className={events.length > 0 ? 'mt-16' : ''}>
+            <h2 className="mb-2 text-2xl font-bold">
+              {events.length > 0 ? 'More events via external listings' : 'Upcoming Events'}
+            </h2>
             <p className="mb-6 max-w-3xl text-sm text-gray-600">
               Discovered from external listings — purchase happens on the provider&rsquo;s own site.
             </p>

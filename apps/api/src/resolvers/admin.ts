@@ -7,12 +7,17 @@ export const adminResolvers = {
     // what's actually live rather than raw table counts: PUBLISHED courses
     // only, upcoming events (native isPublished + startsAt in the future,
     // external not yet expired) so a page full of past events doesn't
-    // inflate the count, STUDENT-role users.
+    // inflate the count, STUDENT-role users, and teachers counted the same
+    // way the public `teachers`/`teacher` queries do: a TeacherProfile row
+    // for whoever currently holds the TEACHER or ADMIN role. A
+    // TeacherProfile row is never deleted on demotion (it's history), so a
+    // raw table count would include stale profiles for users no longer
+    // discoverable as teachers at all.
     async platformStats(_: unknown, __: unknown, { prisma }: GraphQLContext) {
       const now = new Date();
       const [totalCourses, totalTeachers, totalStudents, nativeEvents, externalEvents] = await Promise.all([
         prisma.course.count({ where: { status: 'PUBLISHED' } }),
-        prisma.teacherProfile.count(),
+        prisma.teacherProfile.count({ where: { user: { role: { in: ['TEACHER', 'ADMIN'] } } } }),
         prisma.user.count({ where: { role: 'STUDENT' } }),
         prisma.event.count({ where: { isPublished: true, startsAt: { gte: now } } }),
         prisma.externalEventProjection.count({
