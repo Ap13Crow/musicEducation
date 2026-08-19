@@ -53,6 +53,27 @@ spec:
                   name: application-integrations
                   key: TICKETMASTER_API_KEY
                   optional: true
+            # DeepSeek (preferred) / OpenAI fallback for the event-classification
+            # job (see apps/worker/src/jobs/event-classification.ts) - absent,
+            # aiChat() returns null and the job skips classification this run.
+            - name: DEEPSEEK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: DEEPSEEK_API_KEY
+                  optional: true
+            - name: DEEPSEEK_API_URL
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: DEEPSEEK_API_URL
+                  optional: true
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: OPENAI_API_KEY
+                  optional: true
           volumeMounts:
             - name: postgres-ca
               mountPath: /etc/postgres-ca

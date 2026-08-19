@@ -70,6 +70,59 @@ spec:
                   name: application-integrations
                   key: TICKETMASTER_API_KEY
                   optional: true
+            # DeepSeek (preferred) / OpenAI fallback for AI-generated assessment
+            # reports (see apps/api/src/lib/ai.ts) - absent, aiChat() returns
+            # null and callers fall back to deterministic text.
+            - name: DEEPSEEK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: DEEPSEEK_API_KEY
+                  optional: true
+            - name: DEEPSEEK_API_URL
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: DEEPSEEK_API_URL
+                  optional: true
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: OPENAI_API_KEY
+                  optional: true
+            # S3-compatible object storage (DigitalOcean Spaces) for course
+            # slide/PDF and teacher-application document uploads.
+            - name: S3_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: S3_ENDPOINT
+                  optional: true
+            - name: S3_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: S3_REGION
+                  optional: true
+            - name: S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: S3_BUCKET
+                  optional: true
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: S3_ACCESS_KEY_ID
+                  optional: true
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: S3_SECRET_ACCESS_KEY
+                  optional: true
           volumeMounts:
             - name: postgres-ca
               mountPath: /etc/postgres-ca
