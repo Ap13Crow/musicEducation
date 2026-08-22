@@ -30,3 +30,4 @@ configMapGenerator:
       - 023-calendar-unavailability-appointments-ics.sql
       - 024-booking-governance.sql
       - 025-lesson-packages-subscriptions.sql
+      - 026-external-event-engagement.sql

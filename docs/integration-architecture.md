@@ -25,7 +25,7 @@ never a second source of truth for platform state:
 | **Google Workspace SMTP relay** | Transactional email | `apps/api/src/lib/mailer.ts` |
 | **DeepSeek / OpenAI** | Advisory-only AI text (assessment feedback, event classification) | `apps/api/src/lib/ai.ts`, `apps/worker/src/lib/ai.ts` |
 | **Ticketmaster** | External event discovery ingestion | `apps/worker/src/discovery/ticketmaster.ts`, `apps/worker/src/jobs/ticketmaster-ingest.ts` |
-| **Classictic** | Planned external affiliate event discovery — not yet implemented | — |
+| **Classictic** | External affiliate event discovery (official "event list widget") | `apps/worker/src/discovery/classictic.ts`, `apps/worker/src/jobs/classictic-ingest.ts` |
 | **Europeana** | Planned cultural-heritage content for learning — not yet implemented | — |
 
 ## Identity: Keycloak
@@ -114,18 +114,86 @@ payment, entitlement, progress, or XP state; that stays deterministic and audita
 `packages/mcp-server` is a separate MCP tool surface for AI-assisted development
 tooling, independent of the resolver-level helpers above.
 
-## External event discovery: Ticketmaster (worker)
+## External event discovery: Ticketmaster + Classictic (worker)
+
+Both providers share one shape: a `DiscoveryAdapter` (`isConfigured()`, `search()`)
+under `apps/worker/src/discovery/`, a `*-ingest.ts` job that upserts normalized rows
+into the single `ExternalEventProjection` table (`unique(provider, providerId)`), and
+`apps/worker/src/jobs/event-classification.ts` tagging every provider's rows the same
+way afterwards. `apps/api`'s `discoveryResolvers` (`externalEvents`,
+`recommendedExternalEvents`) is a read-only, provider-neutral surface over that one
+table — it never calls a provider directly, and external rows never enter the
+authored `Event`/`createEvent` flow. Scheduling is `apps/worker/src/scheduler.ts`
+(in-process `node-cron` inside the worker, not a Kubernetes CronJob). Europeana
+(cultural-heritage content for learning) is still a planned provider for a separate
+part of the product and has no code yet.
 
 `apps/worker/src/discovery/ticketmaster.ts` calls the Ticketmaster Discovery API
-(`TICKETMASTER_API_KEY`); `apps/worker/src/jobs/ticketmaster-ingest.ts` runs the sync
-and upserts into `ExternalEventProjection`; `apps/worker/src/jobs/
-event-classification.ts` uses the AI helper above to tag ingested events. Scheduling
-is `apps/worker/src/scheduler.ts` (in-process `node-cron` inside the worker, not a
-Kubernetes CronJob). Classictic (affiliate events) and Europeana (cultural-heritage
-content) are named in `CLAUDE.md` as planned providers for this same discovery layer
-but have no code yet — implementing them should follow this module's shape
-(provider-neutral GraphQL surface, `unique(provider, externalId)` upsert, no
-credentials or provider payloads copied into other systems as owned inventory).
+(`TICKETMASTER_API_KEY`); `apps/worker/src/jobs/ticketmaster-ingest.ts` runs the sync.
+
+### Classictic
+
+`apps/worker/src/discovery/classictic.ts` calls Classictic's **affiliate "event list
+widget"** — documented in the Classictic affiliate portal's marketing-materials
+section, alongside a separate banner widget. This is not a general-purpose REST API:
+`?format=json` on the widget's own endpoint returns the same event data the
+embeddable iframe renders, keyed by the caller's own `affiliate_id` so every returned
+event's `link` already carries the affiliate tracking parameter.
+
+- **Endpoint**: `GET https://account.classictic.com/en/whitelabel/customized/search/result/`
+- **Documented query parameters** (the only ones used — no other parameter is assumed
+  or guessed, no scraping, no reverse-engineered contract): `affiliate_id`,
+  `link_on_image=true`, `format=json`, `range` (result count).
+- **Credential**: `CLASSICTIC_AFFILIATE_ID` (worker-only — the API never calls
+  Classictic directly, so it's wired into `worker.yaml` and not `api.yaml`). Missing
+  → `isConfigured()` is `false` → the ingest job silently no-ops (no crash, no partial
+  sync), same pattern as a missing `TICKETMASTER_API_KEY`.
+- **`range` (event volume)**: the widget has no documented pagination/offset
+  parameter — each sync only ever sees "the widget's first N events" in its own
+  default ordering, never a way to page through the full catalog. `range=20` is the
+  documented example; `range=300` was confirmed to work in ~3s during integration
+  testing, `range=1000` timed out. The adapter uses `300` as "as much as possible"
+  without pushing into untested territory or hammering an endpoint that offers no
+  pagination contract to hammer politely with.
+- **Field shape** (from the live JSON response, not assumed): `event_id`, `event`
+  (title), `start_time`, `sale_end_time` (last purchasable moment — reused as this
+  row's `expiresAt`, the same "withdrawn" signal `externalEvents`/`platformStats`
+  already use), `link` (the affiliate tracking URL), `venue`, `city`, `pictures.
+  {desktop,mobile}[].url`, `description`. No price, currency, category, or performer
+  field is present anywhere in this widget's payload (confirmed across a sampled
+  batch) — normalized to `null`/`[]` rather than guessed.
+- **Outbound link validation**: `isSafeClassicticUrl()` independently re-validates
+  every `link` is `https://classictic.com` or a subdomain of it before it's ever
+  normalized or rendered — a future bad/compromised payload, or a redirect to an
+  unrelated domain, is rejected rather than silently sent to a student.
+- **Attribution**: every normalized row's `attribution` field states events are sold
+  by Classictic and the listing links out to complete purchase — same disclosure
+  requirement as Ticketmaster, rendered by `ExternalEventCard` on `/events`.
+
+### Engagement, attendance confirmation, and XP (both providers)
+
+Independent of ingestion, the *student-facing* side of external event discovery is a
+per-(user, event) `ExternalEventEngagement` row (see `packages/database/prisma/
+schema.prisma`), driven entirely from `apps/api`:
+
+1. **View** — clicking through to an external event's own site from `/events` fires
+   `Mutation.recordExternalEventView` (`apps/api/src/resolvers/discovery.ts`), which
+   upserts the engagement row (`firstViewedAt`/`lastViewedAt`). Surfaced on `/profile`
+   as "Recently visited events."
+2. **Confirm participation** — self-reported, only once the event's `startsAt` has
+   passed (`Mutation.confirmExternalEventAttendance`); there is no scanned-ticket
+   signal available for an external provider's event, so this is the same trust level
+   as any other self-attested confirmation.
+3. **Evaluate** — `Mutation.createReview` accepts an `externalEventProjectionId`,
+   gated on step 2 having happened first (`apps/api/src/resolvers/reviews.ts`).
+4. **Credit XP** — evaluating a confirmed-attended external event awards XP once
+   (`awardXpOnce`, reason `EVENT_ATTENDED`, `refId = "external:<projectionId>"` — the
+   `external:` prefix keeps this idempotency key from ever colliding with a native
+   ticketed `Event.id` under the same reason). `ExternalEventEngagement.xpAwardedAt`
+   is the durable "already credited" marker shown back to the student.
+
+None of this touches ingestion or provider credentials — it's pure application state
+over rows the ingest jobs already wrote.
 
 ## Webhooks summary
 

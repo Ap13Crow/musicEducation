@@ -142,6 +142,7 @@ model User {
   personalAppointments PersonalAppointment[]
   lessonPackagePurchases LessonPackagePurchase[]
   subscriptionPurchases  SubscriptionPurchase[]
+  externalEventEngagements ExternalEventEngagement[]
 }
 
 model UserCredential {
@@ -1072,10 +1073,19 @@ model Review {
   isPublic  Boolean  @default(true)
   createdAt DateTime @default(now())
 
+  // A student's evaluation of an external (Classictic/Ticketmaster) event
+  // they attended - gated on ExternalEventEngagement.attendanceConfirmedAt
+  // being set first (see reviews.ts createReview), same spirit as
+  // bookingId requiring status COMPLETED above. Many different students
+  // can each review the same external event once - see the compound
+  // unique on ExternalEventEngagement instead of a plain unique column here.
+  externalEventProjectionId String?
+
   user    User     @relation(fields: [userId], references: [id])
   course  Course?  @relation(fields: [courseId], references: [id])
   event   Event?   @relation(fields: [eventId], references: [id])
   booking Booking? @relation(fields: [bookingId], references: [id])
+  externalEventProjection ExternalEventProjection? @relation(fields: [externalEventProjectionId], references: [id])
 }
 
 model AdminSetting {
@@ -1138,4 +1148,31 @@ model ExternalEventProjection {
   @@index([startsAt])
   @@index([city])
   @@index([classifiedAt])
+
+  engagements ExternalEventEngagement[]
+  reviews     Review[]
+}
+
+// One row per (user, external event) - "recently visited" for a profile
+// page is just this ordered by lastViewedAt. attendanceConfirmedAt gates
+// leaving a Review (see reviews.ts); xpAwardedAt is a durable marker
+// alongside awardXpOnce's own idempotency guard, kept for admin
+// visibility into whether/when XP was actually granted for this event.
+model ExternalEventEngagement {
+  id                        String    @id @default(cuid())
+  userId                    String
+  externalEventProjectionId String
+  firstViewedAt             DateTime  @default(now())
+  lastViewedAt              DateTime  @default(now())
+  // Only settable once the event has actually started (see
+  // confirmExternalEventAttendance) - self-reported, same trust level as
+  // any other attendance confirmation without a scanned ticket.
+  attendanceConfirmedAt     DateTime?
+  xpAwardedAt               DateTime?
+
+  user                    User                    @relation(fields: [userId], references: [id])
+  externalEventProjection ExternalEventProjection @relation(fields: [externalEventProjectionId], references: [id])
+
+  @@unique([userId, externalEventProjectionId])
+  @@index([userId, lastViewedAt])
 }

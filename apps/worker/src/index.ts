@@ -7,6 +7,7 @@ import { heartbeatJob } from './jobs/heartbeat.js';
 import { ticketmasterIngestJob } from './jobs/ticketmaster-ingest.js';
 import { eventClassificationJob } from './jobs/event-classification.js';
 import { mailDispatchJob } from './jobs/mail-dispatch.js';
+import { classicticIngestJob } from './jobs/classictic-ingest.js';
 
 // Mirrors apps/api's DATABASE_URL construction: the postgres-mymusiccoach
 // Kubernetes Secret provides PG* pieces (via envFrom), not a single DSN.
@@ -38,6 +39,7 @@ registry.register(heartbeatJob);
 registry.register(ticketmasterIngestJob);
 registry.register(eventClassificationJob);
 registry.register(mailDispatchJob);
+registry.register(classicticIngestJob);
 
 async function main() {
   const app = express();

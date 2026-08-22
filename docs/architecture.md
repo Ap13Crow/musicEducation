@@ -17,7 +17,7 @@ implemented natively (no external LMS, booking, or ticketing system):
 |--------|-------------|
 | **Booking** | Teacher discovery, teacher-defined availability, exact bookable slots, Stripe payment |
 | **Learning** | Native course authoring, publishing, purchase, viewer, progress, assessment |
-| **Events** | Teacher-published events plus normalized external discovery (Ticketmaster today; Classictic and Europeana are planned, not yet built) |
+| **Events** | Teacher-published events plus normalized external discovery (Ticketmaster and Classictic today; Europeana is planned, not yet built) |
 
 ---
 

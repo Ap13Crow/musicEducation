@@ -55,6 +55,7 @@ spec:
               psql --set=ON_ERROR_STOP=1 --file=/schema/023-calendar-unavailability-appointments-ics.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/024-booking-governance.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/025-lesson-packages-subscriptions.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/026-external-event-engagement.sql
           envFrom:
             - secretRef:
                 name: postgres-mymusiccoach

@@ -874,9 +874,23 @@ type Review {
   courseId: ID
   eventId: ID
   bookingId: ID
+  externalEventProjectionId: ID
   isPublic: Boolean!
   createdAt: DateTime!
   author: User
+}
+
+# One row per (user, external event) - "recently visited," post-event
+# attendance confirmation, and the XP-award marker. See
+# apps/api/src/resolvers/discovery.ts.
+type ExternalEventEngagement {
+  id: ID!
+  externalEventProjectionId: ID!
+  externalEventProjection: ExternalEventProjection
+  firstViewedAt: DateTime!
+  lastViewedAt: DateTime!
+  attendanceConfirmedAt: DateTime
+  xpAwardedAt: DateTime
 }
 
 type ReviewConnection {
@@ -1192,6 +1206,10 @@ input CreateReviewInput {
   courseId: ID
   eventId: ID
   bookingId: ID
+  # Requires a prior confirmExternalEventAttendance on this event - see
+  # createReview's own gate in apps/api/src/resolvers/reviews.ts. Evaluating
+  # a confirmed-attended external event is what credits XP.
+  externalEventProjectionId: ID
   isPublic: Boolean
 }
 
@@ -1248,6 +1266,10 @@ type Query {
   # preferences (DeepSeek-classified) - the events page's "Recommended for
   # you" strip. Empty for a signed-out caller or one with no preferences set.
   recommendedExternalEvents(limit: Int): [ExternalEventProjection!]!
+  # The caller's own "recently visited" external events, most recent first -
+  # see recordExternalEventView. Each row also carries attendance-confirm and
+  # XP-award state for the confirm/evaluate/credit flow.
+  myRecentlyViewedExternalEvents(limit: Int): [ExternalEventEngagement!]!
 
   # Assessments
   assessmentQuestions(category: String, difficulty: String, instrument: String, limit: Int): [AssessmentQuestion!]!
@@ -1425,6 +1447,11 @@ type Mutation {
 
   # Reviews
   createReview(input: CreateReviewInput!): Review!
+
+  # External event engagement (recently visited -> confirm participation ->
+  # evaluate via createReview -> XP credited). See discovery.ts.
+  recordExternalEventView(id: ID!): ExternalEventEngagement!
+  confirmExternalEventAttendance(id: ID!): ExternalEventEngagement!
 
   # Payments
   # type also accepts "package" and "subscription" (refId = the offer id) -
