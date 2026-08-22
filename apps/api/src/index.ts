@@ -11,6 +11,7 @@ import pino from 'pino';
 import { PrismaClient } from '@my-music-coach/database';
 import { authMiddleware, resolveRequestUser } from './middleware/auth.js';
 import { resolvers } from './resolvers/index.js';
+import { createLoaders } from './lib/loaders.js';
 import { handleStripeWebhook, handleStripeV2Webhook } from './resolvers/payments.js';
 import type { GraphQLContext } from './types.js';
 
@@ -133,7 +134,9 @@ async function main() {
         if (req.headers.authorization?.startsWith('Bearer ') && !user) {
           logger.warn('Bearer token did not resolve to an application user');
         }
-        return { prisma, user, req };
+        // Fresh loaders per request - see loaders.ts for why these must
+        // never be reused/cached across requests.
+        return { prisma, user, req, loaders: createLoaders(prisma) };
       } catch (error) {
         logger.error({ err: error }, 'Authenticated user provisioning failed');
         throw error;

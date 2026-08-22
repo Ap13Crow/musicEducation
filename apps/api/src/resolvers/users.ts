@@ -192,7 +192,7 @@ export const userResolvers = {
       // musicStyles, languages - none of which updateTeacherProfile actually
       // accepts as args), so every field but hourlyRate/instruments/
       // isAvailable/calendlyUsername was silently ignored.
-      const { headline, teachingBio, hourlyRate, instruments, specializations, isAvailable, calendlyUsername, introVideoVisible, publicImageUrl } = args;
+      const { headline, teachingBio, hourlyRate, instruments, specializations, teachingFormats, isAvailable, calendlyUsername, introVideoVisible, publicImageUrl } = args;
       const data: Record<string, unknown> = {};
       // hourlyRate/calendlyUsername are nullable columns - an explicit null
       // is a legitimate "clear this" and Prisma accepts it.
@@ -223,6 +223,7 @@ export const userResolvers = {
       if (isAvailable !== undefined && isAvailable !== null) data.isAvailable = isAvailable;
       if (introVideoVisible !== undefined && introVideoVisible !== null) data.introVideoVisible = introVideoVisible;
       if (specializations !== undefined && specializations !== null) data.musicStyles = specializations;
+      if (teachingFormats !== undefined && teachingFormats !== null) data.teachingFormats = teachingFormats;
       // headline has no independent column - TeacherProfile.headline is
       // derived from bio's first line (see the headline resolver below), so
       // an update needs to recompute both halves together. Rebuilding
@@ -399,9 +400,6 @@ export const userResolvers = {
     specializations(profile: any) {
       return profile.musicStyles ?? [];
     },
-    teachingFormats() {
-      return [];
-    },
     yearsExperience(profile: any) {
       return profile.experienceYears ?? null;
     },
@@ -428,6 +426,15 @@ export const userResolvers = {
     stripePayoutsEnabled(profile: any, _: unknown, { user }: GraphQLContext) {
       const isOwnerOrAdmin = user?.id === profile.userId || user?.role === 'ADMIN';
       return isOwnerOrAdmin ? Boolean(profile.stripePayoutsEnabled) : null;
+    },
+    memberSince(profile: any) {
+      return profile.createdAt;
+    },
+    distinctStudentCount(profile: any, _: unknown, { loaders }: GraphQLContext) {
+      return loaders.teacherDistinctStudentCount.load(profile.id);
+    },
+    publishedResourceCount(profile: any, _: unknown, { loaders }: GraphQLContext) {
+      return loaders.teacherPublishedResourceCount.load(profile.id);
     },
     async user(profile: any, _: unknown, { prisma }: GraphQLContext) {
       if (profile.user) return profile.user;

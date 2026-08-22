@@ -25,10 +25,6 @@ const GET_PROFILE = gql`
         bio city country timezone
         instruments musicStyles onboardingDone
       }
-      teacherProfile {
-        headline teachingBio hourlyRate currency
-        instruments isAvailable avgRating
-      }
       gamification {
         level xp totalPoints currentStreak skillLevel
       }
@@ -253,6 +249,11 @@ export default function ProfilePage() {
                 <span className="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700">
                   {ROLE_LABELS[role] ?? role}
                 </span>
+                {(role === 'TEACHER' || role === 'ADMIN') && (
+                  <Link href="/dashboard/teacher/profile" className="text-xs font-medium text-primary-700 underline">
+                    Go to teacher profile →
+                  </Link>
+                )}
                 {me?.profile?.instruments?.slice(0, 3).map((i: string) => (
                   <span key={i} className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{i}</span>
                 ))}

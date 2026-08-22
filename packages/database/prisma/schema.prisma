@@ -197,6 +197,13 @@ model TeacherProfile {
   // TEACHER_PROFILE_IMAGE) + updateTeacherProfile, never reused from the
   // account avatar automatically.
   publicImageUrl     String?
+  // Was a hardcoded [] in the TeacherProfile.teachingFormats field resolver
+  // (users.ts) - schema.graphql and updateTeacherProfile's arg have existed
+  // since teachingFormats was added, but nothing ever stored or returned a
+  // real value. Free-form strings matching the BookingFormat vocabulary
+  // (IN_PERSON/ONLINE/HYBRID) rather than the enum itself, since a teacher
+  // may offer more than one.
+  teachingFormats    String[] @default([])
   // Stripe Connect Express account this teacher's share of course/booking/event
   // revenue is transferred to. Null until the teacher completes onboarding.
   stripeAccountId      String?  @unique

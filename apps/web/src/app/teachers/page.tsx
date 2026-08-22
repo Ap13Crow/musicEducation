@@ -4,7 +4,8 @@ import { useState, useMemo } from 'react';
 import { gql, useQuery } from '@apollo/client';
 import { useSession, signIn } from 'next-auth/react';
 import Link from 'next/link';
-import { Star, MapPin, Clock, Music, Search, SlidersHorizontal, X, Video, Users as UsersIcon, Calendar, Award } from 'lucide-react';
+import { Star, MapPin, Clock, Music, Search, SlidersHorizontal, X, Video, Users as UsersIcon, Calendar, Award, BookOpen } from 'lucide-react';
+import { membershipLabel } from '@/lib/membership';
 
 const INSTRUMENTS = ['Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute', 'Clarinet', 'Oboe', 'Trumpet', 'Organ', 'Harp', 'Percussion'];
 const FORMATS = ['Online', 'In-Person', 'Hybrid'];
@@ -27,9 +28,9 @@ const GET_TEACHERS = gql`
         id userId headline teachingBio hourlyRate currency
         instruments specializations teachingFormats
         locationCity locationCountry
-        isAvailable yearsExperience
-        avgRating totalReviews
-        user { id email displayName avatarUrl }
+        isAvailable yearsExperience publicImageUrl
+        avgRating totalReviews memberSince distinctStudentCount publishedResourceCount
+        user { id email displayName }
         certifications { id title issuingBody }
       }
       pageInfo { totalCount hasNextPage }
@@ -44,8 +45,10 @@ function TeacherCard({ teacher }: { teacher: any }) {
   return (
     <article className="card p-5 hover:border-primary-300 transition-colors">
       <div className="flex items-start gap-4">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary-100 text-xl font-bold text-primary-700">
-          {teacher.user?.displayName?.charAt(0) ?? '?'}
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary-100 text-xl font-bold text-primary-700">
+          {teacher.publicImageUrl
+            ? <img src={teacher.publicImageUrl} alt="" className="h-full w-full object-cover" />
+            : (teacher.user?.displayName?.charAt(0) ?? '?')}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -100,6 +103,27 @@ function TeacherCard({ teacher }: { teacher: any }) {
           <span className="flex items-center gap-1">
             <Video className="h-3.5 w-3.5" />
             {teacher.teachingFormats.join(', ')}
+          </span>
+        )}
+        {/* Honest neutral states: a brand-new teacher with 0 students or 0
+            published courses omits the stat rather than showing a bare 0 -
+            same convention the pre-existing avgRating check above uses. */}
+        {teacher.distinctStudentCount > 0 && (
+          <span className="flex items-center gap-1">
+            <UsersIcon className="h-3.5 w-3.5" />
+            {teacher.distinctStudentCount} student{teacher.distinctStudentCount === 1 ? '' : 's'}
+          </span>
+        )}
+        {teacher.publishedResourceCount > 0 && (
+          <span className="flex items-center gap-1">
+            <BookOpen className="h-3.5 w-3.5" />
+            {teacher.publishedResourceCount} course{teacher.publishedResourceCount === 1 ? '' : 's'}
+          </span>
+        )}
+        {teacher.memberSince && (
+          <span className="flex items-center gap-1">
+            <Calendar className="h-3.5 w-3.5" />
+            {membershipLabel(teacher.memberSince, { compact: true })}
           </span>
         )}
       </div>

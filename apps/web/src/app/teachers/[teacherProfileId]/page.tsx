@@ -4,19 +4,20 @@ import Link from 'next/link';
 import { gql, useQuery } from '@apollo/client';
 import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Award, BookOpen, CalendarDays, MapPin, Music, Star, UserRound } from 'lucide-react';
+import { Award, BookOpen, CalendarDays, MapPin, Music, Star, UserRound, Users as UsersIcon } from 'lucide-react';
 import { toYouTubeEmbedUrl } from '@/lib/youtube';
+import { membershipLabel } from '@/lib/membership';
 
 const GET_TEACHER = gql`
   query PublicTeacher($id: ID!, $courseFilter: CourseFilterInput) {
     teacher(id: $id) {
       id userId headline teachingBio hourlyRate currency instruments specializations
       teachingFormats isAvailable avgRating totalReviews yearsExperience introVideoUrl
-      locationCity locationCountry
+      locationCity locationCountry publicImageUrl memberSince distinctStudentCount publishedResourceCount
       certifications { id title issuingBody issuedYear }
       availability { id dayOfWeek startTime endTime }
       user {
-        id email displayName avatarUrl
+        id email displayName
         eventsPublished(page: 1, limit: 12) {
           nodes { id slug title startsAt city format isPublished }
         }
@@ -49,7 +50,7 @@ export default function PublicTeacherPage() {
         <div className="mt-6 flex flex-wrap items-start justify-between gap-6">
           <div className="flex gap-5">
             <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl bg-primary-100 text-primary-700">
-              {teacher.user?.avatarUrl ? <img src={teacher.user.avatarUrl} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-10 w-10" />}
+              {teacher.publicImageUrl ? <img src={teacher.publicImageUrl} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-10 w-10" />}
             </div>
             <div>
               <h1 className="font-serif text-3xl font-bold">{teacher.user?.displayName}</h1>
@@ -58,10 +59,12 @@ export default function PublicTeacherPage() {
                 {teacher.locationCity && <span className="flex items-center gap-1"><MapPin className="h-4 w-4" />{teacher.locationCity}{teacher.locationCountry ? `, ${teacher.locationCountry}` : ''}</span>}
                 {teacher.avgRating > 0 && <span className="flex items-center gap-1"><Star className="h-4 w-4 text-amber-500" />{teacher.avgRating.toFixed(1)} ({teacher.totalReviews})</span>}
                 {teacher.yearsExperience != null && <span>{teacher.yearsExperience} yr experience</span>}
+                {teacher.distinctStudentCount > 0 && <span className="flex items-center gap-1"><UsersIcon className="h-4 w-4" />{teacher.distinctStudentCount} student{teacher.distinctStudentCount === 1 ? '' : 's'}</span>}
+                {teacher.memberSince && <span>{membershipLabel(teacher.memberSince, { compact: true })}</span>}
               </div>
             </div>
           </div>
-          {isOwnProfile ? <Link href="/dashboard/teacher" className="btn-primary rounded-lg px-5 py-2.5">Manage teacher profile</Link>
+          {isOwnProfile ? <Link href="/dashboard/teacher/profile" className="btn-primary rounded-lg px-5 py-2.5">Manage teacher profile</Link>
             : teacher.isAvailable ? <Link href={`/book/${teacher.id}`} className="btn-primary rounded-lg px-5 py-2.5">Book a lesson</Link>
             : <span className="rounded-lg bg-gray-100 px-5 py-2.5 text-sm text-gray-500">Not accepting bookings</span>}
         </div>
@@ -84,7 +87,7 @@ export default function PublicTeacherPage() {
           </section>
         )}
         <section className="card p-6"><h2 className="text-xl font-semibold">About</h2><p className="mt-3 whitespace-pre-line text-gray-700">{teacher.teachingBio ?? 'This teacher is preparing their profile.'}</p></section>
-        <section className="card p-6"><h2 className="flex items-center gap-2 text-xl font-semibold"><BookOpen className="h-5 w-5" />Courses</h2>
+        <section className="card p-6"><h2 className="flex items-center gap-2 text-xl font-semibold"><BookOpen className="h-5 w-5" />Courses{teacher.publishedResourceCount > 0 ? ` (${teacher.publishedResourceCount})` : ''}</h2>
           {courses.length ? <div className="mt-4 grid gap-3 sm:grid-cols-2">{courses.map((course:any)=><Link key={course.id} href={`/courses/${course.slug}`} className="rounded-xl border p-4 hover:border-primary-300"><strong>{course.title}</strong><p className="mt-1 text-sm text-gray-600">{course.shortSummary ?? course.level}</p></Link>)}</div> : <p className="mt-3 text-sm text-gray-500">No published courses yet.</p>}
         </section>
         <section className="card p-6"><h2 className="flex items-center gap-2 text-xl font-semibold"><CalendarDays className="h-5 w-5" />Events</h2>

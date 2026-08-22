@@ -206,6 +206,18 @@ type TeacherProfile {
   introVideoVisible: Boolean!
   certifications: [TeacherCertification!]
   availability: [TeacherAvailability!]
+  # Date this teacher's profile was first provisioned (approval time) -
+  # "years/months teaching on MyMusic.Coach" is calculated client-side from
+  # this, never from self-reported yearsExperience (pre-platform history).
+  memberSince: DateTime!
+  # A distinct student is a user with at least one CONFIRMED or COMPLETED
+  # booking with this teacher (see apps/api/src/lib/loaders.ts) - never
+  # exposes which students, only the count.
+  distinctStudentCount: Int!
+  # Published courses this teacher has authored - there is no separate
+  # "resource" model in the schema, so this counts what actually exists
+  # rather than a metric with nothing behind it.
+  publishedResourceCount: Int!
   # Stripe Connect payout status. Only resolved for the teacher themself or an
   # admin — null for anyone else viewing a public teacher profile.
   stripeAccountId: String
