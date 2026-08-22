@@ -64,7 +64,25 @@ describe('enqueueMail', () => {
         recipients: ['a@example.com', 'b@example.com'],
         subject: 'Your lesson is confirmed',
         html: '<p>hi</p>',
+        icsContent: null,
+        icsMethod: null,
       },
+    });
+  });
+
+  it('persists an ICS attachment when provided', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    await enqueueMail({ mailOutboxMessage: { create } } as any, {
+      kind: 'BOOKING_CANCELLED',
+      bookingId: 'booking-1',
+      recipients: ['a@example.com'],
+      subject: 'Cancelled',
+      html: '<p>cancelled</p>',
+      icsContent: 'BEGIN:VCALENDAR...',
+      icsMethod: 'CANCEL',
+    });
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ icsContent: 'BEGIN:VCALENDAR...', icsMethod: 'CANCEL' }),
     });
   });
 });

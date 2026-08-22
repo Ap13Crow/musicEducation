@@ -38,7 +38,16 @@ type OutboxTx = Pick<Prisma.TransactionClient, 'mailOutboxMessage'>;
 // (nothing enqueued) rather than creating a row nothing can ever deliver.
 export async function enqueueMail(
   tx: OutboxTx,
-  message: { kind: 'BOOKING_CONFIRMATION' | 'BOOKING_CANCELLED'; bookingId?: string; recipients: string[]; subject: string; html: string },
+  message: {
+    kind: 'BOOKING_CONFIRMATION' | 'BOOKING_CANCELLED';
+    bookingId?: string;
+    recipients: string[];
+    subject: string;
+    html: string;
+    /** RFC 5545 calendar invitation (apps/api/src/lib/ics.ts) - optional, attached by the worker via nodemailer's icalEvent. */
+    icsContent?: string;
+    icsMethod?: 'REQUEST' | 'CANCEL';
+  },
 ): Promise<void> {
   if (message.recipients.length === 0) return;
   await tx.mailOutboxMessage.create({
@@ -48,6 +57,8 @@ export async function enqueueMail(
       recipients: message.recipients,
       subject: message.subject,
       html: message.html,
+      icsContent: message.icsContent ?? null,
+      icsMethod: message.icsMethod ?? null,
     },
   });
 }

@@ -46,7 +46,14 @@ export const mailDispatchJob: Job = {
     for (const message of due) {
       const attempts = message.attempts + 1;
       try {
-        await sendMail({ to: message.recipients.join(', '), subject: message.subject, html: message.html });
+        await sendMail({
+          to: message.recipients.join(', '),
+          subject: message.subject,
+          html: message.html,
+          ...(message.icsContent && (message.icsMethod === 'REQUEST' || message.icsMethod === 'CANCEL')
+            ? { icalEvent: { method: message.icsMethod, content: message.icsContent } }
+            : {}),
+        });
         await ctx.prisma.mailOutboxMessage.update({
           where: { id: message.id },
           data: { status: 'SENT', attempts, sentAt: new Date(), lastError: null },

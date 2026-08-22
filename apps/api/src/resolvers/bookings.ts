@@ -1,12 +1,26 @@
 import { GraphQLError } from 'graphql';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
-import { bookingConfirmedEmailContent } from '../lib/emails.js';
+import { bookingConfirmedEmailContent, bookingCancelledEmailContent } from '../lib/emails.js';
 import { enqueueMail, recipientAddresses } from '../lib/mailOutbox.js';
+import { buildBookingIcs } from '../lib/ics.js';
 import type { GraphQLContext } from '../types.js';
 import type { Prisma } from '@my-music-coach/database';
 
 const TEACHER_FOUND_XP = 30;
+
+// Same displayName fallback chain as the User.displayName field resolver in
+// users.ts (profile.displayName -> local part of the email -> generic).
+function displayNameOf(user: { email: string | null; profile?: { displayName?: string | null } | null }): string {
+  return user.profile?.displayName || user.email?.split('@')[0] || 'there';
+}
+
+const PLATFORM_ORGANIZER = { name: 'MyMusic.Coach', email: process.env.SMTP_FROM ?? 'no-reply@mymusic.coach' };
+
+function bookingLocation(format: string, meetingUrl: string | null | undefined): string | null {
+  if (format === 'ONLINE') return meetingUrl || 'Online';
+  return null;
+}
 
 // Shared by bookSession (auto-confirmed when the teacher has no hourly rate)
 // and confirmBooking (a paid booking the teacher just accepted) - both are
@@ -25,10 +39,8 @@ export async function notifyBookingConfirmed(tx: Prisma.TransactionClient, booki
     include: { user: { include: { profile: true } }, teacherProfile: { include: { user: { include: { profile: true } } } } },
   });
   if (!booking) return;
-  // Same displayName fallback chain as the User.displayName field resolver
-  // in users.ts (profile.displayName -> local part of the email -> generic).
-  const studentName = booking.user.profile?.displayName || booking.user.email?.split('@')[0] || 'there';
-  const teacherName = booking.teacherProfile.user.profile?.displayName || booking.teacherProfile.user.email?.split('@')[0] || 'there';
+  const studentName = displayNameOf(booking.user);
+  const teacherName = displayNameOf(booking.teacherProfile.user);
   const content = bookingConfirmedEmailContent({
     studentName,
     teacherName,
@@ -39,8 +51,73 @@ export async function notifyBookingConfirmed(tx: Prisma.TransactionClient, booki
   });
   const studentRecipients = recipientAddresses(booking.user.email, booking.user.profile?.notificationEmail);
   const teacherRecipients = recipientAddresses(booking.teacherProfile.user.email, booking.teacherProfile.user.profile?.notificationEmail);
-  await enqueueMail(tx, { kind: 'BOOKING_CONFIRMATION', bookingId, recipients: studentRecipients, ...content.student });
-  await enqueueMail(tx, { kind: 'BOOKING_CONFIRMATION', bookingId, recipients: teacherRecipients, ...content.teacher });
+
+  // Same VEVENT (organizer=platform, both parties as attendees) attached to
+  // both copies - one UID per booking, SEQUENCE 0 for the first invitation
+  // (this only runs once per booking: immediately on a free-teacher booking,
+  // or once when a paid booking is first confirmed).
+  const ics = buildBookingIcs({
+    uid: `booking-${booking.id}@mymusic.coach`,
+    sequence: booking.icsSequence,
+    method: 'REQUEST',
+    startsAt: booking.startsAt,
+    endsAt: booking.endsAt ?? new Date(booking.startsAt.getTime() + booking.durationMin * 60_000),
+    organizer: PLATFORM_ORGANIZER,
+    attendees: [
+      { name: studentName, email: booking.user.email },
+      { name: teacherName, email: booking.teacherProfile.user.email },
+    ],
+    summary: `Lesson: ${studentName} with ${teacherName}`,
+    description: `${booking.instrument ? `${booking.instrument} lesson` : 'Lesson'} booked via MyMusic.Coach.`,
+    location: bookingLocation(booking.format, booking.meetingUrl),
+  });
+
+  await enqueueMail(tx, { kind: 'BOOKING_CONFIRMATION', bookingId, recipients: studentRecipients, ...content.student, icsContent: ics, icsMethod: 'REQUEST' });
+  await enqueueMail(tx, { kind: 'BOOKING_CONFIRMATION', bookingId, recipients: teacherRecipients, ...content.teacher, icsContent: ics, icsMethod: 'REQUEST' });
+}
+
+// Mirrors notifyBookingConfirmed for the cancel path: same UID, SEQUENCE
+// incremented (persisted onto the booking) and METHOD:CANCEL so a calendar
+// client removes the earlier invitation instead of adding a second event.
+export async function notifyBookingCancelled(tx: Prisma.TransactionClient, bookingId: string) {
+  const booking = await tx.booking.findUnique({
+    where: { id: bookingId },
+    include: { user: { include: { profile: true } }, teacherProfile: { include: { user: { include: { profile: true } } } } },
+  });
+  if (!booking) return;
+  const studentName = displayNameOf(booking.user);
+  const teacherName = displayNameOf(booking.teacherProfile.user);
+  const content = bookingCancelledEmailContent({
+    studentName,
+    teacherName,
+    startsAt: booking.startsAt,
+    durationMin: booking.durationMin,
+    format: booking.format,
+    instrument: booking.instrument,
+  });
+  const studentRecipients = recipientAddresses(booking.user.email, booking.user.profile?.notificationEmail);
+  const teacherRecipients = recipientAddresses(booking.teacherProfile.user.email, booking.teacherProfile.user.profile?.notificationEmail);
+
+  const nextSequence = booking.icsSequence + 1;
+  await tx.booking.update({ where: { id: booking.id }, data: { icsSequence: nextSequence } });
+  const ics = buildBookingIcs({
+    uid: `booking-${booking.id}@mymusic.coach`,
+    sequence: nextSequence,
+    method: 'CANCEL',
+    startsAt: booking.startsAt,
+    endsAt: booking.endsAt ?? new Date(booking.startsAt.getTime() + booking.durationMin * 60_000),
+    organizer: PLATFORM_ORGANIZER,
+    attendees: [
+      { name: studentName, email: booking.user.email },
+      { name: teacherName, email: booking.teacherProfile.user.email },
+    ],
+    summary: `Lesson: ${studentName} with ${teacherName}`,
+    description: `${booking.instrument ? `${booking.instrument} lesson` : 'Lesson'} cancelled.`,
+    location: bookingLocation(booking.format, booking.meetingUrl),
+  });
+
+  await enqueueMail(tx, { kind: 'BOOKING_CANCELLED', bookingId, recipients: studentRecipients, ...content.student, icsContent: ics, icsMethod: 'CANCEL' });
+  await enqueueMail(tx, { kind: 'BOOKING_CANCELLED', bookingId, recipients: teacherRecipients, ...content.teacher, icsContent: ics, icsMethod: 'CANCEL' });
 }
 
 export const bookingResolvers = {
@@ -72,6 +149,35 @@ export const bookingResolvers = {
 
     async teacherAvailability(_: unknown, { teacherProfileId }: any, { prisma }: GraphQLContext) {
       return prisma.teacherAvailability.findMany({ where: { teacherProfileId } });
+    },
+
+    async teacherUnavailability(_: unknown, { teacherProfileId, from, to }: any, { prisma }: GraphQLContext) {
+      const [start, end] = [new Date(from), new Date(to)];
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+        throw new GraphQLError('Invalid date range.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      // Same "overlaps the range" test as the booking conflict check below -
+      // any block that overlaps [from, to] at all, not just ones fully inside it.
+      return prisma.teacherUnavailability.findMany({
+        where: { teacherProfileId, startsAt: { lt: end }, endsAt: { gt: start } },
+        orderBy: { startsAt: 'asc' },
+        // Needed by the TeacherUnavailability.note field resolver's
+        // owner/admin check below - without it block.teacherProfile is
+        // undefined and note would always resolve null, even for the owner.
+        include: { teacherProfile: { select: { userId: true } } },
+      });
+    },
+
+    async myAppointments(_: unknown, { from, to }: any, { prisma, user }: GraphQLContext) {
+      requireAuth(user);
+      const [start, end] = [new Date(from), new Date(to)];
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+        throw new GraphQLError('Invalid date range.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      return prisma.personalAppointment.findMany({
+        where: { userId: user.id, startsAt: { lt: end }, endsAt: { gt: start } },
+        orderBy: { startsAt: 'asc' },
+      });
     },
   },
 
@@ -139,6 +245,15 @@ export const bookingResolvers = {
       });
       if (conflict) throw new GraphQLError('Time slot not available.', { extensions: { code: 'BAD_USER_INPUT' } });
 
+      // Unavailability overrides availability: a block covering any part of
+      // this slot removes it from bookable discovery, same rule the
+      // teacherUnavailability query enforces for display. Never leaks the
+      // block's private `note` here - just makes the slot unbookable.
+      const unavailable = await prisma.teacherUnavailability.findFirst({
+        where: { teacherProfileId, startsAt: { lt: endsAt }, endsAt: { gt: startsAtDate } },
+      });
+      if (unavailable) throw new GraphQLError('Time slot not available.', { extensions: { code: 'BAD_USER_INPUT' } });
+
       // Booking creation and (when immediately CONFIRMED) the mail-outbox
       // insert commit atomically - see notifyBookingConfirmed's comment.
       const booking = await prisma.$transaction(async (tx) => {
@@ -189,7 +304,17 @@ export const bookingResolvers = {
       const isStudent = booking.userId === user.id;
       const isTeacher = booking.teacherProfile.userId === user.id;
       if (!isStudent && !isTeacher) throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
-      return prisma.booking.update({ where: { id: bookingId }, data: { status: 'CANCELLED' } });
+      const wasConfirmed = booking.status === 'CONFIRMED';
+      return prisma.$transaction(async (tx) => {
+        const updated = await tx.booking.update({ where: { id: bookingId }, data: { status: 'CANCELLED' } });
+        // A PENDING booking never had a confirmation/invitation sent, so
+        // there is nothing to cancel a notice for - only a previously
+        // CONFIRMED booking gets a cancellation email + METHOD:CANCEL ICS.
+        if (wasConfirmed) {
+          await notifyBookingCancelled(tx, bookingId);
+        }
+        return updated;
+      });
     },
 
     async createZoomMeeting(_: unknown, { bookingId }: any, { prisma, user }: GraphQLContext) {
@@ -208,6 +333,89 @@ export const bookingResolvers = {
       });
 
       return { meetingId, joinUrl, startUrl };
+    },
+
+    async createUnavailability(_: unknown, { startsAt, endsAt, label, note }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'TEACHER', 'ADMIN');
+      const teacherProfile = await prisma.teacherProfile.findUnique({ where: { userId: user!.id } });
+      if (!teacherProfile) throw new GraphQLError('Teacher profile required.', { extensions: { code: 'BAD_USER_INPUT' } });
+      const start = new Date(startsAt);
+      const end = new Date(endsAt);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+        throw new GraphQLError('Invalid date range.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      // Deliberately does NOT touch existing bookings inside this range -
+      // "unavailability overrides availability and immediately removes
+      // unbooked derived slots... existing bookings require an explicit
+      // conflict-resolution flow; never silently delete them." A teacher
+      // who needs to clear a conflicting booking cancels it explicitly via
+      // cancelBooking (which sends its own cancellation notice).
+      return prisma.teacherUnavailability.create({
+        data: { teacherProfileId: teacherProfile.id, startsAt: start, endsAt: end, label, note: note?.trim() || null },
+        include: { teacherProfile: { select: { userId: true } } },
+      });
+    },
+
+    async deleteUnavailability(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'TEACHER', 'ADMIN');
+      const block = await prisma.teacherUnavailability.findUnique({ where: { id }, include: { teacherProfile: true } });
+      if (!block) return true;
+      if (user!.role !== 'ADMIN' && block.teacherProfile.userId !== user!.id) {
+        throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
+      }
+      await prisma.teacherUnavailability.delete({ where: { id } });
+      return true;
+    },
+
+    async createAppointment(_: unknown, { title, startsAt, endsAt, notes }: any, { prisma, user }: GraphQLContext) {
+      requireAuth(user);
+      const start = new Date(startsAt);
+      const end = new Date(endsAt);
+      if (!title?.trim()) throw new GraphQLError('Title is required.', { extensions: { code: 'BAD_USER_INPUT' } });
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+        throw new GraphQLError('Invalid date range.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      return prisma.personalAppointment.create({
+        data: { userId: user.id, title: title.trim(), startsAt: start, endsAt: end, notes: notes?.trim() || null },
+      });
+    },
+
+    async updateAppointment(_: unknown, { id, title, startsAt, endsAt, notes }: any, { prisma, user }: GraphQLContext) {
+      requireAuth(user);
+      const existing = await prisma.personalAppointment.findUnique({ where: { id } });
+      if (!existing) throw new GraphQLError('Appointment not found.', { extensions: { code: 'NOT_FOUND' } });
+      if (existing.userId !== user.id) throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
+      const data: Record<string, unknown> = {};
+      if (title !== undefined) {
+        if (!title?.trim()) throw new GraphQLError('Title is required.', { extensions: { code: 'BAD_USER_INPUT' } });
+        data.title = title.trim();
+      }
+      if (startsAt !== undefined) data.startsAt = new Date(startsAt);
+      if (endsAt !== undefined) data.endsAt = new Date(endsAt);
+      if (notes !== undefined) data.notes = notes?.trim() || null;
+      const nextStart = (data.startsAt as Date) ?? existing.startsAt;
+      const nextEnd = (data.endsAt as Date) ?? existing.endsAt;
+      if (nextEnd <= nextStart) throw new GraphQLError('Invalid date range.', { extensions: { code: 'BAD_USER_INPUT' } });
+      return prisma.personalAppointment.update({ where: { id }, data });
+    },
+
+    async deleteAppointment(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
+      requireAuth(user);
+      const existing = await prisma.personalAppointment.findUnique({ where: { id } });
+      if (!existing) return true;
+      if (existing.userId !== user.id) throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
+      await prisma.personalAppointment.delete({ where: { id } });
+      return true;
+    },
+  },
+
+  TeacherUnavailability: {
+    // Private detail - only the owning teacher or an admin ever sees it,
+    // matching "never expose private appointment titles/descriptions... to
+    // students. Students may see only the chosen safe label."
+    note(block: any, _: unknown, { user }: GraphQLContext) {
+      const isOwnerOrAdmin = Boolean(user) && (user!.role === 'ADMIN' || block.teacherProfile?.userId === user!.id);
+      return isOwnerOrAdmin ? (block.note ?? null) : null;
     },
   },
 

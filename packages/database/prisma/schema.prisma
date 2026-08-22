@@ -135,6 +135,7 @@ model User {
   studentAvailability StudentAvailability[]
   quizAttempts        QuizAttempt[]
   xpAwards            XpAward[]
+  personalAppointments PersonalAppointment[]
 }
 
 model UserCredential {
@@ -214,6 +215,7 @@ model TeacherProfile {
   user           User                   @relation(fields: [userId], references: [id])
   certifications TeacherCertification[]
   availability   TeacherAvailability[]
+  unavailability TeacherUnavailability[]
   courses        Course[]
   bookings       Booking[]
 }
@@ -612,12 +614,74 @@ model Booking {
   zoomJoinUrl      String?
   zoomStartUrl     String?
   externalBookingId String?
+  // Incremented each time an ICS invitation is regenerated for this booking
+  // (confirm, later reschedule) - RFC 5545 requires SEQUENCE to increase on
+  // every update so a calendar client applies changes instead of treating a
+  // resend as a duplicate. Cancellation reuses the same UID/latest sequence
+  // with METHOD:CANCEL (see apps/api/src/lib/ics.ts).
+  icsSequence      Int           @default(0)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
   user           User           @relation(fields: [userId], references: [id])
   teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
   reviews        Review[]
+}
+
+enum UnavailabilityLabel {
+  UNAVAILABLE
+  PRIVATE_APPOINTMENT
+  HOLIDAY
+  VACATION
+  OTHER_UNAVAILABLE
+}
+
+// A teacher-declared block that overrides TeacherAvailability for a
+// specific date/time range - one-time only for now (see the comment on
+// Phase 3 scope in docs/development.md); recurring unavailability and full
+// RFC 5545 recurrence for both availability and unavailability is later
+// follow-up work, not implemented here. Overlapping this range removes it
+// from bookable slot discovery; an existing booking inside the range is
+// NOT auto-cancelled (see cancelBooking / the conflict check in
+// bookings.ts) - conflict resolution stays a manual, explicit teacher
+// action, never a silent cancellation of a paid booking.
+model TeacherUnavailability {
+  id               String              @id @default(cuid())
+  teacherProfileId String
+  startsAt         DateTime
+  endsAt           DateTime
+  // The only thing ever shown to students/guests - see the enum above.
+  // Never expose `note` (below) to anyone but the teacher/an admin.
+  label            UnavailabilityLabel @default(UNAVAILABLE)
+  // Private detail only the teacher (and an admin) can see - never
+  // resolved to students, matching the "never expose private appointment
+  // titles/descriptions" requirement.
+  note             String?
+  createdAt        DateTime            @default(now())
+
+  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+
+  @@index([teacherProfileId, startsAt, endsAt])
+}
+
+// A user's own private appointment - visible only to them, never to anyone
+// else including their own teacher/students. Distinct from Booking
+// (platform lesson) and TeacherUnavailability (a teacher's declared block);
+// this is personal calendar content that layers on top for the owning user
+// only.
+model PersonalAppointment {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  startsAt  DateTime
+  endsAt    DateTime
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, startsAt, endsAt])
 }
 
 model Event {
@@ -734,6 +798,12 @@ model MailOutboxMessage {
   recipients    String[]
   subject       String
   html          String
+  // Optional RFC 5545 calendar invitation attached to this message (see
+  // apps/api/src/lib/ics.ts) - icsMethod is 'REQUEST' (create/update) or
+  // 'CANCEL', matching the VEVENT's own METHOD so calendar clients apply
+  // it correctly rather than just showing an .ics file attachment.
+  icsContent    String?
+  icsMethod     String?
   status        MailOutboxStatus @default(PENDING)
   attempts      Int              @default(0)
   maxAttempts   Int              @default(8)

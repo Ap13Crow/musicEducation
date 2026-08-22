@@ -62,6 +62,36 @@ export function bookingConfirmedEmailContent(booking: {
   };
 }
 
+export function bookingCancelledEmailContent(booking: {
+  studentName: string;
+  teacherName: string;
+  startsAt: Date;
+  durationMin: number;
+  format: string;
+  instrument: string | null | undefined;
+}): { student: { subject: string; html: string }; teacher: { subject: string; html: string } } {
+  const when = formatUtc(booking.startsAt);
+  const details = `${when} · ${booking.durationMin} min · ${booking.format}${booking.instrument ? ` · ${booking.instrument}` : ''}`;
+  return {
+    student: {
+      subject: 'Your lesson was cancelled',
+      html: wrapper(
+        `<p>Hi ${escapeHtml(booking.studentName)},</p>
+         <p>Your lesson with <strong>${escapeHtml(booking.teacherName)}</strong> has been cancelled.</p>
+         <p>${escapeHtml(details)}</p>`,
+      ),
+    },
+    teacher: {
+      subject: 'A lesson booking was cancelled',
+      html: wrapper(
+        `<p>Hi ${escapeHtml(booking.teacherName)},</p>
+         <p>Your lesson with <strong>${escapeHtml(booking.studentName)}</strong> has been cancelled.</p>
+         <p>${escapeHtml(details)}</p>`,
+      ),
+    },
+  };
+}
+
 export async function sendPurchaseConfirmedEmail(purchase: {
   toEmail: string | null | undefined;
   toName: string;

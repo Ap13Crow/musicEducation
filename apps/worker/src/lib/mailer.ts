@@ -28,6 +28,8 @@ export interface MailMessage {
   to: string;
   subject: string;
   html: string;
+  /** RFC 5545 calendar invitation (see apps/api/src/lib/ics.ts) - method must match the ICS content's own METHOD. */
+  icalEvent?: { method: 'REQUEST' | 'CANCEL'; content: string };
 }
 
 function stripHtml(html: string): string {
@@ -47,5 +49,8 @@ export async function sendMail(message: MailMessage): Promise<void> {
     subject: message.subject,
     html: message.html,
     text: stripHtml(message.html),
+    // nodemailer builds the correct multipart/mixed "text/calendar;
+    // method=..." attachment from this - no manual MIME construction here.
+    ...(message.icalEvent ? { icalEvent: message.icalEvent } : {}),
   });
 }

@@ -245,6 +245,37 @@ type TeacherAvailability {
   endTime: String
 }
 
+enum UnavailabilityLabel {
+  UNAVAILABLE
+  PRIVATE_APPOINTMENT
+  HOLIDAY
+  VACATION
+  OTHER_UNAVAILABLE
+}
+
+# A teacher-declared block overriding TeacherAvailability for a specific
+# range (Phase 3, scoped: one-time only, no recurrence yet). `note` is
+# private - resolved to null for anyone but the teacher/an admin; `label`
+# is the only thing a student or guest ever sees.
+type TeacherUnavailability {
+  id: ID!
+  teacherProfileId: ID!
+  startsAt: DateTime!
+  endsAt: DateTime!
+  label: UnavailabilityLabel!
+  note: String
+}
+
+# A user's own private appointment - visible only to its owner via
+# myAppointments, never resolved for anyone else.
+type PersonalAppointment {
+  id: ID!
+  title: String!
+  startsAt: DateTime!
+  endsAt: DateTime!
+  notes: String
+}
+
 type StudentAvailability {
   id: ID!
   userId: ID!
@@ -1081,6 +1112,13 @@ type Query {
   myBookings(status: BookingStatus, page: Int, limit: Int): [Booking!]!
   booking(id: ID!): Booking
   teacherAvailability(teacherProfileId: ID!, date: DateTime): [TeacherAvailability!]!
+  # Bounded by [from, to] like every other calendar query here - never an
+  # unbounded scan. Public: any signed-in caller can see a teacher's blocks
+  # (label + times only, never `note`) to know when not to try booking.
+  teacherUnavailability(teacherProfileId: ID!, from: DateTime!, to: DateTime!): [TeacherUnavailability!]!
+  # The caller's own private appointments only - bounded range required so
+  # a personal-calendar view can't turn into an unbounded query.
+  myAppointments(from: DateTime!, to: DateTime!): [PersonalAppointment!]!
 
   # Events
   events(filter: EventFilterInput, page: Int, limit: Int): EventConnection!
@@ -1176,6 +1214,13 @@ type Mutation {
   ): TeacherProfile!
   addCertification(title: String!, issuingBody: String, issuedYear: Int, documentUrl: String): TeacherCertification!
   setAvailability(slots: [AvailabilitySlotInput!]!): [TeacherAvailability!]!
+  createUnavailability(startsAt: DateTime!, endsAt: DateTime!, label: UnavailabilityLabel!, note: String): TeacherUnavailability!
+  deleteUnavailability(id: ID!): Boolean!
+
+  # Personal calendar - every authenticated user, not just teachers.
+  createAppointment(title: String!, startsAt: DateTime!, endsAt: DateTime!, notes: String): PersonalAppointment!
+  updateAppointment(id: ID!, title: String, startsAt: DateTime, endsAt: DateTime, notes: String): PersonalAppointment!
+  deleteAppointment(id: ID!): Boolean!
 
   # Student availability self-declaration
   setStudentAvailability(slots: [AvailabilitySlotInput!]!): [StudentAvailability!]!
