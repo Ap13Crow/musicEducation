@@ -89,7 +89,7 @@ musicEducation/
 ## Data model summary (`packages/database/prisma/schema.prisma`)
 
 ```
-User ─────────────────────────────────────────────────
+User ──────────
   ├── UserExternalIdentity   (immutable Keycloak `sub` link)
   ├── UserProfile            (account avatar, instruments, styles, timezone)
   ├── TeacherProfile         (bio, instruments, rates, Stripe Connect account,
@@ -97,21 +97,21 @@ User ─────────────────────────
   │                            capacity)
   └── TeacherApplication     (PENDING/APPROVED/REJECTED review queue)
 
-Learning ───────────────────────────────────────────────
+Learning ──────────
   Course → CourseSection → Lesson → Quiz → QuizQuestion
   Enrollment → LessonProgress
   Assessment → AssessmentQuestion → AssessmentAnswer
 
-Booking ──────────────────────────────────────────────────
+Booking ──────────
   Booking (student ↔ teacher, Stripe payment)
   TeacherAvailability
 
-Events ──────────────────────────────────────────────────
+Events ──────────
   Event (teacher-published, capacity-managed)
   EventBooking → Payment
   ExternalEventProjection (Ticketmaster ingestion output)
 
-Social / gamification ────────────────────────────────────────────
+Social / gamification ──────────
   FeedPost → FeedLike, FeedComment
   Review, Message, Notification
   GamificationProfile (XP, level)

@@ -1,7 +1,7 @@
 scalar DateTime
 scalar JSON
 
-# ── Enums ─────────────────────────────
+# ── Enums ──────────
 
 enum Role {
   GUEST
@@ -120,7 +120,7 @@ enum TeacherApplicationStatus {
   REJECTED
 }
 
-# ── Pagination ───────────────────
+# ── Pagination ──────────
 
 type PageInfo {
   hasNextPage: Boolean!
@@ -128,7 +128,7 @@ type PageInfo {
   totalCount: Int!
 }
 
-# ── Auth ─────────────────
+# ── Auth ──────────
 
 type AuthPayload {
   accessToken: String!
@@ -142,7 +142,7 @@ type ZoomMeetingInfo {
   startUrl: String!
 }
 
-# ── Users ────────────────
+# ── Users ──────────
 
 type User {
   id: ID!
@@ -437,7 +437,7 @@ input TeacherApplicationInput {
   videoUrl: String
 }
 
-# ── Courses ────────────────
+# ── Courses ──────────
 
 type Category {
   id: ID!
@@ -581,7 +581,7 @@ type EnrollmentConnection {
   pageInfo: PageInfo!
 }
 
-# ── Assessment ───────────────
+# ── Assessment ──────────
 
 type Assessment {
   id: ID!
@@ -612,7 +612,7 @@ type AssessmentAnswer {
   isCorrect: Boolean
 }
 
-# ── Bookings ────────────────
+# ── Bookings ──────────
 
 type Booking {
   id: ID!
@@ -651,7 +651,7 @@ type BookingConnection {
   pageInfo: PageInfo!
 }
 
-# ── Events ────────────────
+# ── Events ──────────
 
 type Event {
   id: ID!
@@ -703,7 +703,7 @@ type EventConnection {
   pageInfo: PageInfo!
 }
 
-# ── External event discovery (read-only projections; never authored Events) ──
+# ── External event discovery (read-only projections; never authored Events) ──────────
 
 enum ExternalEventProvider {
   TICKETMASTER
@@ -756,7 +756,7 @@ input ExternalEventFilterInput {
   search: String
 }
 
-# ── Payments ───────────────
+# ── Payments ──────────
 
 type Payment {
   id: ID!
@@ -775,7 +775,7 @@ type CheckoutSession {
   checkoutUrl: String!
 }
 
-# ── Phase 5: lesson packages, subscriptions ─────
+# ── Phase 5: lesson packages, subscriptions ──────────
 
 type LessonPackageOffer {
   id: ID!
@@ -867,7 +867,7 @@ type StripeConnectStatus {
   requirementsStatus: String
 }
 
-# ── Social Feed ────────────────
+# ── Social Feed ──────────
 
 type FeedPost {
   id: ID!
@@ -896,7 +896,7 @@ type FeedPostConnection {
   pageInfo: PageInfo!
 }
 
-# ── Reviews ────────────────
+# ── Reviews ──────────
 
 type Review {
   id: ID!
@@ -930,7 +930,7 @@ type ReviewConnection {
   pageInfo: PageInfo!
 }
 
-# ── Admin ────────────────
+# ── Admin ──────────
 
 type AdminSetting {
   id: ID!
@@ -987,7 +987,7 @@ type PlatformStats {
   totalStudents: Int!
 }
 
-# ── Input Types ───────────────
+# ── Input Types ──────────
 
 input RegisterInput {
   email: String!
@@ -1247,7 +1247,7 @@ input CreateReviewInput {
   isPublic: Boolean
 }
 
-# ── Queries ────────────────
+# ── Queries ──────────
 
 type Query {
   # Auth
@@ -1359,7 +1359,7 @@ type Query {
   stripeConnectStatus: StripeConnectStatus!
 }
 
-# ── Mutations ───────────────
+# ── Mutations ──────────
 
 type Mutation {
   # Auth
