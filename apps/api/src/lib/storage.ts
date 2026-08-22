@@ -35,7 +35,8 @@ export type UploadPurpose =
   | 'TEACHER_APPLICATION_CV'
   | 'TEACHER_APPLICATION_AUDIO'
   | 'TEACHER_APPLICATION_DOCUMENT'
-  | 'COURSE_SLIDE';
+  | 'COURSE_SLIDE'
+  | 'TEACHER_PROFILE_IMAGE';
 
 // Matches the instrument/style/level vocabulary elsewhere in the codebase:
 // keep the allowed content types narrow and purpose-specific rather than a
@@ -52,6 +53,9 @@ const PURPOSES: Record<UploadPurpose, { prefix: string; allowedContentTypes: str
     allowedContentTypes: ['application/pdf', 'image/png', 'image/jpeg'],
   },
   COURSE_SLIDE: { prefix: 'course-slides', allowedContentTypes: ['application/pdf', 'image/png', 'image/jpeg'] },
+  // Public teacher directory/profile photo - image only, no PDF (unlike
+  // TEACHER_APPLICATION_DOCUMENT, nothing here is ever opened as a document).
+  TEACHER_PROFILE_IMAGE: { prefix: 'teacher-profile-images', allowedContentTypes: ['image/png', 'image/jpeg', 'image/webp'] },
 };
 
 function sanitizeFilename(filename: string): string {

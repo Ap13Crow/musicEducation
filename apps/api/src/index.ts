@@ -5,23 +5,13 @@ import { createServer } from 'http';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@apollo/server/express4';
 import { makeExecutableSchema } from '@graphql-tools/schema';
-import { mergeResolvers } from '@graphql-tools/merge';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import pino from 'pino';
 import { PrismaClient } from '@my-music-coach/database';
 import { authMiddleware, resolveRequestUser } from './middleware/auth.js';
-import { authResolvers } from './resolvers/auth.js';
-import { userResolvers } from './resolvers/users.js';
-import { bookingResolvers } from './resolvers/bookings.js';
-import { reviewResolvers } from './resolvers/reviews.js';
-import { courseResolvers } from './resolvers/courses.js';
-import { eventResolvers } from './resolvers/events.js';
-import { assessmentResolvers } from './resolvers/assessments.js';
-import { feedResolvers } from './resolvers/feed.js';
-import { paymentResolvers, handleStripeWebhook, handleStripeV2Webhook } from './resolvers/payments.js';
-import { adminResolvers } from './resolvers/admin.js';
-import { discoveryResolvers } from './resolvers/discovery.js';
+import { resolvers } from './resolvers/index.js';
+import { handleStripeWebhook, handleStripeV2Webhook } from './resolvers/payments.js';
 import type { GraphQLContext } from './types.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -55,19 +45,15 @@ const schemaPath =
   join(process.cwd(), 'packages/graphql-schema/src/schema.graphql');
 const typeDefs = readFileSync(schemaPath, 'utf-8');
 
-const resolvers = mergeResolvers([
-  authResolvers,
-  userResolvers,
-  bookingResolvers,
-  reviewResolvers,
-  courseResolvers,
-  eventResolvers,
-  assessmentResolvers,
-  feedResolvers,
-  paymentResolvers,
-  adminResolvers,
-  discoveryResolvers,
-]);
+// `resolvers` is the single merged map from resolvers/index.ts (every
+// resolver module plus the DateTime/JSON/Decimal scalars) - previously this
+// file hand-rolled its own, narrower mergeResolvers() call that silently
+// omitted teacherApplications/uploads/quizzes/xp/recommendations. A field
+// with no resolver in the map falls back to reading a same-named property
+// off the root value, which is always undefined here - for a non-null
+// schema field (Query.storageConfigured: Boolean!, Query.teacherApplications:
+// [TeacherApplication!]!) that produced exactly the reported
+// "Cannot return null for non-nullable field" errors.
 const schema = makeExecutableSchema({ typeDefs, resolvers });
 
 async function main() {

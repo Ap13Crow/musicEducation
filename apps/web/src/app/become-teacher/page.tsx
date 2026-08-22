@@ -10,10 +10,10 @@ import { toYouTubeEmbedUrl } from '@/lib/youtube';
 
 const GET = gql`
   query MyTeacherApplicationStatus {
-    me { id displayName avatarUrl }
+    me { id displayName }
     myTeacherApplication {
       id status headline bio instruments experienceYears address birthdate gender motivation videoUrl
-      cvUrl audioSampleUrl documentUrls
+      cvUrl audioSampleUrl documentUrls imageUrl
     }
     storageConfigured
   }
@@ -98,8 +98,18 @@ export default function BecomeTeacherPage() {
   const [stepError, setStepError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [refreshingPhoto, setRefreshingPhoto] = useState(false);
-  const [refreshPhotoError, setRefreshPhotoError] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+
+  // Revoke the previous local preview URL whenever a new file is chosen or
+  // the component unmounts - object URLs otherwise leak for the page's
+  // lifetime.
+  useEffect(() => {
+    if (!imageFile) return;
+    const url = URL.createObjectURL(imageFile);
+    setImagePreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
 
   const [form, setForm] = useState({
     fullName: '', address: '', birthdate: '', gender: '',
@@ -136,27 +146,6 @@ export default function BecomeTeacherPage() {
     setSelectedInstruments((prev) => (prev.includes(inst) ? prev.filter((i) => i !== inst) : [...prev, inst]));
   }
 
-  // The button previously just fired refetch() with no feedback of any
-  // kind - a slow or failing request (e.g. the photo was never actually
-  // saved on /dashboard/profile) looked identical to a working one, so it
-  // read as "the button doesn't do anything." Surface both outcomes now.
-  async function refreshPhotoStatus() {
-    setRefreshingPhoto(true);
-    setRefreshPhotoError(null);
-    try {
-      const result = await refetch();
-      if (!result.data?.me?.avatarUrl) {
-        setRefreshPhotoError('No photo found on your account yet. Add one on the profile page, save it there, then try again.');
-      } else {
-        setStepError(null);
-      }
-    } catch (err: any) {
-      setRefreshPhotoError(err?.message ?? 'Could not check your account just now. Try again.');
-    } finally {
-      setRefreshingPhoto(false);
-    }
-  }
-
   function requestUrlFor(purpose: string) {
     return async (filename: string, contentType: string) => {
       const { data } = await requestUploadUrl({ variables: { purpose, filename, contentType } });
@@ -176,7 +165,12 @@ export default function BecomeTeacherPage() {
       return null;
     }
     if (index === 1) {
-      if (!me?.avatarUrl) return 'Add a profile photo before continuing — students see this on your teacher profile.';
+      // Same escape hatch as the CV requirement below - when storage isn't
+      // configured no upload is possible at all, so this can't be a hard
+      // requirement in that case.
+      if (storageConfigured && !application?.imageUrl && !imageFile) {
+        return 'Add a profile photo before continuing — students see this on your teacher profile.';
+      }
       return null;
     }
     if (index === 2) {
@@ -235,8 +229,10 @@ export default function BecomeTeacherPage() {
     let cvUrl: string | null | undefined = storageConfigured ? (application?.cvUrl ?? null) : undefined;
     let audioSampleUrl: string | null | undefined = storageConfigured ? (application?.audioSampleUrl ?? null) : undefined;
     let documentUrls: string[] | undefined = storageConfigured ? (application?.documentUrls ?? []) : undefined;
+    let imageUrl: string | null | undefined = storageConfigured ? (application?.imageUrl ?? null) : undefined;
     try {
       setUploading(true);
+      if (imageFile) imageUrl = await uploadFileToStorage(requestUrlFor('TEACHER_PROFILE_IMAGE'), imageFile);
       if (cvFile) cvUrl = await uploadFileToStorage(requestUrlFor('TEACHER_APPLICATION_CV'), cvFile);
       if (audioFile) audioSampleUrl = await uploadFileToStorage(requestUrlFor('TEACHER_APPLICATION_AUDIO'), audioFile);
       if (documentFiles.length > 0) {
@@ -265,6 +261,7 @@ export default function BecomeTeacherPage() {
           cvUrl,
           audioSampleUrl,
           documentUrls,
+          imageUrl,
           videoUrl: form.videoUrl.trim(),
         },
       },
@@ -272,6 +269,7 @@ export default function BecomeTeacherPage() {
     setCvFile(null);
     setAudioFile(null);
     setDocumentFiles([]);
+    setImageFile(null);
     await refetch();
   }
 
@@ -377,25 +375,29 @@ export default function BecomeTeacherPage() {
               {stepIndex === 1 && (
                 <div className="space-y-4 text-center">
                   <div className="mx-auto flex h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-gray-100">
-                    {me?.avatarUrl ? (
-                      <img src={me.avatarUrl} alt="" className="h-full w-full object-cover" />
+                    {imagePreviewUrl || application?.imageUrl ? (
+                      <img src={imagePreviewUrl ?? application?.imageUrl} alt="" className="h-full w-full object-cover" />
                     ) : (
                       <span className="text-xs text-gray-400">No photo yet</span>
                     )}
                   </div>
                   <p className="text-sm text-gray-600">
-                    Your profile photo is managed from your account settings. Once approved, it&rsquo;s shown alongside your
-                    name and self-presentation on your public teacher profile.
+                    This is your public teacher photo — separate from your account picture — shown alongside your
+                    name and self-presentation on your public teacher profile and directory card once approved.
                   </p>
-                  <div className="flex justify-center gap-3">
-                    <Link href="/dashboard/profile" target="_blank" className="btn-secondary rounded-lg px-4 py-2 text-sm">
-                      {me?.avatarUrl ? 'Change photo' : 'Add a photo'}
-                    </Link>
-                    <button type="button" onClick={refreshPhotoStatus} disabled={refreshingPhoto} className="btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-60">
-                      {refreshingPhoto ? 'Checking…' : "I've added my photo — refresh"}
-                    </button>
-                  </div>
-                  {refreshPhotoError && <p className="text-sm text-red-600">{refreshPhotoError}</p>}
+                  {storageConfigured ? (
+                    <label className="btn-secondary mx-auto block w-fit cursor-pointer rounded-lg px-4 py-2 text-sm">
+                      {application?.imageUrl || imageFile ? 'Change photo' : 'Add a photo'}
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="sr-only"
+                        onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                  ) : (
+                    <p className="text-xs text-gray-500">Photo uploads aren&rsquo;t enabled on this deployment yet — you can continue without one.</p>
+                  )}
                 </div>
               )}
 

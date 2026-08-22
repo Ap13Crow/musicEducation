@@ -1,6 +1,13 @@
 import { requireAuth } from '../middleware/auth.js';
 import type { GraphQLContext } from '../types.js';
 
+// NOT currently wired into resolvers/index.ts's merged map: this resolves
+// Query.recommendations, but schema.graphql declares no such field (and no
+// RecommendationsResult/Recommendation type for its return shape) - wiring
+// it as-is throws "Query.recommendations defined in resolvers, but not in
+// schema" at server startup. Nothing in apps/web calls it either. Add the
+// matching SDL (query + result type) as its own reviewable change before
+// re-including this in the merge; don't just re-add it to the array.
 export const recommendationResolvers = {
   Query: {
     async recommendations(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {

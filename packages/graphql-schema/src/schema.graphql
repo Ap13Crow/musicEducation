@@ -40,6 +40,7 @@ enum UploadPurpose {
   TEACHER_APPLICATION_AUDIO
   TEACHER_APPLICATION_DOCUMENT
   COURSE_SLIDE
+  TEACHER_PROFILE_IMAGE
 }
 
 type UploadTarget {
@@ -190,6 +191,13 @@ type TeacherProfile {
   locationCity: String
   locationCountry: String
   calendlyUsername: String
+  # Public professional photo shown on the teacher directory/profile to
+  # guests and everyone else - set via requestUploadUrl(purpose:
+  # TEACHER_PROFILE_IMAGE) + updateTeacherProfile. Deliberately separate from
+  # the account avatar (User -> UserProfile.avatarUrl, private/account-only),
+  # so it's never silently reused as the public image. Null until the
+  # teacher uploads one.
+  publicImageUrl: String
   # YouTube presentation/performance video copied from the approved
   # application - null once the teacher hides it via updateTeacherProfile
   # even though the underlying link is kept, so introVideoUrl is null
@@ -294,6 +302,10 @@ type TeacherApplication {
   cvUrl: String
   audioSampleUrl: String
   documentUrls: [String!]!
+  # Public teacher photo, via requestUploadUrl(purpose:
+  # TEACHER_PROFILE_IMAGE) - copied to TeacherProfile.publicImageUrl on
+  # approval. Deliberately separate from the account avatar.
+  imageUrl: String
   # YouTube link, required to apply - copied to TeacherProfile.introVideoUrl
   # on approval (the teacher can hide it again via updateTeacherProfile).
   videoUrl: String
@@ -320,6 +332,7 @@ input TeacherApplicationInput {
   cvUrl: String
   audioSampleUrl: String
   documentUrls: [String!]
+  imageUrl: String
   # Required - a YouTube link (watch/share/shorts URL or bare video id).
   videoUrl: String
 }
@@ -726,6 +739,36 @@ type AdminSetting {
   value: String!
 }
 
+enum MailOutboxStatus {
+  PENDING
+  SENT
+  FAILED
+  DEAD_LETTER
+}
+
+enum MailOutboxKind {
+  BOOKING_CONFIRMATION
+  BOOKING_CANCELLED
+}
+
+# A queued/delivered/failed transactional-email attempt (see
+# apps/api/src/lib/mailOutbox.ts, apps/worker/src/jobs/mail-dispatch.ts).
+# Admin-only - never exposes SMTP credentials, only delivery status.
+type MailOutboxMessage {
+  id: ID!
+  kind: MailOutboxKind!
+  bookingId: ID
+  recipients: [String!]!
+  subject: String!
+  status: MailOutboxStatus!
+  attempts: Int!
+  maxAttempts: Int!
+  lastError: String
+  nextAttemptAt: DateTime!
+  sentAt: DateTime
+  createdAt: DateTime!
+}
+
 type AdminStats {
   totalUsers: Int!
   totalTeachers: Int!
@@ -1065,6 +1108,10 @@ type Query {
   adminStats: AdminStats!
   adminSettings: [AdminSetting!]!
   adminUsers(role: Role, search: String, page: Int, limit: Int): [User!]!
+  # Transactional-email delivery queue, most recent first - ADMIN only. A
+  # non-empty DEAD_LETTER filter is the "notifications are silently
+  # failing" signal this exists for.
+  mailOutbox(status: MailOutboxStatus, limit: Int): [MailOutboxMessage!]!
 
   # Object storage - false when S3_* isn't configured, so callers can hide
   # upload UI rather than let requestUploadUrl fail.
@@ -1111,6 +1158,9 @@ type Mutation {
     # teacher's own call, per the product decision that they decide whether
     # it's public. The link itself is kept either way.
     introVideoVisible: Boolean
+    # Must be a URL requestUploadUrl(purpose: TEACHER_PROFILE_IMAGE) actually
+    # minted for this teacher - pass null to remove the current image.
+    publicImageUrl: String
   ): TeacherProfile!
   addCertification(title: String!, issuingBody: String, issuedYear: Int, documentUrl: String): TeacherCertification!
   setAvailability(slots: [AvailabilitySlotInput!]!): [TeacherAvailability!]!
@@ -1196,4 +1246,9 @@ type Mutation {
   updateAdminSetting(key: String!, value: String!): AdminSetting!
   adminBanUser(userId: ID!): User!
   adminSetRole(userId: ID!, role: Role!): User!
+  # Re-queues a DEAD_LETTER (or still-FAILED) message for immediate retry -
+  # resets attempts to 0 and nextAttemptAt to now, so the next mail-dispatch
+  # tick picks it up. Use once the underlying cause (e.g. SMTP_PASSWORD) is
+  # actually fixed; retrying blindly just repeats the same failure.
+  retryMailOutboxMessage(id: ID!): MailOutboxMessage!
 }

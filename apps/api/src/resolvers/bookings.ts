@@ -1,45 +1,46 @@
 import { GraphQLError } from 'graphql';
 import { requireAuth } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
-import { sendBookingConfirmedEmails } from '../lib/emails.js';
-import { logger } from '../utils/logger.js';
+import { bookingConfirmedEmailContent } from '../lib/emails.js';
+import { enqueueMail, recipientAddresses } from '../lib/mailOutbox.js';
 import type { GraphQLContext } from '../types.js';
+import type { Prisma } from '@my-music-coach/database';
 
 const TEACHER_FOUND_XP = 30;
 
 // Shared by bookSession (auto-confirmed when the teacher has no hourly rate)
 // and confirmBooking (a paid booking the teacher just accepted) - both are
 // "this booking just became CONFIRMED" moments, and both notify the same
-// two people. Deliberately not `await`ed by callers (see both call sites) -
-// this must never be able to turn an already-successful confirmation into a
-// failed mutation response, and a slow SMTP round-trip must never delay
-// that response either. sendBookingConfirmedEmails itself never throws, but
-// the lookup here still could (a DB hiccup), so this catches everything
-// internally rather than relying on every caller to remember to.
-export async function notifyBookingConfirmed(prisma: GraphQLContext['prisma'], bookingId: string) {
-  try {
-    const booking = await prisma.booking.findUnique({
-      where: { id: bookingId },
-      include: { user: { include: { profile: true } }, teacherProfile: { include: { user: { include: { profile: true } } } } },
-    });
-    if (!booking) return;
-    // Same displayName fallback chain as the User.displayName field resolver
-    // in users.ts (profile.displayName -> local part of the email -> generic).
-    const studentName = booking.user.profile?.displayName || booking.user.email?.split('@')[0] || 'there';
-    const teacherName = booking.teacherProfile.user.profile?.displayName || booking.teacherProfile.user.email?.split('@')[0] || 'there';
-    await sendBookingConfirmedEmails({
-      studentEmail: booking.user.email,
-      studentName,
-      teacherEmail: booking.teacherProfile.user.email,
-      teacherName,
-      startsAt: booking.startsAt,
-      durationMin: booking.durationMin,
-      format: booking.format,
-      instrument: booking.instrument,
-    });
-  } catch (error) {
-    logger.warn({ error, bookingId }, 'notifyBookingConfirmed failed');
-  }
+// two people. Writes into the durable mail outbox (apps/worker delivers it)
+// inside the SAME transaction as the booking write, rather than calling the
+// SMTP relay directly - actual delivery (the thing that can be "temporarily
+// unavailable") now happens entirely out-of-band in the worker, so this
+// booking transaction never touches the mail provider at all. It commits
+// atomically with the booking create/update: a booking is never left
+// CONFIRMED with no queued notification, and a rolled-back booking never
+// leaves an orphan outbox row. Pass the active transaction client.
+export async function notifyBookingConfirmed(tx: Prisma.TransactionClient, bookingId: string) {
+  const booking = await tx.booking.findUnique({
+    where: { id: bookingId },
+    include: { user: { include: { profile: true } }, teacherProfile: { include: { user: { include: { profile: true } } } } },
+  });
+  if (!booking) return;
+  // Same displayName fallback chain as the User.displayName field resolver
+  // in users.ts (profile.displayName -> local part of the email -> generic).
+  const studentName = booking.user.profile?.displayName || booking.user.email?.split('@')[0] || 'there';
+  const teacherName = booking.teacherProfile.user.profile?.displayName || booking.teacherProfile.user.email?.split('@')[0] || 'there';
+  const content = bookingConfirmedEmailContent({
+    studentName,
+    teacherName,
+    startsAt: booking.startsAt,
+    durationMin: booking.durationMin,
+    format: booking.format,
+    instrument: booking.instrument,
+  });
+  const studentRecipients = recipientAddresses(booking.user.email, booking.user.profile?.notificationEmail);
+  const teacherRecipients = recipientAddresses(booking.teacherProfile.user.email, booking.teacherProfile.user.profile?.notificationEmail);
+  await enqueueMail(tx, { kind: 'BOOKING_CONFIRMATION', bookingId, recipients: studentRecipients, ...content.student });
+  await enqueueMail(tx, { kind: 'BOOKING_CONFIRMATION', bookingId, recipients: teacherRecipients, ...content.teacher });
 }
 
 export const bookingResolvers = {
@@ -138,30 +139,34 @@ export const bookingResolvers = {
       });
       if (conflict) throw new GraphQLError('Time slot not available.', { extensions: { code: 'BAD_USER_INPUT' } });
 
-      const booking = await prisma.booking.create({
-        data: {
-          userId: user.id,
-          teacherProfileId,
-          startsAt: startsAtDate,
-          endsAt,
-          durationMin,
-          format,
-          instrument,
-          notes,
-          status: teacherProfile.hourlyRate ? 'PENDING' : 'CONFIRMED',
-        },
+      // Booking creation and (when immediately CONFIRMED) the mail-outbox
+      // insert commit atomically - see notifyBookingConfirmed's comment.
+      const booking = await prisma.$transaction(async (tx) => {
+        const created = await tx.booking.create({
+          data: {
+            userId: user.id,
+            teacherProfileId,
+            startsAt: startsAtDate,
+            endsAt,
+            durationMin,
+            format,
+            instrument,
+            notes,
+            status: teacherProfile.hourlyRate ? 'PENDING' : 'CONFIRMED',
+          },
+        });
+        // A free teacher's booking is CONFIRMED immediately above - that's
+        // the moment to notify, same as confirmBooking below for a paid one.
+        if (created.status === 'CONFIRMED') {
+          await notifyBookingConfirmed(tx, created.id);
+        }
+        return created;
       });
       // "Found a teacher" - the achievement is booking one at all, not
       // waiting on payment/confirmation; the 'self' key makes this one-time.
+      // Deliberately outside the transaction above (its own idempotency
+      // guard, unrelated to whether the mail outbox insert succeeds).
       await awardXpOnce(prisma, user.id, 'TEACHER_FOUND', 'self', TEACHER_FOUND_XP);
-      // A free teacher's booking is CONFIRMED immediately above - that's the
-      // moment to notify, same as confirmBooking below for a paid one. Not
-      // awaited: notifyBookingConfirmed already catches its own errors (see
-      // its definition above), and this response must not wait on an SMTP
-      // round-trip either.
-      if (booking.status === 'CONFIRMED') {
-        void notifyBookingConfirmed(prisma, booking.id);
-      }
       return booking;
     },
 
@@ -170,9 +175,11 @@ export const bookingResolvers = {
       const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { teacherProfile: true } });
       if (!booking) throw new GraphQLError('Booking not found.', { extensions: { code: 'NOT_FOUND' } });
       if (booking.teacherProfile.userId !== user.id) throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
-      const updated = await prisma.booking.update({ where: { id: bookingId }, data: { status: 'CONFIRMED' } });
-      void notifyBookingConfirmed(prisma, bookingId);
-      return updated;
+      return prisma.$transaction(async (tx) => {
+        const updated = await tx.booking.update({ where: { id: bookingId }, data: { status: 'CONFIRMED' } });
+        await notifyBookingConfirmed(tx, bookingId);
+        return updated;
+      });
     },
 
     async cancelBooking(_: unknown, { bookingId }: any, { prisma, user }: GraphQLContext) {

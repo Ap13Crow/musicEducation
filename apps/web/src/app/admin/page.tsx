@@ -8,10 +8,10 @@ import { useSession, signIn } from 'next-auth/react';
 import { hasRole } from '@/lib/roles';
 import {
   Users, BookOpen, Calendar, DollarSign, Settings, Shield,
-  Key, Video, CreditCard, BarChart3, UserCog, ChevronRight, UserCheck,
+  Key, Video, CreditCard, BarChart3, UserCog, ChevronRight, UserCheck, Mail,
 } from 'lucide-react';
 
-type Tab = 'overview' | 'users' | 'applications' | 'content' | 'settings';
+type Tab = 'overview' | 'users' | 'applications' | 'content' | 'mail' | 'settings';
 
 // Identity/config defaults shown in the admin UI. Driven by NEXT_PUBLIC_* env
 // so they reflect the deployment; defaults target the production domain.
@@ -242,7 +242,7 @@ const GET_TEACHER_APPLICATIONS = gql`
   query TeacherApplicationsQueue($status: TeacherApplicationStatus) {
     teacherApplications(status: $status) {
       id headline bio instruments experienceYears status createdAt address birthdate gender motivation
-      cvUrl audioSampleUrl documentUrls videoUrl
+      cvUrl audioSampleUrl documentUrls videoUrl imageUrl
       user { id displayName email }
     }
   }
@@ -311,7 +311,11 @@ function ApplicationsTab() {
         {applications.map((app) => (
           <div key={app.id} className="card p-4">
             <div className="flex items-start justify-between gap-4">
-              <div>
+              <div className="flex items-start gap-3">
+                {app.imageUrl && (
+                  <img src={app.imageUrl} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover" />
+                )}
+                <div>
                 <p className="font-medium">{app.user?.displayName} <span className="text-gray-400 font-normal">· {app.user?.email}</span></p>
                 {app.headline && <p className="mt-1 text-sm text-gray-700">{app.headline}</p>}
                 {app.bio && <p className="mt-1 text-sm text-gray-500">{app.bio}</p>}
@@ -336,6 +340,7 @@ function ApplicationsTab() {
                     ))}
                   </p>
                 )}
+                </div>
               </div>
               {app.status === 'PENDING' && (
                 <div className="flex shrink-0 gap-2">
@@ -480,6 +485,114 @@ function XpBoundsCard() {
   );
 }
 
+const GET_MAIL_OUTBOX = gql`
+  query MailOutboxQueue($status: MailOutboxStatus) {
+    mailOutbox(status: $status, limit: 100) {
+      id kind bookingId recipients subject status attempts maxAttempts lastError nextAttemptAt sentAt createdAt
+    }
+  }
+`;
+const RETRY_MAIL_OUTBOX_MESSAGE = gql`
+  mutation RetryMailOutboxMessage($id: ID!) {
+    retryMailOutboxMessage(id: $id) { id status }
+  }
+`;
+
+const MAIL_STATUS_STYLE: Record<string, string> = {
+  PENDING: 'border-gray-200 bg-gray-50 text-gray-600',
+  FAILED: 'border-amber-200 bg-amber-50 text-amber-700',
+  DEAD_LETTER: 'border-red-200 bg-red-50 text-red-700',
+  SENT: 'border-green-200 bg-green-50 text-green-700',
+};
+
+function MailOutboxTab() {
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'FAILED' | 'DEAD_LETTER' | 'SENT'>('ALL');
+  const { data, loading, error, refetch } = useQuery(GET_MAIL_OUTBOX, {
+    variables: { status: statusFilter === 'ALL' ? null : statusFilter },
+    fetchPolicy: 'cache-and-network',
+  });
+  const [retry, { loading: retrying }] = useMutation(RETRY_MAIL_OUTBOX_MESSAGE);
+  const messages: any[] = data?.mailOutbox ?? [];
+  const deadLetterCount = messages.filter((m) => m.status === 'DEAD_LETTER').length;
+
+  async function handleRetry(id: string) {
+    await retry({ variables: { id } });
+    await refetch();
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-600">
+        Booking confirmation emails are queued here and delivered by the worker, so a temporarily unreachable mail
+        relay never fails a booking. A message stuck in <span className="font-medium text-red-700">DEAD_LETTER</span>{' '}
+        means delivery kept failing (check <code>SMTP_*</code> configuration) and needs a manual retry once fixed.
+      </p>
+      {deadLetterCount > 0 && statusFilter !== 'DEAD_LETTER' && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {deadLetterCount} message{deadLetterCount === 1 ? '' : 's'} in dead letter.{' '}
+          <button className="font-medium underline" onClick={() => setStatusFilter('DEAD_LETTER')}>View them</button>
+        </div>
+      )}
+      <div className="flex gap-2">
+        {(['ALL', 'PENDING', 'FAILED', 'DEAD_LETTER', 'SENT'] as const).map((s) => (
+          <button
+            key={s}
+            type="button"
+            aria-pressed={statusFilter === s}
+            onClick={() => setStatusFilter(s)}
+            className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+              statusFilter === s ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium' : 'border-gray-200 text-gray-600'
+            }`}
+          >
+            {s === 'ALL' ? 'All' : s.replace('_', ' ')}
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Failed to load mail queue: {error.message}
+        </div>
+      )}
+      {!loading && messages.length === 0 && !error && (
+        <p className="rounded-lg border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500">
+          No messages{statusFilter !== 'ALL' ? ` in ${statusFilter.toLowerCase().replace('_', ' ')}` : ''}.
+        </p>
+      )}
+
+      <div className="space-y-2">
+        {messages.map((m) => (
+          <div key={m.id} className="card p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-sm font-medium">
+                  <span className={`rounded-full border px-2 py-0.5 text-xs ${MAIL_STATUS_STYLE[m.status] ?? ''}`}>{m.status}</span>
+                  {m.subject}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">To: {m.recipients.join(', ')}</p>
+                <p className="mt-1 text-xs text-gray-400">
+                  {m.kind} · attempt {m.attempts}/{m.maxAttempts} · queued {new Date(m.createdAt).toLocaleString()}
+                  {m.sentAt ? ` · sent ${new Date(m.sentAt).toLocaleString()}` : ` · next attempt ${new Date(m.nextAttemptAt).toLocaleString()}`}
+                </p>
+                {m.lastError && <p className="mt-1 text-xs text-red-600">Last error: {m.lastError}</p>}
+              </div>
+              {(m.status === 'DEAD_LETTER' || m.status === 'FAILED') && (
+                <button
+                  disabled={retrying}
+                  onClick={() => void handleRetry(m.id)}
+                  className="shrink-0 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Retry now
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SettingsTab() {
   return (
     <div className="space-y-6">
@@ -545,6 +658,7 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'users', label: 'Users', icon: Users },
   { id: 'applications', label: 'Applications', icon: UserCheck },
   { id: 'content', label: 'Content', icon: BookOpen },
+  { id: 'mail', label: 'Mail queue', icon: Mail },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -618,6 +732,7 @@ export default function AdminPage() {
             {activeTab === 'users' && <UsersTab />}
             {activeTab === 'applications' && <ApplicationsTab />}
             {activeTab === 'content' && <ContentTab />}
+            {activeTab === 'mail' && <MailOutboxTab />}
             {activeTab === 'settings' && <SettingsTab />}
           </div>
         </div>

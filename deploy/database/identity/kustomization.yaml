@@ -24,3 +24,5 @@ configMapGenerator:
       - 017-teacher-application-richer.sql
       - 018-payment-provider-ref-unique.sql
       - 019-payment-confirmation-email-marker.sql
+      - 020-teacher-profile-public-image.sql
+      - 021-mail-outbox.sql

@@ -231,8 +231,18 @@ export const courseResolvers = {
       return prisma.course.update({ where: { id }, data: { status: 'PUBLISHED' } });
     },
 
+    // "Delete" a course: archiving (not a hard delete) is deliberate - a
+    // published course can have enrolments and payment history, and losing
+    // those rows would break a paying student's access and the teacher's
+    // own revenue records. Archived courses drop out of discovery/myCourses
+    // listings but stay intact for existing enrollees and audit purposes.
     async archiveCourse(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'TEACHER', 'ADMIN');
+      const course = await prisma.course.findUnique({ where: { id }, include: { teacherProfile: true } });
+      if (!course) throw new GraphQLError('Course not found.', { extensions: { code: 'NOT_FOUND' } });
+      if (user!.role !== 'ADMIN' && course.teacherProfile?.userId !== user!.id) {
+        throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
+      }
       return prisma.course.update({ where: { id }, data: { status: 'ARCHIVED' } });
     },
 

@@ -3,10 +3,18 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { createUploadTarget, storageConfigured, type UploadPurpose } from '../lib/storage.js';
 import type { GraphQLContext } from '../types.js';
 
+// Any signed-in caller may request one of these for themselves. Applying to
+// become a teacher (including the public photo) is a student action, taken
+// before the caller holds TEACHER - the resulting URL only becomes usable
+// once applyForTeacher/updateTeacherProfile actually attach it, both of
+// which re-verify isOwnedUploadUrl themselves. COURSE_SLIDE is handled
+// separately below since it requires the caller to already hold
+// TEACHER/ADMIN.
 const SELF_SERVICE_PURPOSES = new Set<UploadPurpose>([
   'TEACHER_APPLICATION_CV',
   'TEACHER_APPLICATION_AUDIO',
   'TEACHER_APPLICATION_DOCUMENT',
+  'TEACHER_PROFILE_IMAGE',
 ]);
 
 export const uploadResolvers = {

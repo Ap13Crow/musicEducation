@@ -1,5 +1,7 @@
+import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
+import { isOwnedUploadUrl } from '../lib/storage.js';
 import type { GraphQLContext } from '../types.js';
 
 const PROFILE_COMPLETED_XP = 50;
@@ -190,12 +192,25 @@ export const userResolvers = {
       // musicStyles, languages - none of which updateTeacherProfile actually
       // accepts as args), so every field but hourlyRate/instruments/
       // isAvailable/calendlyUsername was silently ignored.
-      const { headline, teachingBio, hourlyRate, instruments, specializations, isAvailable, calendlyUsername, introVideoVisible } = args;
+      const { headline, teachingBio, hourlyRate, instruments, specializations, isAvailable, calendlyUsername, introVideoVisible, publicImageUrl } = args;
       const data: Record<string, unknown> = {};
       // hourlyRate/calendlyUsername are nullable columns - an explicit null
       // is a legitimate "clear this" and Prisma accepts it.
       if (hourlyRate !== undefined) data.hourlyRate = hourlyRate;
       if (calendlyUsername !== undefined) data.calendlyUsername = calendlyUsername;
+      // publicImageUrl: null clears the image (falls back to a neutral
+      // placeholder in the UI); a non-null value must be a URL this exact
+      // teacher actually got from requestUploadUrl(purpose:
+      // TEACHER_PROFILE_IMAGE) - otherwise a caller could point the public
+      // directory/profile at an arbitrary external URL.
+      if (publicImageUrl !== undefined) {
+        if (publicImageUrl !== null && !isOwnedUploadUrl(publicImageUrl, 'TEACHER_PROFILE_IMAGE', user!.id)) {
+          throw new GraphQLError('publicImageUrl must come from requestUploadUrl(purpose: TEACHER_PROFILE_IMAGE).', {
+            extensions: { code: 'BAD_USER_INPUT' },
+          });
+        }
+        data.publicImageUrl = publicImageUrl;
+      }
       // instruments/isAvailable/introVideoVisible/musicStyles are non-nullable
       // columns (String[]/Boolean with a default). The GraphQL args are still
       // nullable, so a client can send an explicit null even though the
