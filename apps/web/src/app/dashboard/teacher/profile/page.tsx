@@ -25,6 +25,8 @@ const GET = gql`
         id headline teachingBio hourlyRate currency instruments specializations teachingFormats
         isAvailable publicImageUrl introVideoUrl introVideoVisible avgRating totalReviews
         memberSince distinctStudentCount publishedResourceCount
+        leadDays cancellationDays autoApproveNewStudents autoApproveRecurringStudents
+        instrumentCapacities { id instrument maxActiveStudents activeStudentCount remainingCapacity }
       }
     }
     myBookings(page: 1, limit: 100) {
@@ -54,11 +56,29 @@ const REQUEST_UPLOAD_URL = gql`
     requestUploadUrl(purpose: $purpose, filename: $filename, contentType: $contentType) { uploadUrl fileUrl }
   }
 `;
+const UPDATE_POLICY = gql`
+  mutation UpdateTeacherBookingPolicy($leadDays: Int, $cancellationDays: Int, $autoApproveNewStudents: Boolean, $autoApproveRecurringStudents: Boolean) {
+    updateTeacherProfile(leadDays: $leadDays, cancellationDays: $cancellationDays, autoApproveNewStudents: $autoApproveNewStudents, autoApproveRecurringStudents: $autoApproveRecurringStudents) {
+      id leadDays cancellationDays autoApproveNewStudents autoApproveRecurringStudents
+    }
+  }
+`;
+const SET_INSTRUMENT_CAPACITY = gql`
+  mutation SetTeacherInstrumentCapacity($instrument: String!, $maxActiveStudents: Int) {
+    setInstrumentCapacity(instrument: $instrument, maxActiveStudents: $maxActiveStudents) {
+      id instrument maxActiveStudents activeStudentCount remainingCapacity
+    }
+  }
+`;
 
 export default function TeacherProfessionalProfilePage() {
   const { data, loading, error, refetch } = useQuery(GET, { fetchPolicy: 'cache-and-network' });
   const [update, { loading: saving }] = useMutation(UPDATE);
   const [requestUploadUrl] = useMutation(REQUEST_UPLOAD_URL);
+  const [updatePolicy, { loading: savingPolicy, error: policyError }] = useMutation(UPDATE_POLICY);
+  const [setCapacity, { loading: savingCapacity }] = useMutation(SET_INSTRUMENT_CAPACITY);
+  const [policyDraft, setPolicyDraft] = useState({ leadDays: '1', cancellationDays: '2' });
+  const [capacityDraft, setCapacityDraft] = useState<{ instrument: string; maxActiveStudents: string }>({ instrument: '', maxActiveStudents: '' });
   const profile = data?.me?.teacherProfile;
   const account = data?.me?.profile;
   const storageConfigured = data?.storageConfigured ?? false;
@@ -82,7 +102,30 @@ export default function TeacherProfessionalProfilePage() {
     }));
     setSelectedInstruments(profile.instruments ?? []);
     setSelectedFormats(profile.teachingFormats ?? []);
+    setPolicyDraft({ leadDays: String(profile.leadDays ?? 1), cancellationDays: String(profile.cancellationDays ?? 2) });
   }, [profile]);
+
+  async function savePolicy(e: React.FormEvent) {
+    e.preventDefault();
+    await updatePolicy({ variables: { leadDays: Number(policyDraft.leadDays), cancellationDays: Number(policyDraft.cancellationDays) } });
+    await refetch();
+  }
+  async function toggleAutoApproveNew() {
+    await updatePolicy({ variables: { autoApproveNewStudents: !profile.autoApproveNewStudents } });
+    await refetch();
+  }
+  async function toggleAutoApproveRecurring() {
+    await updatePolicy({ variables: { autoApproveRecurringStudents: !profile.autoApproveRecurringStudents } });
+    await refetch();
+  }
+  async function saveCapacity(e: React.FormEvent) {
+    e.preventDefault();
+    if (!capacityDraft.instrument.trim()) return;
+    const maxActiveStudents = capacityDraft.maxActiveStudents.trim() === '' ? null : Number(capacityDraft.maxActiveStudents);
+    await setCapacity({ variables: { instrument: capacityDraft.instrument.trim(), maxActiveStudents } });
+    setCapacityDraft({ instrument: '', maxActiveStudents: '' });
+    await refetch();
+  }
 
   function toggleInstrument(inst: string) {
     setSelectedInstruments((prev) => (prev.includes(inst) ? prev.filter((i) => i !== inst) : [...prev, inst]));
@@ -275,6 +318,66 @@ export default function TeacherProfessionalProfilePage() {
                     Manage the specific times students can book from{' '}
                     <Link href="/dashboard/teacher/availability" className="text-primary-700 underline">Lesson availability</Link>.
                   </p>
+                </section>
+
+                {/* Booking policy (Phase 4) */}
+                <section className="card p-6">
+                  <h2 className="font-semibold text-gray-900">Booking policy</h2>
+                  <form onSubmit={savePolicy} className="mt-3 grid gap-4 sm:grid-cols-2">
+                    <label className="text-sm font-medium">
+                      Advance booking (lead time)
+                      <select className="input mt-1 w-full" value={policyDraft.leadDays} onChange={(e) => setPolicyDraft({ ...policyDraft, leadDays: e.target.value })}>
+                        <option value="0">Until end of the day before the lesson</option>
+                        {[1, 2, 3, 4, 5, 6, 7].map((d) => <option key={d} value={d}>{d} day{d === 1 ? '' : 's'} before</option>)}
+                      </select>
+                    </label>
+                    <label className="text-sm font-medium">
+                      Cancellation window
+                      <select className="input mt-1 w-full" value={policyDraft.cancellationDays} onChange={(e) => setPolicyDraft({ ...policyDraft, cancellationDays: e.target.value })}>
+                        {[2, 3, 4, 5, 6, 7].map((d) => <option key={d} value={d}>{d} days before</option>)}
+                      </select>
+                    </label>
+                    <p className="sm:col-span-2 text-xs text-gray-500">
+                      Cancelling inside this window (or a no-show) charges the full lesson price or consumes a prepaid credit -
+                      this leaves time for another student to book the released slot. Must be at least one day more than your lead time.
+                    </p>
+                    {policyError && <p className="sm:col-span-2 text-sm text-red-600">{policyError.message}</p>}
+                    <div className="sm:col-span-2">
+                      <button disabled={savingPolicy} className="btn-secondary rounded-lg px-4 py-2 text-sm">{savingPolicy ? 'Saving…' : 'Save policy'}</button>
+                    </div>
+                  </form>
+                  <div className="mt-5 space-y-2 border-t border-gray-100 pt-4">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={Boolean(profile.autoApproveNewStudents)} onChange={() => void toggleAutoApproveNew()} />
+                      Automatically confirm bookings from new students
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={Boolean(profile.autoApproveRecurringStudents)} onChange={() => void toggleAutoApproveRecurring()} />
+                      Automatically confirm bookings from recurring students (a student with a prior confirmed/completed lesson with you)
+                    </label>
+                    <p className="text-xs text-gray-500">When off, a request holds the slot for 48 hours awaiting your approval.</p>
+                  </div>
+                </section>
+
+                {/* Per-instrument student capacity (Phase 4) */}
+                <section className="card p-6">
+                  <h2 className="font-semibold text-gray-900">Student capacity</h2>
+                  <p className="mt-1 text-sm text-gray-500">Cap how many active students you take per instrument. Leave blank for unlimited.</p>
+                  <div className="mt-3 space-y-2">
+                    {(profile.instrumentCapacities ?? []).map((c: any) => (
+                      <div key={c.id} className="flex items-center justify-between rounded-lg border p-3 text-sm">
+                        <span>{c.instrument}: {c.activeStudentCount}{c.maxActiveStudents != null ? ` / ${c.maxActiveStudents}` : ''} students</span>
+                        <span className="text-xs text-gray-500">{c.maxActiveStudents == null ? 'Unlimited' : c.remainingCapacity > 0 ? `${c.remainingCapacity} spot${c.remainingCapacity === 1 ? '' : 's'} left` : 'Full'}</span>
+                      </div>
+                    ))}
+                    {(profile.instrumentCapacities ?? []).length === 0 && <p className="text-sm text-gray-500">No caps set - every instrument is unlimited.</p>}
+                  </div>
+                  <form onSubmit={saveCapacity} className="mt-4 grid gap-3 rounded-xl bg-gray-50 p-4 sm:grid-cols-3">
+                    <label className="text-sm font-medium">Instrument<input className="input mt-1 w-full" list="capacity-instruments" value={capacityDraft.instrument} onChange={(e) => setCapacityDraft({ ...capacityDraft, instrument: e.target.value })}/></label>
+                    <datalist id="capacity-instruments">{selectedInstruments.map((i) => <option key={i} value={i}/>)}</datalist>
+                    <label className="text-sm font-medium">Max active students<input type="number" min="0" className="input mt-1 w-full" placeholder="Unlimited" value={capacityDraft.maxActiveStudents} onChange={(e) => setCapacityDraft({ ...capacityDraft, maxActiveStudents: e.target.value })}/></label>
+                    <div className="flex items-end"><button disabled={savingCapacity} className="btn-secondary rounded-lg px-4 py-2 text-sm">{savingCapacity ? 'Saving…' : 'Set cap'}</button></div>
+                  </form>
                 </section>
 
                 {profile.introVideoUrl && (

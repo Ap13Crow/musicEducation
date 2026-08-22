@@ -62,6 +62,9 @@ enum QuizFeedbackMode {
 }
 
 enum BookingStatus {
+  # Also doubles as "awaiting the teacher's manual approval" - see
+  # TeacherProfile.autoApproveNewStudents/autoApproveRecurringStudents and
+  # Booking.holdExpiresAt.
   PENDING
   CONFIRMED
   CANCELLED
@@ -222,7 +225,29 @@ type TeacherProfile {
   # admin — null for anyone else viewing a public teacher profile.
   stripeAccountId: String
   stripePayoutsEnabled: Boolean
+  # Booking governance (Phase 4) - see apps/api/src/lib/bookingPolicy.ts for
+  # the exact leadDays/cancellationDays semantics. Publicly visible (a
+  # student deciding whether to book needs to know the lead time), except
+  # the approval-mode toggles, which are the teacher's own operational
+  # setting and only resolved for the teacher/an admin.
+  leadDays: Int!
+  cancellationDays: Int!
+  autoApproveNewStudents: Boolean
+  autoApproveRecurringStudents: Boolean
+  instrumentCapacities: [TeacherInstrumentCapacity!]!
   user: User
+}
+
+# maxActiveStudents: null = unlimited, an explicit 0 is a real (zero)
+# capacity - never conflated. remainingCapacity is the honest, non-invented
+# derived value shown publicly (never raw student counts/identities to a
+# guest - see the resolver).
+type TeacherInstrumentCapacity {
+  id: ID!
+  instrument: String!
+  maxActiveStudents: Int
+  activeStudentCount: Int!
+  remainingCapacity: Int
 }
 
 type TeacherCertification {
@@ -573,6 +598,13 @@ type Booking {
   zoomMeetingId: String
   zoomJoinUrl: String
   zoomStartUrl: String
+  # Set only while status is PENDING and manual approval is holding the
+  # slot - null once confirmed/cancelled/expired. See TeacherProfile.
+  # autoApproveNewStudents/autoApproveRecurringStudents.
+  holdExpiresAt: DateTime
+  # Set once, on cancellation: true = late/no-show (charges/consumes a
+  # credit - Phase 5), false = on-time (slot released). Null until cancelled.
+  lateCancellation: Boolean
   student: User
   teacher: TeacherProfile
   payment: Payment
@@ -1211,7 +1243,18 @@ type Mutation {
     # Must be a URL requestUploadUrl(purpose: TEACHER_PROFILE_IMAGE) actually
     # minted for this teacher - pass null to remove the current image.
     publicImageUrl: String
+    # Booking governance (Phase 4) - leadDays 0-7, cancellationDays 2-7,
+    # cancellationDays >= leadDays + 1 (enforced server-side; see
+    # apps/api/src/lib/bookingPolicy.ts). Both validated together whenever
+    # either is sent, against whichever value isn't being changed.
+    leadDays: Int
+    cancellationDays: Int
+    autoApproveNewStudents: Boolean
+    autoApproveRecurringStudents: Boolean
   ): TeacherProfile!
+  # maxActiveStudents null clears the cap (unlimited); pass 0 for a real
+  # zero-capacity cap, never treated as "no cap set."
+  setInstrumentCapacity(instrument: String!, maxActiveStudents: Int): TeacherInstrumentCapacity!
   addCertification(title: String!, issuingBody: String, issuedYear: Int, documentUrl: String): TeacherCertification!
   setAvailability(slots: [AvailabilitySlotInput!]!): [TeacherAvailability!]!
   createUnavailability(startsAt: DateTime!, endsAt: DateTime!, label: UnavailabilityLabel!, note: String): TeacherUnavailability!

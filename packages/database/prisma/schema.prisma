@@ -48,6 +48,10 @@ enum QuizFeedbackMode {
 }
 
 enum BookingStatus {
+  // Also doubles as "awaiting the teacher's manual approval" (see
+  // TeacherProfile.autoApproveNewStudents/autoApproveRecurringStudents) -
+  // Booking.holdExpiresAt bounds how long a manual-approval request stays
+  // blocking the slot for other students while awaiting a decision.
   PENDING
   CONFIRMED
   CANCELLED
@@ -209,6 +213,23 @@ model TeacherProfile {
   // revenue is transferred to. Null until the teacher completes onboarding.
   stripeAccountId      String?  @unique
   stripePayoutsEnabled Boolean  @default(false)
+  // Advance-booking rule (0-7, validated in the resolver): 0 = open until
+  // 23:59 in the teacher's timezone on the day before the lesson; 1-7 =
+  // closes exactly that many x 24h before the lesson start. Enforced in
+  // both slot discovery and bookSession server-side, never only client UI.
+  leadDays Int @default(1)
+  // Cancellation rule (2-7, validated in the resolver): must be
+  // >= leadDays + 1 so a cancelled slot can still be rebooked under the
+  // lead-time rule. On-time releases the slot; late/no-show charges the
+  // full lesson price or consumes a credit (ledger/credit consumption is
+  // Phase 5 - this phase records the on-time/late determination itself).
+  cancellationDays Int @default(2)
+  // Separate auto/manual approval switches for a brand-new student vs a
+  // "recurring" one (has >=1 CONFIRMED/COMPLETED booking with this teacher
+  // already - see isRecurringStudent in bookings.ts). Both default to
+  // auto-approve, matching today's actual behavior before this migration.
+  autoApproveNewStudents      Boolean @default(true)
+  autoApproveRecurringStudents Boolean @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -216,6 +237,7 @@ model TeacherProfile {
   certifications TeacherCertification[]
   availability   TeacherAvailability[]
   unavailability TeacherUnavailability[]
+  instrumentCapacities TeacherInstrumentCapacity[]
   courses        Course[]
   bookings       Booking[]
 }
@@ -620,12 +642,39 @@ model Booking {
   // resend as a duplicate. Cancellation reuses the same UID/latest sequence
   // with METHOD:CANCEL (see apps/api/src/lib/ics.ts).
   icsSequence      Int           @default(0)
+  // Only set while status is AWAITING_APPROVAL - once passed, the hold no
+  // longer blocks the slot for other students (checked lazily in the
+  // conflict query, see bookings.ts) and the request is treated as expired
+  // rather than left blocking forever.
+  holdExpiresAt    DateTime?
+  // Set once, on cancellation: true = late (inside cancellationDays) or a
+  // no-show, false = on-time. Null until then. Phase 5 owns actually
+  // charging/consuming a credit off this determination; this phase records
+  // the determination itself.
+  lateCancellation Boolean?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
   user           User           @relation(fields: [userId], references: [id])
   teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
   reviews        Review[]
+}
+
+// Independent per-instrument cap on a teacher's active (CONFIRMED/COMPLETED
+// booking having occurred) student count - e.g. violin max 3, piano
+// unlimited. maxActiveStudents null/absent = unlimited; an explicit 0 is a
+// real cap (fully booked out), never treated as unlimited.
+model TeacherInstrumentCapacity {
+  id               String   @id @default(cuid())
+  teacherProfileId String
+  instrument       String
+  maxActiveStudents Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+
+  @@unique([teacherProfileId, instrument])
 }
 
 enum UnavailabilityLabel {

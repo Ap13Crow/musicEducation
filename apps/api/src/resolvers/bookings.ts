@@ -4,8 +4,22 @@ import { awardXpOnce } from './xp.js';
 import { bookingConfirmedEmailContent, bookingCancelledEmailContent } from '../lib/emails.js';
 import { enqueueMail, recipientAddresses } from '../lib/mailOutbox.js';
 import { buildBookingIcs } from '../lib/ics.js';
+import { isWithinBookingWindow, isLateCancellation, APPROVAL_HOLD_HOURS } from '../lib/bookingPolicy.js';
+import { reserveInstrumentCapacity } from '../lib/capacity.js';
 import type { GraphQLContext } from '../types.js';
-import type { Prisma } from '@my-music-coach/database';
+import type { Prisma, PrismaClient } from '@my-music-coach/database';
+
+// A "recurring" student (Phase 4): has at least one CONFIRMED or COMPLETED
+// booking with this teacher already, from before this request. Used to
+// pick which of the teacher's two auto-approve switches applies. Kept in
+// one place so the definition can't drift between call sites (bookSession,
+// confirmBooking's future use, UI help text).
+export async function isRecurringStudent(prisma: PrismaClient, teacherProfileId: string, studentUserId: string): Promise<boolean> {
+  const existing = await prisma.booking.findFirst({
+    where: { teacherProfileId, userId: studentUserId, status: { in: ['CONFIRMED', 'COMPLETED'] } },
+  });
+  return Boolean(existing);
+}
 
 const TEACHER_FOUND_XP = 30;
 
@@ -188,7 +202,7 @@ export const bookingResolvers = {
 
       const teacherProfile = await prisma.teacherProfile.findUnique({
         where: { id: teacherProfileId },
-        include: { user: { select: { role: true } } },
+        include: { user: { select: { role: true, profile: { select: { timezone: true } } } } },
       });
       if (!teacherProfile) throw new GraphQLError('Teacher not found.', { extensions: { code: 'NOT_FOUND' } });
       if (teacherProfile.userId === user.id) {
@@ -210,6 +224,16 @@ export const bookingResolvers = {
       const startsAtDate = new Date(startsAt);
       if (Number.isNaN(startsAtDate.getTime()) || startsAtDate <= new Date()) {
         throw new GraphQLError('Choose a future lesson slot.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      // Advance-booking rule (Phase 4) - enforced server-side regardless of
+      // what the booking UI does or doesn't disable. See
+      // apps/api/src/lib/bookingPolicy.ts for the exact leadDays semantics.
+      const teacherTimezone = teacherProfile.user.profile?.timezone ?? 'Europe/Zurich';
+      if (!isWithinBookingWindow(startsAtDate, teacherProfile.leadDays, teacherTimezone)) {
+        throw new GraphQLError(
+          `This teacher requires booking at least ${teacherProfile.leadDays === 0 ? 'by the end of the day before the lesson' : `${teacherProfile.leadDays} day(s)`} in advance.`,
+          { extensions: { code: 'BAD_USER_INPUT' } },
+        );
       }
       const endsAt = new Date(startsAtDate.getTime() + 60 * 60 * 1000);
       const availability = await prisma.teacherAvailability.findMany({ where: { teacherProfileId } });
@@ -239,8 +263,15 @@ export const bookingResolvers = {
       const conflict = await prisma.booking.findFirst({
         where: {
           teacherProfileId,
-          status: { in: ['PENDING', 'CONFIRMED'] },
           AND: [{ startsAt: { lt: endsAt } }, { endsAt: { gt: startsAtDate } }],
+          OR: [
+            { status: 'CONFIRMED' },
+            // A PENDING hold blocks the slot only while it's still live -
+            // an expired manual-approval request (see holdExpiresAt) no
+            // longer counts, matching "prevent double booking during the
+            // hold" without blocking the slot forever once it lapses.
+            { status: 'PENDING', OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: new Date() } }] },
+          ],
         },
       });
       if (conflict) throw new GraphQLError('Time slot not available.', { extensions: { code: 'BAD_USER_INPUT' } });
@@ -254,9 +285,17 @@ export const bookingResolvers = {
       });
       if (unavailable) throw new GraphQLError('Time slot not available.', { extensions: { code: 'BAD_USER_INPUT' } });
 
-      // Booking creation and (when immediately CONFIRMED) the mail-outbox
-      // insert commit atomically - see notifyBookingConfirmed's comment.
+      const recurring = await isRecurringStudent(prisma, teacherProfileId, user.id);
+      const autoApprove = recurring ? teacherProfile.autoApproveRecurringStudents : teacherProfile.autoApproveNewStudents;
+
+      // Booking creation, the capacity check for an immediately-CONFIRMED
+      // booking, and (when CONFIRMED) the mail-outbox insert all commit
+      // atomically - see notifyBookingConfirmed's and
+      // reserveInstrumentCapacity's own comments.
       const booking = await prisma.$transaction(async (tx) => {
+        if (autoApprove) {
+          await reserveInstrumentCapacity(tx, teacherProfileId, instrument, user.id);
+        }
         const created = await tx.booking.create({
           data: {
             userId: user.id,
@@ -267,11 +306,13 @@ export const bookingResolvers = {
             format,
             instrument,
             notes,
-            status: teacherProfile.hourlyRate ? 'PENDING' : 'CONFIRMED',
+            status: autoApprove ? 'CONFIRMED' : 'PENDING',
+            holdExpiresAt: autoApprove ? null : new Date(Date.now() + APPROVAL_HOLD_HOURS * 60 * 60 * 1000),
           },
         });
-        // A free teacher's booking is CONFIRMED immediately above - that's
-        // the moment to notify, same as confirmBooking below for a paid one.
+        // Auto-approved (whether free or paid) is CONFIRMED immediately -
+        // that's the moment to notify, same as confirmBooking below for a
+        // manually-approved one.
         if (created.status === 'CONFIRMED') {
           await notifyBookingConfirmed(tx, created.id);
         }
@@ -290,8 +331,15 @@ export const bookingResolvers = {
       const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { teacherProfile: true } });
       if (!booking) throw new GraphQLError('Booking not found.', { extensions: { code: 'NOT_FOUND' } });
       if (booking.teacherProfile.userId !== user.id) throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
+      if (booking.holdExpiresAt && booking.holdExpiresAt <= new Date()) {
+        throw new GraphQLError('This request has expired and can no longer be approved.', { extensions: { code: 'CONFLICT' } });
+      }
       return prisma.$transaction(async (tx) => {
-        const updated = await tx.booking.update({ where: { id: bookingId }, data: { status: 'CONFIRMED' } });
+        // Same capacity enforcement point as the auto-approved path in
+        // bookSession - a manually-approved booking becomes an active
+        // relationship right here, not at the original request.
+        await reserveInstrumentCapacity(tx, booking.teacherProfileId, booking.instrument, booking.userId);
+        const updated = await tx.booking.update({ where: { id: bookingId }, data: { status: 'CONFIRMED', holdExpiresAt: null } });
         await notifyBookingConfirmed(tx, bookingId);
         return updated;
       });
@@ -305,8 +353,17 @@ export const bookingResolvers = {
       const isTeacher = booking.teacherProfile.userId === user.id;
       if (!isStudent && !isTeacher) throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
       const wasConfirmed = booking.status === 'CONFIRMED';
+      // Only a confirmed lesson can be "late" or "on time" - a still-
+      // PENDING request being withdrawn/rejected was never a commitment to
+      // charge against. lateCancellation itself only *records* the
+      // determination; actually charging the full price or consuming a
+      // prepaid/subscription credit is Phase 5 (packages/subscriptions
+      // don't exist yet to consume a credit from).
+      const lateCancellation = wasConfirmed
+        ? isLateCancellation(booking.startsAt, booking.teacherProfile.cancellationDays)
+        : null;
       return prisma.$transaction(async (tx) => {
-        const updated = await tx.booking.update({ where: { id: bookingId }, data: { status: 'CANCELLED' } });
+        const updated = await tx.booking.update({ where: { id: bookingId }, data: { status: 'CANCELLED', lateCancellation } });
         // A PENDING booking never had a confirmation/invitation sent, so
         // there is nothing to cancel a notice for - only a previously
         // CONFIRMED booking gets a cancellation email + METHOD:CANCEL ICS.

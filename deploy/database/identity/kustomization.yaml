@@ -28,3 +28,4 @@ configMapGenerator:
       - 021-mail-outbox.sql
       - 022-teacher-teaching-formats.sql
       - 023-calendar-unavailability-appointments-ics.sql
+      - 024-booking-governance.sql

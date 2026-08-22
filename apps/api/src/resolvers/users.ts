@@ -2,6 +2,10 @@ import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
 import { isOwnedUploadUrl } from '../lib/storage.js';
+import {
+  isValidLeadDays, isValidCancellationDays, isValidPolicyPair,
+  LEAD_DAYS_MIN, LEAD_DAYS_MAX, CANCELLATION_DAYS_MIN, CANCELLATION_DAYS_MAX,
+} from '../lib/bookingPolicy.js';
 import type { GraphQLContext } from '../types.js';
 
 const PROFILE_COMPLETED_XP = 50;
@@ -192,12 +196,44 @@ export const userResolvers = {
       // musicStyles, languages - none of which updateTeacherProfile actually
       // accepts as args), so every field but hourlyRate/instruments/
       // isAvailable/calendlyUsername was silently ignored.
-      const { headline, teachingBio, hourlyRate, instruments, specializations, teachingFormats, isAvailable, calendlyUsername, introVideoVisible, publicImageUrl } = args;
+      const {
+        headline, teachingBio, hourlyRate, instruments, specializations, teachingFormats, isAvailable, calendlyUsername,
+        introVideoVisible, publicImageUrl, leadDays, cancellationDays, autoApproveNewStudents, autoApproveRecurringStudents,
+      } = args;
       const data: Record<string, unknown> = {};
       // hourlyRate/calendlyUsername are nullable columns - an explicit null
       // is a legitimate "clear this" and Prisma accepts it.
       if (hourlyRate !== undefined) data.hourlyRate = hourlyRate;
       if (calendlyUsername !== undefined) data.calendlyUsername = calendlyUsername;
+      if (autoApproveNewStudents !== undefined && autoApproveNewStudents !== null) data.autoApproveNewStudents = autoApproveNewStudents;
+      if (autoApproveRecurringStudents !== undefined && autoApproveRecurringStudents !== null) data.autoApproveRecurringStudents = autoApproveRecurringStudents;
+      // leadDays/cancellationDays are validated together (cancellationDays
+      // >= leadDays + 1) against whichever value isn't being changed this
+      // call - fetch the current row only when exactly one of the pair was
+      // sent, since sending neither or both needs no extra lookup.
+      if (leadDays !== undefined || cancellationDays !== undefined) {
+        let effectiveLeadDays = leadDays;
+        let effectiveCancellationDays = cancellationDays;
+        if (effectiveLeadDays === undefined || effectiveCancellationDays === undefined) {
+          const existing = await prisma.teacherProfile.findUnique({ where: { userId: user!.id } });
+          if (effectiveLeadDays === undefined) effectiveLeadDays = existing?.leadDays ?? 1;
+          if (effectiveCancellationDays === undefined) effectiveCancellationDays = existing?.cancellationDays ?? 2;
+        }
+        if (!isValidLeadDays(effectiveLeadDays)) {
+          throw new GraphQLError(`leadDays must be an integer from ${LEAD_DAYS_MIN} to ${LEAD_DAYS_MAX}.`, { extensions: { code: 'BAD_USER_INPUT' } });
+        }
+        if (!isValidCancellationDays(effectiveCancellationDays)) {
+          throw new GraphQLError(`cancellationDays must be an integer from ${CANCELLATION_DAYS_MIN} to ${CANCELLATION_DAYS_MAX}.`, { extensions: { code: 'BAD_USER_INPUT' } });
+        }
+        if (!isValidPolicyPair(effectiveLeadDays, effectiveCancellationDays)) {
+          throw new GraphQLError(
+            `cancellationDays (${effectiveCancellationDays}) must be at least leadDays + 1 (${effectiveLeadDays + 1}) - this leaves time for another student to book the released slot.`,
+            { extensions: { code: 'BAD_USER_INPUT' } },
+          );
+        }
+        if (leadDays !== undefined) data.leadDays = effectiveLeadDays;
+        if (cancellationDays !== undefined) data.cancellationDays = effectiveCancellationDays;
+      }
       // publicImageUrl: null clears the image (falls back to a neutral
       // placeholder in the UI); a non-null value must be a URL this exact
       // teacher actually got from requestUploadUrl(purpose:
@@ -262,6 +298,33 @@ export const userResolvers = {
       return prisma.teacherCertification.create({
         data: { teacherProfileId: teacherProfile.id, title, issuingBody, issuedYear, documentUrl },
       });
+    },
+
+    async setInstrumentCapacity(_: unknown, { instrument, maxActiveStudents }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'TEACHER', 'ADMIN');
+      if (!instrument?.trim()) throw new GraphQLError('Instrument is required.', { extensions: { code: 'BAD_USER_INPUT' } });
+      if (maxActiveStudents !== null && maxActiveStudents !== undefined && (!Number.isInteger(maxActiveStudents) || maxActiveStudents < 0)) {
+        throw new GraphQLError('maxActiveStudents must be a non-negative integer, or null for unlimited.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      const teacherProfile = await prisma.teacherProfile.findUnique({ where: { userId: user!.id } });
+      if (!teacherProfile) throw new GraphQLError('Teacher profile required.', { extensions: { code: 'BAD_USER_INPUT' } });
+      const cap = await prisma.teacherInstrumentCapacity.upsert({
+        where: { teacherProfileId_instrument: { teacherProfileId: teacherProfile.id, instrument: instrument.trim() } },
+        create: { teacherProfileId: teacherProfile.id, instrument: instrument.trim(), maxActiveStudents: maxActiveStudents ?? null },
+        update: { maxActiveStudents: maxActiveStudents ?? null },
+      });
+      const activeStudentCount = await prisma.booking.findMany({
+        where: { teacherProfileId: teacherProfile.id, instrument: cap.instrument, status: { in: ['CONFIRMED', 'COMPLETED'] } },
+        distinct: ['userId'],
+        select: { userId: true },
+      }).then((rows) => rows.length);
+      return {
+        id: cap.id,
+        instrument: cap.instrument,
+        maxActiveStudents: cap.maxActiveStudents,
+        activeStudentCount,
+        remainingCapacity: cap.maxActiveStudents == null ? null : Math.max(0, cap.maxActiveStudents - activeStudentCount),
+      };
     },
 
     async setAvailability(_: unknown, { slots }: { slots: AvailabilitySlot[] }, { prisma, user }: GraphQLContext) {
@@ -429,6 +492,41 @@ export const userResolvers = {
     },
     memberSince(profile: any) {
       return profile.createdAt;
+    },
+    autoApproveNewStudents(profile: any, _: unknown, { user }: GraphQLContext) {
+      const isOwnerOrAdmin = user?.id === profile.userId || user?.role === 'ADMIN';
+      return isOwnerOrAdmin ? profile.autoApproveNewStudents : null;
+    },
+    autoApproveRecurringStudents(profile: any, _: unknown, { user }: GraphQLContext) {
+      const isOwnerOrAdmin = user?.id === profile.userId || user?.role === 'ADMIN';
+      return isOwnerOrAdmin ? profile.autoApproveRecurringStudents : null;
+    },
+    async instrumentCapacities(profile: any, _: unknown, { prisma }: GraphQLContext) {
+      const caps = await prisma.teacherInstrumentCapacity.findMany({ where: { teacherProfileId: profile.id } });
+      if (caps.length === 0) return [];
+      // One query for every instrument on this profile, not one per row -
+      // the directory only ever resolves one teacher's capacities per
+      // request here (unlike distinctStudentCount, which needed
+      // DataLoader batching for a *list* of teachers). Prisma's groupBy
+      // _count counts rows, not distinct userId, so a returning student's
+      // second/third lesson would inflate the count against capacity -
+      // `distinct` on (instrument, userId) is what actually matches the
+      // "distinct student" definition capacity is meant to enforce.
+      const distinctRows = await prisma.booking.findMany({
+        where: { teacherProfileId: profile.id, instrument: { in: caps.map((c: any) => c.instrument) }, status: { in: ['CONFIRMED', 'COMPLETED'] } },
+        distinct: ['instrument', 'userId'],
+        select: { instrument: true },
+      });
+      const distinctCountByInstrument = new Map<string, number>();
+      for (const row of distinctRows) {
+        if (!row.instrument) continue;
+        distinctCountByInstrument.set(row.instrument, (distinctCountByInstrument.get(row.instrument) ?? 0) + 1);
+      }
+      return caps.map((cap: any) => {
+        const activeStudentCount = distinctCountByInstrument.get(cap.instrument) ?? 0;
+        const remainingCapacity = cap.maxActiveStudents == null ? null : Math.max(0, cap.maxActiveStudents - activeStudentCount);
+        return { id: cap.id, instrument: cap.instrument, maxActiveStudents: cap.maxActiveStudents, activeStudentCount, remainingCapacity };
+      });
     },
     distinctStudentCount(profile: any, _: unknown, { loaders }: GraphQLContext) {
       return loaders.teacherDistinctStudentCount.load(profile.id);

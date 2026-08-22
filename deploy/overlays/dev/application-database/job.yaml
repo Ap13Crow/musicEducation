@@ -53,6 +53,7 @@ spec:
               psql --set=ON_ERROR_STOP=1 --file=/schema/021-mail-outbox.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/022-teacher-teaching-formats.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/023-calendar-unavailability-appointments-ics.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/024-booking-governance.sql
           envFrom:
             - secretRef:
                 name: postgres-mymusiccoach
