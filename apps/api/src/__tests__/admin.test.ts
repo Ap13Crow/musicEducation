@@ -63,6 +63,51 @@ describe('adminStats', () => {
   });
 });
 
+// Regression coverage for a Copilot review finding on PR #47:
+// retryMailOutboxMessage used to unconditionally reset ANY message's
+// status to PENDING, including an already-SENT one - an admin (or a raw
+// API call) retrying a SENT message would cause the worker to send a real
+// duplicate delivery. The admin UI's "Retry now" button was always
+// correctly gated to FAILED/DEAD_LETTER only; this hardens the resolver
+// itself to match, rather than relying solely on the UI gate.
+describe('retryMailOutboxMessage', () => {
+  it('requeues a FAILED message', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const prisma = fakePrisma({
+      mailOutboxMessage: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'm1', status: 'FAILED' }),
+        updateMany,
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'm1', status: 'PENDING' }),
+      },
+    });
+    await adminResolvers.Mutation.retryMailOutboxMessage(null, { id: 'm1' }, { prisma, user: adminUser } as any);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: 'm1', status: { in: ['FAILED', 'DEAD_LETTER'] } },
+      data: expect.objectContaining({ status: 'PENDING', attempts: 0 }),
+    });
+  });
+
+  it('rejects retrying an already-SENT message instead of silently resetting it', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 0 });
+    const prisma = fakePrisma({
+      mailOutboxMessage: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'm1', status: 'SENT' }),
+        updateMany,
+      },
+    });
+    await expect(
+      adminResolvers.Mutation.retryMailOutboxMessage(null, { id: 'm1' }, { prisma, user: adminUser } as any),
+    ).rejects.toThrow('Only a FAILED or DEAD_LETTER message can be retried.');
+  });
+
+  it('404s for an unknown message id', async () => {
+    const prisma = fakePrisma({ mailOutboxMessage: { findUnique: jest.fn().mockResolvedValue(null) } });
+    await expect(
+      adminResolvers.Mutation.retryMailOutboxMessage(null, { id: 'gone' }, { prisma, user: adminUser } as any),
+    ).rejects.toThrow('Mail message not found.');
+  });
+});
+
 describe('Admin Resolvers - Permission Checks', () => {
   describe('requireRole for admin operations', () => {
     it('should allow ADMIN role', () => {
