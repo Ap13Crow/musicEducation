@@ -5,23 +5,15 @@ import { createServer } from 'http';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@apollo/server/express4';
 import { makeExecutableSchema } from '@graphql-tools/schema';
-import { mergeResolvers } from '@graphql-tools/merge';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import pino from 'pino';
 import { PrismaClient } from '@my-music-coach/database';
 import { authMiddleware, resolveRequestUser } from './middleware/auth.js';
-import { authResolvers } from './resolvers/auth.js';
-import { userResolvers } from './resolvers/users.js';
-import { bookingResolvers } from './resolvers/bookings.js';
-import { reviewResolvers } from './resolvers/reviews.js';
-import { courseResolvers } from './resolvers/courses.js';
-import { eventResolvers } from './resolvers/events.js';
-import { assessmentResolvers } from './resolvers/assessments.js';
-import { feedResolvers } from './resolvers/feed.js';
-import { paymentResolvers, handleStripeWebhook, handleStripeV2Webhook } from './resolvers/payments.js';
-import { adminResolvers } from './resolvers/admin.js';
-import { discoveryResolvers } from './resolvers/discovery.js';
+import { resolvers } from './resolvers/index.js';
+import { createLoaders } from './lib/loaders.js';
+import { handleStripeWebhook, handleStripeV2Webhook } from './resolvers/payments.js';
+import { buildUserCalendarFeed } from './lib/calendarFeed.js';
 import type { GraphQLContext } from './types.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -55,19 +47,15 @@ const schemaPath =
   join(process.cwd(), 'packages/graphql-schema/src/schema.graphql');
 const typeDefs = readFileSync(schemaPath, 'utf-8');
 
-const resolvers = mergeResolvers([
-  authResolvers,
-  userResolvers,
-  bookingResolvers,
-  reviewResolvers,
-  courseResolvers,
-  eventResolvers,
-  assessmentResolvers,
-  feedResolvers,
-  paymentResolvers,
-  adminResolvers,
-  discoveryResolvers,
-]);
+// `resolvers` is the single merged map from resolvers/index.ts (every
+// resolver module plus the DateTime/JSON/Decimal scalars) - previously this
+// file hand-rolled its own, narrower mergeResolvers() call that silently
+// omitted teacherApplications/uploads/quizzes/xp/recommendations. A field
+// with no resolver in the map falls back to reading a same-named property
+// off the root value, which is always undefined here - for a non-null
+// schema field (Query.storageConfigured: Boolean!, Query.teacherApplications:
+// [TeacherApplication!]!) that produced exactly the reported
+// "Cannot return null for non-nullable field" errors.
 const schema = makeExecutableSchema({ typeDefs, resolvers });
 
 async function main() {
@@ -125,6 +113,32 @@ async function main() {
     });
     return res.json({ avatarUrl });
   });
+  // Token-authenticated calendar subscription feed (Phase 6) - a calendar
+  // app (Apple Calendar, Google Calendar, Outlook "subscribe from web")
+  // polls this URL directly with no session cookie and no OAuth, so it's
+  // deliberately outside authMiddleware/the GraphQL context. The token
+  // itself is the credential (see User.calendarFeedToken and
+  // rotateCalendarFeedToken in externalCalendar.ts) - constant-time
+  // comparison isn't needed here since it's a unique-indexed DB lookup, not
+  // a string comparison against a known value.
+  app.get('/calendar/feed/:token', async (req, res) => {
+    const raw = req.params.token;
+    const token = raw.endsWith('.ics') ? raw.slice(0, -4) : raw;
+    if (!token) return res.status(404).send('Not found');
+    try {
+      const user = await prisma.user.findUnique({ where: { calendarFeedToken: token } });
+      if (!user) return res.status(404).send('Not found');
+      const ics = await buildUserCalendarFeed(prisma, user.id);
+      res.setHeader('content-type', 'text/calendar; charset=utf-8');
+      res.setHeader('cache-control', 'no-store');
+      res.setHeader('content-disposition', 'inline; filename="mymusic-coach.ics"');
+      return res.send(ics);
+    } catch (error) {
+      logger.error({ error }, 'Calendar feed generation failed');
+      return res.status(500).send('Calendar feed temporarily unavailable');
+    }
+  });
+
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
   app.get('/health/ready', async (_req, res) => {
     try {
@@ -147,7 +161,9 @@ async function main() {
         if (req.headers.authorization?.startsWith('Bearer ') && !user) {
           logger.warn('Bearer token did not resolve to an application user');
         }
-        return { prisma, user, req };
+        // Fresh loaders per request - see loaders.ts for why these must
+        // never be reused/cached across requests.
+        return { prisma, user, req, loaders: createLoaders(prisma) };
       } catch (error) {
         logger.error({ err: error }, 'Authenticated user provisioning failed');
         throw error;

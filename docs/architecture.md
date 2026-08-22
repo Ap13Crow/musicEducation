@@ -1,263 +1,207 @@
-# My Music Coach — Architecture
+# MyMusic.Coach — Architecture
+
+> This document was rewritten from a direct read of the current source tree, Prisma
+> schema, GraphQL SDL, GitHub Actions workflows, and `deploy/` manifests. Earlier
+> versions of this file described an unrelated reference stack (Redis, MinIO, Zoom,
+> Calendly, Yapeal, a Caddy gateway, `k8s/deployment.yaml`, and a Moodle/LibreBooking/
+> pretix hub-and-spoke). None of that exists in the current implementation — it was an
+> early reference approach superseded by the native build described below. See
+> `AGENTS.md` and `CLAUDE.md` for the authoritative statement of that decision.
 
 ## Overview
 
-A fully open-source, containerised classical music education platform built around three core pillars:
+MyMusic.Coach is a single TypeScript application delivering three product pillars,
+implemented natively (no external LMS, booking, or ticketing system):
 
-| Pillar | Description | Key integrations |
-|--------|-------------|-----------------|
-| **Theory** | Udemy-style video courses with quizzes | Video hosting, progress tracking |
-| **Practice** | Live lessons (online + physical) | Zoom, Calendly, Stripe/Yapeal |
-| **Performance** | Event discovery & publishing | Geo-search, ticketing |
+| Pillar | Description |
+|--------|-------------|
+| **Booking** | Teacher discovery, teacher-defined availability, exact bookable slots, Stripe payment |
+| **Learning** | Native course authoring, publishing, purchase, viewer, progress, assessment |
+| **Events** | Teacher-published events plus normalized external discovery (Ticketmaster and Classictic today; Europeana is planned, not yet built) |
 
 ---
 
-## Tech Stack
+## Tech stack
 
 ### Backend
 | Concern | Technology |
 |---------|-----------|
 | Runtime | Node.js 20 (TypeScript) |
-| API | GraphQL (Apollo Server 4) |
-| Database | PostgreSQL 16 + Prisma ORM |
-| Cache / Pub-Sub | Redis 7 |
-| Auth | Keycloak 24 (OpenID Connect + SAML) |
-| AI / MCP | MCP Server + DeepSeek V4 |
-| Payments | Stripe + Yapeal (CH) |
-| Video calls | Zoom API |
-| Scheduling | Calendly API |
-| Object storage | MinIO (S3-compatible) |
+| API | GraphQL (Apollo Server 4 + Express, `expressMiddleware` at `/graphql`) |
+| Database | PostgreSQL + Prisma ORM (`db push` workflow in dev; forward-only SQL under `deploy/database/identity/` ships schema changes to the cluster) |
+| Auth | Keycloak (OIDC), verified server-side; no parallel/custom auth system |
+| AI | DeepSeek preferred, OpenAI as fallback (both OpenAI-wire-compatible) — advisory text only (assessment reports, event classification); never mutates payment/entitlement/progress/XP state |
+| Payments | Stripe (Checkout + Stripe Connect Express for teacher payouts) |
+| Object storage | S3-compatible (DigitalOcean Spaces in the deployed environment), purpose-scoped presigned uploads |
+| Transactional email | Google Workspace SMTP relay (`smtp-relay.gmail.com`) via Nodemailer, best-effort/fire-and-forget today |
 
 ### Frontend
 | Concern | Technology |
 |---------|-----------|
 | Framework | Next.js 14 (App Router) |
 | Language | TypeScript |
-| Styling | Tailwind CSS |
-| GraphQL client | Apollo Client 3 |
 | Auth | NextAuth.js (Keycloak provider) |
-| UI components | OpenUI |
+| GraphQL client | Apollo Client |
 
 ### Infrastructure
 | Concern | Technology |
 |---------|-----------|
-| Containers | Docker + Docker Compose |
-| Orchestration | Kubernetes (k8s/) |
-| Autoscaling | HPA (CPU-based) |
-| Ingress | nginx-ingress-controller |
-| TLS | cert-manager + Let's Encrypt |
-| CI/CD | GitHub Actions (add as needed) |
+| Containers | Docker (per-app Dockerfile) |
+| Orchestration | Kubernetes on DigitalOcean (DOKS), Kustomize (`deploy/`) |
+| Public entry | Cloudflare Tunnel only — no public LoadBalancer, no ingress controller |
+| Registry | DigitalOcean Container Registry, SHA-tagged immutable images |
+| CI/CD | GitHub Actions, `workflow_dispatch`-gated deploys (merging to `main` does **not** auto-deploy) |
+| Identity | Keycloak, deployed via the official Keycloak Operator |
+
+`docker-compose*.yml`, `docker/`, and `k8s/deployment.yaml` are legacy migration
+references only (per `AGENTS.md`) and do not represent the deployed environment.
 
 ---
 
-## Repository Structure
+## Repository structure
 
 ```
-my-music-coach/
+musicEducation/
 ├── apps/
-│   ├── api/                      # GraphQL API server (Apollo + Express)
-│   │   ├── src/
-│   │   │   ├── resolvers/        # All GraphQL resolvers by domain
-│   │   │   ├── middleware/       # Auth (JWT + OIDC)
-│   │   │   ├── utils/            # Logger, helpers
-│   │   │   ├── index.ts          # Server entrypoint
-│   │   │   └── types.ts          # GraphQL context type
-│   │   ├── Dockerfile
-│   │   └── package.json
-│   └── web/                      # Next.js 14 frontend
-│       ├── src/
-│       │   ├── app/              # App Router pages
-│       │   ├── components/       # Shared UI components
-│       │   └── lib/              # Apollo provider, auth provider
-│       ├── Dockerfile
-│       └── package.json
+│   ├── api/                      # GraphQL API + webhooks (Apollo + Express)
+│   │   └── src/
+│   │       ├── resolvers/        # GraphQL resolvers by domain
+│   │       ├── middleware/       # auth.ts (context/RBAC), keycloak.ts (token verification)
+│   │       ├── lib/               # storage.ts, mailer.ts, ai.ts, emails.ts, youtube.ts
+│   │       └── index.ts           # Express app: /graphql, /webhooks/stripe(-v2),
+│   │                               #   /profile/avatar, /health, /health/ready
+│   ├── web/                      # Next.js 14 frontend (apps/web/src/app/*)
+│   └── worker/                   # Async jobs: Ticketmaster discovery ingestion,
+│                                   #   event classification, heartbeat. Booking-email
+│                                   #   outbox processing does not live here yet — see
+│                                   #   "Known gaps" below.
 ├── packages/
-│   ├── database/                 # Prisma schema + client
-│   │   └── prisma/schema.prisma  # Full data model
-│   ├── graphql-schema/           # Shared SDL schema
-│   │   └── src/schema.graphql    # Full GraphQL SDL
-│   └── mcp-server/               # MCP server (AI tools)
-│       └── src/
-│           ├── index.ts          # MCP server entrypoint
-│           └── tools/            # AI tool implementations
-├── docker/
-│   └── keycloak/
-│       └── realm-export.json     # Keycloak realm config
-├── k8s/
-│   └── deployment.yaml           # Kubernetes manifests
-├── docs/
-│   └── architecture.md           # This file
-├── docker-compose.yml            # Full local stack
-├── .env.example                  # Environment variable template
-├── turbo.json                    # Turborepo pipeline
-└── package.json                  # Monorepo root
+│   ├── database/                 # Prisma schema + generated client
+│   ├── graphql-schema/           # Shared SDL (packages/graphql-schema/src/schema.graphql)
+│   └── mcp-server/                # MCP server (separate AI tool surface)
+├── deploy/                       # Provider-neutral Kustomize scaffold — see deploy/README.md
+├── docs/                         # This file, deployment.md, development.md, etc.
+└── docker/, docker-compose*.yml, k8s/   # Legacy references only, not deployed
 ```
 
 ---
 
-## Data Model Summary
-
-### User Roles
-
-```
-GUEST     → browse free courses, search teachers, see events
-STUDENT   → full access to paid content, bookings, feed
-TEACHER   → create courses, accept bookings, publish events
-ADMIN     → platform management, verify teachers
-```
-
-### Core Entities
+## Data model summary (`packages/database/prisma/schema.prisma`)
 
 ```
 User ──────────────────────────────────────────────────────────
-  ├── UserProfile           (instruments, styles, timezone)
-  ├── TeacherProfile        (certifications, availability, rates)
-  └── GamificationProfile   (XP, level, badges, achievements)
+  ├── UserExternalIdentity   (immutable Keycloak `sub` link)
+  ├── UserProfile            (account avatar, instruments, styles, timezone)
+  ├── TeacherProfile         (bio, instruments, rates, Stripe Connect account —
+  │                            no dedicated public teacher image field today)
+  └── TeacherApplication     (PENDING/APPROVED/REJECTED review queue)
 
-Theory ────────────────────────────────────────────────────────
+Learning ──────────────────────────────────────────────────────
   Course → CourseSection → Lesson → Quiz → QuizQuestion
   Enrollment → LessonProgress
   Assessment → AssessmentQuestion → AssessmentAnswer
 
-Practice ──────────────────────────────────────────────────────
-  Booking (student ↔ teacher, Zoom/Calendly, Payment)
+Booking ───────────────────────────────────────────────────────
+  Booking (student ↔ teacher, Stripe payment)
   TeacherAvailability
 
-Performance ───────────────────────────────────────────────────
-  Event (geo-located, typed, capacity-managed)
+Events ────────────────────────────────────────────────────────
+  Event (teacher-published, capacity-managed)
   EventBooking → Payment
+  ExternalEventProjection (Ticketmaster ingestion output)
 
-Social ────────────────────────────────────────────────────────
+Social / gamification ─────────────────────────────────────────
   FeedPost → FeedLike, FeedComment
-  Follow
-  Review (course, event, booking)
-  Message
-  Notification
+  Review, Message, Notification
+  GamificationProfile (XP, level)
 ```
+
+Two unused legacy columns remain from an earlier design and are not read or written
+by any current adapter code: `Course.moodleCourseId`, `EventBooking.pretixOrderCode`.
+They can be dropped in a dedicated migration when convenient; leave them alone
+otherwise.
 
 ---
 
-## Authentication Flow
+## Authentication flow
 
 ```
 Browser → Next.js → NextAuth.js → Keycloak (OIDC)
                                       ↓
                               id_token + access_token
                                       ↓
-                         Apollo Client → GraphQL API
-                              (Authorization: ******
+                         Apollo Client → GraphQL API (Authorization: Bearer …)
                                       ↓
-                              authMiddleware → verifyToken
+                    apps/api/src/middleware/keycloak.ts (verify RS256, JWKS by kid)
                                       ↓
-                              GraphQL context.user
+                    apps/api/src/middleware/auth.ts → GraphQL context.user
+                                      ↓
+                    UserExternalIdentity maps sub → platform User (role, id)
 ```
 
-### OpenID Connect endpoints (Keycloak)
-- Discovery: `http://localhost:8080/realms/mymusic-coach/.well-known/openid-configuration`
-- Auth: `http://localhost:8080/realms/mymusic-coach/protocol/openid-connect/auth`
-- Token: `http://localhost:8080/realms/mymusic-coach/protocol/openid-connect/token`
+Keycloak is the sole identity authority; the application database owns profiles,
+roles, marketplace, bookings, courses, entitlements, and progress.
 
 ---
 
-## AI / MCP Integration
+## AI integration
 
-The MCP server exposes four tools that can be called by Claude, GPT or any MCP-compatible client:
+`apps/api/src/lib/ai.ts` and `apps/worker/src/lib/ai.ts` wrap a single OpenAI-wire-
+compatible client pointed at DeepSeek (preferred) or OpenAI (fallback). Configured
+only via `DEEPSEEK_API_KEY`/`DEEPSEEK_API_URL` or `OPENAI_API_KEY`. Used for advisory
+text only — assessment feedback, event classification — never for payment,
+entitlement, progress, or XP state, which stay deterministic and auditable.
 
-| Tool | Purpose |
-|------|---------|
-| `analyze_recording` | Evaluate audio/video of a student performance |
-| `evaluate_assessment` | Score the onboarding assessment + assign skill level |
-| `generate_feedback` | Produce personalised next-step recommendations |
-| `recommend_content` | Match courses, teachers and events to user profile |
-
-Configure `DEEPSEEK_API_KEY` + `DEEPSEEK_API_URL` to use DeepSeek V4 (or any OpenAI-compatible endpoint).
-
----
-
-## Gamification System
-
-New users complete a **15–20 minute onboarding assessment** covering:
-
-1. **Music Theory** — intervals, notation, harmony (MCQ)
-2. **Performance** — upload/record a short musical piece (AI-graded)
-3. **Cultural Knowledge** — composer history, periods, styles (MCQ)
-4. **Preferences** — instruments & music styles (selector)
-
-The AI produces a `SkillLevel` (BEGINNER → PROFESSIONAL) and generates personalised recommendations.
-
-**XP sources:**
-- Complete lesson → +10 XP (configurable per lesson)
-- Complete assessment → up to +200 XP (score × 200)
-- Complete a course → +100 XP
-- Submit a review → +20 XP
-- Daily login streak → multiplier
+`packages/mcp-server` is a separate MCP tool surface, independent of the resolver-
+level AI helper above.
 
 ---
 
 ## Payments
 
-| Provider | Use case |
-|---------|---------|
-| **Stripe** | International card payments, courses, bookings, events |
-| **Yapeal** | Swiss digital wallet (CHF-native) |
-
-Flow: `createCheckoutSession` → redirect to provider → webhook `handleWebhook` → update enrollment/booking status.
+Stripe only (Checkout for course/booking/event purchases; Stripe Connect Express for
+teacher payouts). Webhooks: `POST /webhooks/stripe` and `POST /webhooks/stripe-v2`
+(the v2 listener handles Connect account-requirements events). Payment state is a
+state machine; the signed webhook — never the browser redirect — confirms payment.
+Stripe test mode only in development.
 
 ---
 
-## Local Development
+## Local development
 
-```bash
-# 1. Copy env file
-cp .env.example .env
-# Edit .env with real values
-
-# 2. Start all services
-docker compose up -d
-
-# 3. Run DB migrations
-npm run db:migrate
-
-# 4. Start dev servers (hot-reload)
-npm run dev
-```
-
-Ports:
-- Web app: http://localhost:3000
-- GraphQL API: http://localhost:4000/graphql
-- Keycloak admin: http://localhost:8080
-- MinIO console: http://localhost:9001
+See `docs/development.md` for the authoritative, current command set (`npm ci`,
+`npm run db:generate`, `npm run dev`, Playwright e2e, Kustomize render checks). The
+legacy Compose stack (`docker compose up -d`) remains available as a migration
+reference only and is not the target architecture.
 
 ---
 
 ## Deployment (Kubernetes)
 
-```bash
-# Create secrets first (never commit real secrets!)
-kubectl create secret generic db-secret \
-  --from-literal=username=mymusic_coach \
-  --from-literal=****** \
-  -n mymusic-coach
-
-kubectl create secret generic redis-secret \
-  --from-literal=****** \
-  -n mymusic-coach
-
-# Apply all manifests
-kubectl apply -f k8s/
-
-# Check status
-kubectl get pods -n mymusic-coach
-```
+See `deploy/README.md` for the Kustomize layout and `docs/deployment.md` for the
+GitHub Actions-driven deploy path. In short: CI builds and pushes SHA-tagged images,
+syncs the `application-integrations` Secret from GitHub environment secrets, and runs
+`kubectl apply` against DOKS — triggered manually via `workflow_dispatch`, not on
+every merge to `main`. Claude Code / agents do not run `kubectl apply`, `doctl`, or
+any cluster/cloud write directly; read-only `kubectl get/logs/describe` is fine when
+explicitly permitted.
 
 ---
 
-## Scalability Notes
+## Known gaps (as of this writing — verify against current source before relying on this)
 
-- **API**: Stateless, scales horizontally via HPA (target 70% CPU)
-- **Web**: Stateless SSR, scales independently
-- **PostgreSQL**: Start with single instance; migrate to Citus or read replicas at scale
-- **Redis**: Use Redis Cluster or Upstash for production
-- **Media**: MinIO → migrate to S3/GCS for production
-- **MCP/AI**: Runs as a separate service, scales independently
-- **Zoom/Calendly**: Webhooks handled by the API; use queue (e.g., BullMQ on Redis) for high volume
+- No dedicated public teacher profile image: `TeacherProfile` has no image field and
+  `storage.ts` has no upload purpose for one; the general `UserProfile.avatarUrl` is
+  the only image field that exists today.
+- Booking confirmation email is synchronous and best-effort (`apps/api/src/lib/
+  mailer.ts`) — no outbox table, retry, or dead-letter; a temporarily unreachable SMTP
+  relay silently drops the notification rather than queuing it.
+- `apps/worker` does not yet process mail — CLAUDE.md notes async work is moving there
+  but the migration isn't complete for email.
+
+## Scalability notes
+
+- API and worker are stateless and can scale horizontally.
+- Web is stateless SSR.
+- PostgreSQL: managed, single instance for the current stage.
+- Object storage: S3-compatible, currently DigitalOcean Spaces.

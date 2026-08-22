@@ -27,41 +27,69 @@ function wrapper(bodyHtml: string): string {
   </div>`;
 }
 
-export async function sendBookingConfirmedEmails(booking: {
-  studentEmail: string | null | undefined;
+// Renders the two booking-confirmation emails (student-facing, teacher-
+// facing) as plain {subject, html} - the caller (notifyBookingConfirmed in
+// bookings.ts) writes these into the durable mail outbox rather than
+// sending them directly, so delivery survives a temporarily-down SMTP relay
+// instead of silently dropping the notification. See mailOutbox.ts.
+export function bookingConfirmedEmailContent(booking: {
   studentName: string;
-  teacherEmail: string | null | undefined;
   teacherName: string;
   startsAt: Date;
   durationMin: number;
   format: string;
   instrument: string | null | undefined;
-}): Promise<void> {
+}): { student: { subject: string; html: string }; teacher: { subject: string; html: string } } {
   const when = formatUtc(booking.startsAt);
   const details = `${when} · ${booking.durationMin} min · ${booking.format}${booking.instrument ? ` · ${booking.instrument}` : ''}`;
-
-  if (booking.studentEmail) {
-    await sendMail({
-      to: booking.studentEmail,
+  return {
+    student: {
       subject: 'Your lesson is confirmed',
       html: wrapper(
         `<p>Hi ${escapeHtml(booking.studentName)},</p>
          <p>Your lesson with <strong>${escapeHtml(booking.teacherName)}</strong> is confirmed.</p>
          <p>${escapeHtml(details)}</p>`,
       ),
-    });
-  }
-  if (booking.teacherEmail) {
-    await sendMail({
-      to: booking.teacherEmail,
+    },
+    teacher: {
       subject: 'A lesson booking was confirmed',
       html: wrapper(
         `<p>Hi ${escapeHtml(booking.teacherName)},</p>
          <p>Your lesson with <strong>${escapeHtml(booking.studentName)}</strong> is confirmed.</p>
          <p>${escapeHtml(details)}</p>`,
       ),
-    });
-  }
+    },
+  };
+}
+
+export function bookingCancelledEmailContent(booking: {
+  studentName: string;
+  teacherName: string;
+  startsAt: Date;
+  durationMin: number;
+  format: string;
+  instrument: string | null | undefined;
+}): { student: { subject: string; html: string }; teacher: { subject: string; html: string } } {
+  const when = formatUtc(booking.startsAt);
+  const details = `${when} · ${booking.durationMin} min · ${booking.format}${booking.instrument ? ` · ${booking.instrument}` : ''}`;
+  return {
+    student: {
+      subject: 'Your lesson was cancelled',
+      html: wrapper(
+        `<p>Hi ${escapeHtml(booking.studentName)},</p>
+         <p>Your lesson with <strong>${escapeHtml(booking.teacherName)}</strong> has been cancelled.</p>
+         <p>${escapeHtml(details)}</p>`,
+      ),
+    },
+    teacher: {
+      subject: 'A lesson booking was cancelled',
+      html: wrapper(
+        `<p>Hi ${escapeHtml(booking.teacherName)},</p>
+         <p>Your lesson with <strong>${escapeHtml(booking.studentName)}</strong> has been cancelled.</p>
+         <p>${escapeHtml(details)}</p>`,
+      ),
+    },
+  };
 }
 
 export async function sendPurchaseConfirmedEmail(purchase: {

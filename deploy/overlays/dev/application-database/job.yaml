@@ -49,6 +49,14 @@ spec:
               psql --set=ON_ERROR_STOP=1 --file=/schema/017-teacher-application-richer.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/018-payment-provider-ref-unique.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/019-payment-confirmation-email-marker.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/020-teacher-profile-public-image.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/021-mail-outbox.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/022-teacher-teaching-formats.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/023-calendar-unavailability-appointments-ics.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/024-booking-governance.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/025-lesson-packages-subscriptions.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/026-external-event-engagement.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/027-external-calendar-sync-and-feed-token.sql
           envFrom:
             - secretRef:
                 name: postgres-mymusiccoach

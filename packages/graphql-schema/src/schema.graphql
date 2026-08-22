@@ -40,6 +40,7 @@ enum UploadPurpose {
   TEACHER_APPLICATION_AUDIO
   TEACHER_APPLICATION_DOCUMENT
   COURSE_SLIDE
+  TEACHER_PROFILE_IMAGE
 }
 
 type UploadTarget {
@@ -61,6 +62,9 @@ enum QuizFeedbackMode {
 }
 
 enum BookingStatus {
+  # Also doubles as "awaiting the teacher's manual approval" - see
+  # TeacherProfile.autoApproveNewStudents/autoApproveRecurringStudents and
+  # Booking.holdExpiresAt.
   PENDING
   CONFIRMED
   CANCELLED
@@ -190,6 +194,13 @@ type TeacherProfile {
   locationCity: String
   locationCountry: String
   calendlyUsername: String
+  # Public professional photo shown on the teacher directory/profile to
+  # guests and everyone else - set via requestUploadUrl(purpose:
+  # TEACHER_PROFILE_IMAGE) + updateTeacherProfile. Deliberately separate from
+  # the account avatar (User -> UserProfile.avatarUrl, private/account-only),
+  # so it's never silently reused as the public image. Null until the
+  # teacher uploads one.
+  publicImageUrl: String
   # YouTube presentation/performance video copied from the approved
   # application - null once the teacher hides it via updateTeacherProfile
   # even though the underlying link is kept, so introVideoUrl is null
@@ -198,11 +209,45 @@ type TeacherProfile {
   introVideoVisible: Boolean!
   certifications: [TeacherCertification!]
   availability: [TeacherAvailability!]
+  # Date this teacher's profile was first provisioned (approval time) -
+  # "years/months teaching on MyMusic.Coach" is calculated client-side from
+  # this, never from self-reported yearsExperience (pre-platform history).
+  memberSince: DateTime!
+  # A distinct student is a user with at least one CONFIRMED or COMPLETED
+  # booking with this teacher (see apps/api/src/lib/loaders.ts) - never
+  # exposes which students, only the count.
+  distinctStudentCount: Int!
+  # Published courses this teacher has authored - there is no separate
+  # "resource" model in the schema, so this counts what actually exists
+  # rather than a metric with nothing behind it.
+  publishedResourceCount: Int!
   # Stripe Connect payout status. Only resolved for the teacher themself or an
   # admin — null for anyone else viewing a public teacher profile.
   stripeAccountId: String
   stripePayoutsEnabled: Boolean
+  # Booking governance (Phase 4) - see apps/api/src/lib/bookingPolicy.ts for
+  # the exact leadDays/cancellationDays semantics. Publicly visible (a
+  # student deciding whether to book needs to know the lead time), except
+  # the approval-mode toggles, which are the teacher's own operational
+  # setting and only resolved for the teacher/an admin.
+  leadDays: Int!
+  cancellationDays: Int!
+  autoApproveNewStudents: Boolean
+  autoApproveRecurringStudents: Boolean
+  instrumentCapacities: [TeacherInstrumentCapacity!]!
   user: User
+}
+
+# maxActiveStudents: null = unlimited, an explicit 0 is a real (zero)
+# capacity - never conflated. remainingCapacity is the honest, non-invented
+# derived value shown publicly (never raw student counts/identities to a
+# guest - see the resolver).
+type TeacherInstrumentCapacity {
+  id: ID!
+  instrument: String!
+  maxActiveStudents: Int
+  activeStudentCount: Int!
+  remainingCapacity: Int
 }
 
 type TeacherCertification {
@@ -223,6 +268,65 @@ type TeacherAvailability {
   dayOfWeek: Int
   startTime: String
   endTime: String
+}
+
+enum UnavailabilityLabel {
+  UNAVAILABLE
+  PRIVATE_APPOINTMENT
+  HOLIDAY
+  VACATION
+  OTHER_UNAVAILABLE
+}
+
+# A teacher-declared block overriding TeacherAvailability for a specific
+# range (Phase 3, scoped: one-time only, no recurrence yet). `note` is
+# private - resolved to null for anyone but the teacher/an admin; `label`
+# is the only thing a student or guest ever sees.
+type TeacherUnavailability {
+  id: ID!
+  teacherProfileId: ID!
+  startsAt: DateTime!
+  endsAt: DateTime!
+  label: UnavailabilityLabel!
+  note: String
+}
+
+# A user's own private appointment - visible only to its owner via
+# myAppointments, never resolved for anyone else.
+type PersonalAppointment {
+  id: ID!
+  title: String!
+  startsAt: DateTime!
+  endsAt: DateTime!
+  notes: String
+}
+
+# Phase 6 (scoped) - see the ExternalCalendarConnection model comment in
+# packages/database/prisma/schema.prisma and
+# apps/api/src/lib/externalCalendar.ts for why GOOGLE/MICROSOFT sync is a
+# schema contract only right now: connectExternalCalendar always rejects
+# with NOT_CONFIGURED (no OAuth client credentials exist in this
+# deployment). Apple's calendar sync is the working feature instead - a
+# provider-agnostic ICS subscription feed (Query.myCalendarFeedToken /
+# Mutation.rotateCalendarFeedToken), which Apple Calendar, Google Calendar,
+# and Outlook can all subscribe to without any OAuth.
+enum ExternalCalendarProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+enum ExternalCalendarConnectionStatus {
+  CONNECTED
+  ERROR
+}
+
+type ExternalCalendarConnection {
+  id: ID!
+  provider: ExternalCalendarProvider!
+  status: ExternalCalendarConnectionStatus!
+  externalAccountEmail: String
+  lastSyncedAt: DateTime
+  createdAt: DateTime!
 }
 
 type StudentAvailability {
@@ -294,6 +398,10 @@ type TeacherApplication {
   cvUrl: String
   audioSampleUrl: String
   documentUrls: [String!]!
+  # Public teacher photo, via requestUploadUrl(purpose:
+  # TEACHER_PROFILE_IMAGE) - copied to TeacherProfile.publicImageUrl on
+  # approval. Deliberately separate from the account avatar.
+  imageUrl: String
   # YouTube link, required to apply - copied to TeacherProfile.introVideoUrl
   # on approval (the teacher can hide it again via updateTeacherProfile).
   videoUrl: String
@@ -320,6 +428,7 @@ input TeacherApplicationInput {
   cvUrl: String
   audioSampleUrl: String
   documentUrls: [String!]
+  imageUrl: String
   # Required - a YouTube link (watch/share/shorts URL or bare video id).
   videoUrl: String
 }
@@ -517,6 +626,16 @@ type Booking {
   zoomMeetingId: String
   zoomJoinUrl: String
   zoomStartUrl: String
+  # Set only while status is PENDING and manual approval is holding the
+  # slot - null once confirmed/cancelled/expired. See TeacherProfile.
+  # autoApproveNewStudents/autoApproveRecurringStudents.
+  holdExpiresAt: DateTime
+  # Set once, on cancellation: true = late/no-show (charges/consumes a
+  # credit - Phase 5), false = on-time (slot released). Null until cancelled.
+  lateCancellation: Boolean
+  # Set when this booking was made against a prepaid LessonPackagePurchase
+  # credit instead of a one-off charge.
+  packagePurchaseId: ID
   student: User
   teacher: TeacherProfile
   payment: Payment
@@ -652,6 +771,81 @@ type CheckoutSession {
   checkoutUrl: String!
 }
 
+# ── Phase 5: lesson packages, subscriptions ─────────
+
+type LessonPackageOffer {
+  id: ID!
+  teacherProfileId: ID!
+  instrument: String
+  lessonCount: Int!
+  pricePerPackage: Float!
+  currency: String!
+  isPublished: Boolean!
+  # Effective price per lesson - honest comparison figure, never a
+  # misleading "savings" number (there's nothing to compare a single
+  # package price against).
+  pricePerLesson: Float!
+}
+
+# Snapshot of the commercial terms at checkout time - never changes after
+# purchase even if the originating offer is edited/unpublished.
+type LessonPackagePurchase {
+  id: ID!
+  teacherProfileId: ID!
+  teacherProfile: TeacherProfile
+  instrument: String
+  lessonCount: Int!
+  pricePaid: Float!
+  currency: String!
+  policyLeadDays: Int!
+  policyCancellationDays: Int!
+  # SUM of the ledger - never a mutable counter. See
+  # apps/api/src/lib/lessonCredits.ts.
+  creditBalance: Int!
+  purchasedAt: DateTime!
+}
+
+type SubscriptionOffer {
+  id: ID!
+  teacherProfileId: ID!
+  includedHoursPerMonth: Int!
+  termMonths: Int!
+  monthlyPrice: Float!
+  currency: String!
+  includedCourseIds: [ID!]!
+  isPublished: Boolean!
+  # The two upfront totals a student compares before checkout - both
+  # derived from the same stored discount setting, never duplicated UI math.
+  upfrontDiscountPct: Int!
+  upfrontTotal: Float!
+  undiscountedTotal: Float!
+}
+
+type SubscriptionPurchase {
+  id: ID!
+  teacherProfileId: ID!
+  teacherProfile: TeacherProfile
+  termMonths: Int!
+  includedHoursPerMonth: Int!
+  monthlyPrice: Float!
+  discountPct: Int!
+  totalPricePaid: Float!
+  currency: String!
+  includedCourseIds: [ID!]!
+  policyLeadDays: Int!
+  policyCancellationDays: Int!
+  status: SubscriptionPurchaseStatus!
+  startsAt: DateTime!
+  endsAt: DateTime!
+  cancelledAt: DateTime
+}
+
+enum SubscriptionPurchaseStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+}
+
 type StripeConnectLink {
   url: String!
 }
@@ -708,9 +902,23 @@ type Review {
   courseId: ID
   eventId: ID
   bookingId: ID
+  externalEventProjectionId: ID
   isPublic: Boolean!
   createdAt: DateTime!
   author: User
+}
+
+# One row per (user, external event) - "recently visited," post-event
+# attendance confirmation, and the XP-award marker. See
+# apps/api/src/resolvers/discovery.ts.
+type ExternalEventEngagement {
+  id: ID!
+  externalEventProjectionId: ID!
+  externalEventProjection: ExternalEventProjection
+  firstViewedAt: DateTime!
+  lastViewedAt: DateTime!
+  attendanceConfirmedAt: DateTime
+  xpAwardedAt: DateTime
 }
 
 type ReviewConnection {
@@ -724,6 +932,36 @@ type AdminSetting {
   id: ID!
   key: String!
   value: String!
+}
+
+enum MailOutboxStatus {
+  PENDING
+  SENT
+  FAILED
+  DEAD_LETTER
+}
+
+enum MailOutboxKind {
+  BOOKING_CONFIRMATION
+  BOOKING_CANCELLED
+}
+
+# A queued/delivered/failed transactional-email attempt (see
+# apps/api/src/lib/mailOutbox.ts, apps/worker/src/jobs/mail-dispatch.ts).
+# Admin-only - never exposes SMTP credentials, only delivery status.
+type MailOutboxMessage {
+  id: ID!
+  kind: MailOutboxKind!
+  bookingId: ID
+  recipients: [String!]!
+  subject: String!
+  status: MailOutboxStatus!
+  attempts: Int!
+  maxAttempts: Int!
+  lastError: String
+  nextAttemptAt: DateTime!
+  sentAt: DateTime
+  createdAt: DateTime!
 }
 
 type AdminStats {
@@ -888,6 +1126,10 @@ input BookSessionInput {
   format: BookingFormat!
   instrument: String
   notes: String
+  # Book against a prepaid LessonPackagePurchase credit instead of a
+  # one-off charge - must belong to the caller and have a remaining credit
+  # and matching teacher/instrument, or the mutation rejects it.
+  packagePurchaseId: ID
 }
 
 input CreateEventInput {
@@ -992,6 +1234,10 @@ input CreateReviewInput {
   courseId: ID
   eventId: ID
   bookingId: ID
+  # Requires a prior confirmExternalEventAttendance on this event - see
+  # createReview's own gate in apps/api/src/resolvers/reviews.ts. Evaluating
+  # a confirmed-attended external event is what credits XP.
+  externalEventProjectionId: ID
   isPublic: Boolean
 }
 
@@ -1026,6 +1272,18 @@ type Query {
   myBookings(status: BookingStatus, page: Int, limit: Int): [Booking!]!
   booking(id: ID!): Booking
   teacherAvailability(teacherProfileId: ID!, date: DateTime): [TeacherAvailability!]!
+  # Bounded by [from, to] like every other calendar query here - never an
+  # unbounded scan. Public: any signed-in caller can see a teacher's blocks
+  # (label + times only, never `note`) to know when not to try booking.
+  teacherUnavailability(teacherProfileId: ID!, from: DateTime!, to: DateTime!): [TeacherUnavailability!]!
+  # The caller's own private appointments only - bounded range required so
+  # a personal-calendar view can't turn into an unbounded query.
+  myAppointments(from: DateTime!, to: DateTime!): [PersonalAppointment!]!
+
+  # Calendar sync (Phase 6, scoped - see ExternalCalendarConnection above)
+  myExternalCalendarConnections: [ExternalCalendarConnection!]!
+  # Null until rotateCalendarFeedToken has been called once.
+  myCalendarFeedToken: String
 
   # Events
   events(filter: EventFilterInput, page: Int, limit: Int): EventConnection!
@@ -1041,6 +1299,10 @@ type Query {
   # preferences (DeepSeek-classified) - the events page's "Recommended for
   # you" strip. Empty for a signed-out caller or one with no preferences set.
   recommendedExternalEvents(limit: Int): [ExternalEventProjection!]!
+  # The caller's own "recently visited" external events, most recent first -
+  # see recordExternalEventView. Each row also carries attendance-confirm and
+  # XP-award state for the confirm/evaluate/credit flow.
+  myRecentlyViewedExternalEvents(limit: Int): [ExternalEventEngagement!]!
 
   # Assessments
   assessmentQuestions(category: String, difficulty: String, instrument: String, limit: Int): [AssessmentQuestion!]!
@@ -1061,10 +1323,22 @@ type Query {
   # Student availability (self-declaration)
   myAvailability: [StudentAvailability!]!
 
+  # Lesson packages / subscriptions (Phase 5). Directory queries return
+  # published offers only unless the caller owns the teacher profile or is
+  # an admin.
+  teacherPackageOffers(teacherProfileId: ID!): [LessonPackageOffer!]!
+  teacherSubscriptionOffers(teacherProfileId: ID!): [SubscriptionOffer!]!
+  myPackagePurchases: [LessonPackagePurchase!]!
+  mySubscriptionPurchases: [SubscriptionPurchase!]!
+
   # Admin
   adminStats: AdminStats!
   adminSettings: [AdminSetting!]!
   adminUsers(role: Role, search: String, page: Int, limit: Int): [User!]!
+  # Transactional-email delivery queue, most recent first - ADMIN only. A
+  # non-empty DEAD_LETTER filter is the "notifications are silently
+  # failing" signal this exists for.
+  mailOutbox(status: MailOutboxStatus, limit: Int): [MailOutboxMessage!]!
 
   # Object storage - false when S3_* isn't configured, so callers can hide
   # upload UI rather than let requestUploadUrl fail.
@@ -1111,9 +1385,38 @@ type Mutation {
     # teacher's own call, per the product decision that they decide whether
     # it's public. The link itself is kept either way.
     introVideoVisible: Boolean
+    # Must be a URL requestUploadUrl(purpose: TEACHER_PROFILE_IMAGE) actually
+    # minted for this teacher - pass null to remove the current image.
+    publicImageUrl: String
+    # Booking governance (Phase 4) - leadDays 0-7, cancellationDays 2-7,
+    # cancellationDays >= leadDays + 1 (enforced server-side; see
+    # apps/api/src/lib/bookingPolicy.ts). Both validated together whenever
+    # either is sent, against whichever value isn't being changed.
+    leadDays: Int
+    cancellationDays: Int
+    autoApproveNewStudents: Boolean
+    autoApproveRecurringStudents: Boolean
   ): TeacherProfile!
+  # maxActiveStudents null clears the cap (unlimited); pass 0 for a real
+  # zero-capacity cap, never treated as "no cap set."
+  setInstrumentCapacity(instrument: String!, maxActiveStudents: Int): TeacherInstrumentCapacity!
   addCertification(title: String!, issuingBody: String, issuedYear: Int, documentUrl: String): TeacherCertification!
   setAvailability(slots: [AvailabilitySlotInput!]!): [TeacherAvailability!]!
+  createUnavailability(startsAt: DateTime!, endsAt: DateTime!, label: UnavailabilityLabel!, note: String): TeacherUnavailability!
+  deleteUnavailability(id: ID!): Boolean!
+
+  # Personal calendar - every authenticated user, not just teachers.
+  createAppointment(title: String!, startsAt: DateTime!, endsAt: DateTime!, notes: String): PersonalAppointment!
+  updateAppointment(id: ID!, title: String, startsAt: DateTime, endsAt: DateTime, notes: String): PersonalAppointment!
+  deleteAppointment(id: ID!): Boolean!
+
+  # Calendar sync (Phase 6, scoped) - connectExternalCalendar always
+  # rejects with NOT_CONFIGURED today (see ExternalCalendarConnection's
+  # schema comment above). rotateCalendarFeedToken is the working feature:
+  # get-or-rotate the caller's personal ICS subscription-feed token.
+  connectExternalCalendar(provider: ExternalCalendarProvider!): ExternalCalendarConnection!
+  disconnectExternalCalendar(provider: ExternalCalendarProvider!): Boolean!
+  rotateCalendarFeedToken: String!
 
   # Student availability self-declaration
   setStudentAvailability(slots: [AvailabilitySlotInput!]!): [StudentAvailability!]!
@@ -1186,14 +1489,38 @@ type Mutation {
   # Reviews
   createReview(input: CreateReviewInput!): Review!
 
+  # External event engagement (recently visited -> confirm participation ->
+  # evaluate via createReview -> XP credited). See discovery.ts.
+  recordExternalEventView(id: ID!): ExternalEventEngagement!
+  confirmExternalEventAttendance(id: ID!): ExternalEventEngagement!
+
   # Payments
+  # type also accepts "package" and "subscription" (refId = the offer id) -
+  # see LessonPackageOffer/SubscriptionOffer.
   createCheckoutSession(type: String!, refId: ID!, provider: PaymentProvider): CheckoutSession!
   # Teacher payouts — creates (once) a Stripe Connect Express account for the
   # calling teacher and returns a fresh hosted onboarding link.
   createStripeConnectOnboardingLink: StripeConnectLink!
 
+  # Lesson packages / subscriptions (Phase 5)
+  createPackageOffer(instrument: String, lessonCount: Int!, pricePerPackage: Float!, currency: String): LessonPackageOffer!
+  updatePackageOffer(id: ID!, pricePerPackage: Float, isPublished: Boolean): LessonPackageOffer!
+  # Refuses to delete an offer with existing purchases - unpublish instead;
+  # existing purchases keep their snapshotted terms regardless either way.
+  deletePackageOffer(id: ID!): Boolean!
+  createSubscriptionOffer(includedHoursPerMonth: Int!, termMonths: Int!, monthlyPrice: Float!, currency: String, includedCourseIds: [ID!]): SubscriptionOffer!
+  updateSubscriptionOffer(id: ID!, monthlyPrice: Float, includedCourseIds: [ID!], isPublished: Boolean): SubscriptionOffer!
+  deleteSubscriptionOffer(id: ID!): Boolean!
+  # Takes effect immediately (no proration - see apps/api/src/lib/pricing.ts).
+  cancelSubscription(id: ID!): SubscriptionPurchase!
+
   # Admin
   updateAdminSetting(key: String!, value: String!): AdminSetting!
   adminBanUser(userId: ID!): User!
   adminSetRole(userId: ID!, role: Role!): User!
+  # Re-queues a DEAD_LETTER (or still-FAILED) message for immediate retry -
+  # resets attempts to 0 and nextAttemptAt to now, so the next mail-dispatch
+  # tick picks it up. Use once the underlying cause (e.g. SMTP_PASSWORD) is
+  # actually fixed; retrying blindly just repeats the same failure.
+  retryMailOutboxMessage(id: ID!): MailOutboxMessage!
 }

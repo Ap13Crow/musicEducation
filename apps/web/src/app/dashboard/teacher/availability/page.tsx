@@ -13,6 +13,54 @@ const SAVE=gql`mutation SaveTeacherSlots($slots:[AvailabilitySlotInput!]!){setAv
 type Slot={dayOfWeek:number;startTime:string;endTime:string;timezone:string};
 function oneHourAfter(start:string){const [h,m]=start.split(':').map(Number);const total=h*60+m+60;return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`;}
 
+const UNAVAILABILITY_LABELS:{value:string;label:string}[]=[
+ {value:'UNAVAILABLE',label:'Unavailable'},
+ {value:'PRIVATE_APPOINTMENT',label:'Private appointment'},
+ {value:'HOLIDAY',label:'Holiday'},
+ {value:'VACATION',label:'Vacation'},
+ {value:'OTHER_UNAVAILABLE',label:'Other'},
+];
+const NINETY_DAYS_MS=90*24*60*60*1000;
+const GET_UNAVAILABILITY=gql`query TeacherUnavailabilityBlocks($teacherProfileId:ID!,$from:DateTime!,$to:DateTime!){teacherUnavailability(teacherProfileId:$teacherProfileId,from:$from,to:$to){id startsAt endsAt label note}}`;
+const CREATE_UNAVAILABILITY=gql`mutation CreateUnavailabilityBlock($startsAt:DateTime!,$endsAt:DateTime!,$label:UnavailabilityLabel!,$note:String){createUnavailability(startsAt:$startsAt,endsAt:$endsAt,label:$label,note:$note){id}}`;
+const DELETE_UNAVAILABILITY=gql`mutation DeleteUnavailabilityBlock($id:ID!){deleteUnavailability(id:$id)}`;
+
+function UnavailabilitySection({teacherProfileId}:{teacherProfileId:string}){
+ const from=new Date().toISOString();const to=new Date(Date.now()+NINETY_DAYS_MS).toISOString();
+ const {data,loading,refetch}=useQuery(GET_UNAVAILABILITY,{variables:{teacherProfileId,from,to},fetchPolicy:'cache-and-network'});
+ const [create,{loading:creating,error}]=useMutation(CREATE_UNAVAILABILITY);
+ const [remove]=useMutation(DELETE_UNAVAILABILITY);
+ const [draft,setDraft]=useState({date:'',startTime:'09:00',endTime:'17:00',label:'UNAVAILABLE',note:''});
+ const blocks=data?.teacherUnavailability??[];
+ async function addBlock(e:React.FormEvent){
+  e.preventDefault();if(!draft.date)return;
+  const startsAt=new Date(`${draft.date}T${draft.startTime}:00`).toISOString();
+  const endsAt=new Date(`${draft.date}T${draft.endTime}:00`).toISOString();
+  await create({variables:{startsAt,endsAt,label:draft.label,note:draft.note.trim()||null}});
+  setDraft({...draft,note:''});await refetch();
+ }
+ async function removeBlock(id:string){await remove({variables:{id}});await refetch();}
+ return <section className="card mt-8 p-6">
+  <h2 className="text-xl font-semibold">Unavailability</h2>
+  <p className="mt-2 text-sm text-gray-600">Block hours or full days you&rsquo;re not available - this immediately removes those times from bookable discovery. Students only ever see the label you choose below, never your private note.</p>
+  {loading?<p className="mt-4 text-sm text-gray-500">Loading…</p>:<div className="mt-4 space-y-2">
+   {blocks.length===0&&<p className="text-sm text-gray-500">No blocks in the next 90 days.</p>}
+   {blocks.map((b:any)=><div key={b.id} className="flex items-center justify-between rounded-lg border p-3 text-sm">
+    <span>{new Date(b.startsAt).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})} – {new Date(b.endsAt).toLocaleString(undefined,{timeStyle:'short'})} · {UNAVAILABILITY_LABELS.find(l=>l.value===b.label)?.label??b.label}{b.note?` · ${b.note}`:''}</span>
+    <button className="text-red-600" onClick={()=>void removeBlock(b.id)}>Remove</button>
+   </div>)}
+  </div>}
+  <form onSubmit={addBlock} className="mt-5 grid gap-3 rounded-xl bg-gray-50 p-4 sm:grid-cols-5">
+   <label className="text-sm font-medium sm:col-span-1">Date<input type="date" required className="input mt-1 w-full" value={draft.date} onChange={e=>setDraft({...draft,date:e.target.value})}/></label>
+   <label className="text-sm font-medium">From<input type="time" className="input mt-1 w-full" value={draft.startTime} onChange={e=>setDraft({...draft,startTime:e.target.value})}/></label>
+   <label className="text-sm font-medium">To<input type="time" className="input mt-1 w-full" value={draft.endTime} onChange={e=>setDraft({...draft,endTime:e.target.value})}/></label>
+   <label className="text-sm font-medium">Label<select className="input mt-1 w-full" value={draft.label} onChange={e=>setDraft({...draft,label:e.target.value})}>{UNAVAILABILITY_LABELS.map(l=><option key={l.value} value={l.value}>{l.label}</option>)}</select></label>
+   <label className="text-sm font-medium">Private note (optional)<input className="input mt-1 w-full" value={draft.note} onChange={e=>setDraft({...draft,note:e.target.value})} placeholder="Only you and admins see this"/></label>
+   <div className="sm:col-span-5">{error&&<p className="mb-2 text-sm text-red-600">{error.message}</p>}<button disabled={creating} className="btn-secondary rounded-lg px-4 py-2 text-sm">{creating?'Adding…':'Add block'}</button></div>
+  </form>
+ </section>;
+}
+
 export default function TeacherAvailabilityPage(){
  const {data,loading,refetch}=useQuery(GET);const [slots,setSlots]=useState<Slot[]|null>(null);
  const [provision,{loading:provisioning}]=useMutation(PROVISION);const [save,{loading:saving,error}]=useMutation(SAVE);
@@ -32,6 +80,7 @@ export default function TeacherAvailabilityPage(){
     <button className="pb-2 text-sm text-red-600" onClick={()=>setSlots(current.filter((_:Slot,n:number)=>n!==index))}>Remove</button>
    </div>)}{current.length===0&&<p className="rounded-xl border border-dashed p-6 text-sm text-gray-500">No bookable lessons yet.</p>}</div>
    {error&&<p className="mt-4 text-sm text-red-600">{error.message}</p>}<div className="mt-5 flex gap-3"><button className="btn-secondary rounded-lg px-4 py-2" onClick={add}>Add one-hour lesson</button><button className="btn-primary rounded-lg px-4 py-2" disabled={saving} onClick={()=>void persist()}>{saving?'Saving…':'Publish availability'}</button></div>
+   <UnavailabilitySection teacherProfileId={data.me.teacherProfile.id}/>
   </>}
  </main></RoleGate>;
 }

@@ -24,3 +24,11 @@ configMapGenerator:
       - 017-teacher-application-richer.sql
       - 018-payment-provider-ref-unique.sql
       - 019-payment-confirmation-email-marker.sql
+      - 020-teacher-profile-public-image.sql
+      - 021-mail-outbox.sql
+      - 022-teacher-teaching-formats.sql
+      - 023-calendar-unavailability-appointments-ics.sql
+      - 024-booking-governance.sql
+      - 025-lesson-packages-subscriptions.sql
+      - 026-external-event-engagement.sql
+      - 027-external-calendar-sync-and-feed-token.sql

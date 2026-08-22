@@ -327,6 +327,7 @@ jobs:
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           STRIPE_WEBHOOK_SECRET_V2: ${{ secrets.STRIPE_WEBHOOK_SECRET_V2 }}
           TICKETMASTER_API_KEY: ${{ secrets.TICKETMASTER_API_KEY }}
+          CLASSICTIC_AFFILIATE_ID: ${{ secrets.CLASSICTIC_AFFILIATE_ID }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DEEPSEEK_API_URL: ${{ secrets.DEEPSEEK_API_URL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -355,6 +356,7 @@ jobs:
           effective_stripe_webhook_secret="${STRIPE_WEBHOOK_SECRET:-$(existing_value STRIPE_WEBHOOK_SECRET)}"
           effective_stripe_webhook_secret_v2="${STRIPE_WEBHOOK_SECRET_V2:-$(existing_value STRIPE_WEBHOOK_SECRET_V2)}"
           effective_ticketmaster_key="${TICKETMASTER_API_KEY:-$(existing_value TICKETMASTER_API_KEY)}"
+          effective_classictic_affiliate_id="${CLASSICTIC_AFFILIATE_ID:-$(existing_value CLASSICTIC_AFFILIATE_ID)}"
           effective_deepseek_key="${DEEPSEEK_API_KEY:-$(existing_value DEEPSEEK_API_KEY)}"
           effective_deepseek_url="${DEEPSEEK_API_URL:-$(existing_value DEEPSEEK_API_URL)}"
           effective_openai_key="${OPENAI_API_KEY:-$(existing_value OPENAI_API_KEY)}"
@@ -389,6 +391,12 @@ jobs:
             echo 'Ticketmaster discovery configured.'
           else
             echo 'Ticketmaster discovery remains disabled because TICKETMASTER_API_KEY is absent.'
+          fi
+          if [[ -n "$effective_classictic_affiliate_id" ]]; then
+            args+=(--from-literal=CLASSICTIC_AFFILIATE_ID="$effective_classictic_affiliate_id")
+            echo 'Classictic discovery configured.'
+          else
+            echo 'Classictic discovery remains disabled because CLASSICTIC_AFFILIATE_ID is absent.'
           fi
           if [[ -n "$effective_deepseek_key" ]]; then
             args+=(--from-literal=DEEPSEEK_API_KEY="$effective_deepseek_key")
@@ -538,7 +546,7 @@ jobs:
             echo 'No running worker Pod was found.' >&2
           else
             kubectl -n "$NAMESPACE" exec "$worker_pod" -- node -e \
-              "console.log('TICKETMASTER_API_KEY=' + (process.env.TICKETMASTER_API_KEY ? 'configured' : 'missing'))"
+              "console.log('TICKETMASTER_API_KEY=' + (process.env.TICKETMASTER_API_KEY ? 'configured' : 'missing')); console.log('CLASSICTIC_AFFILIATE_ID=' + (process.env.CLASSICTIC_AFFILIATE_ID ? 'configured' : 'missing'))"
             echo 'Recent worker logs (bearer tokens and apikey query params redacted):'
             kubectl -n "$NAMESPACE" logs "$worker_pod" --since=24h --tail=300 \
               | sed -E 's/Bearer[[:space:]]+[A-Za-z0-9._~-]+/Bearer [REDACTED]/g; s/apikey=[A-Za-z0-9]+/apikey=[REDACTED]/g' \

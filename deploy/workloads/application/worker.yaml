@@ -53,6 +53,15 @@ spec:
                   name: application-integrations
                   key: TICKETMASTER_API_KEY
                   optional: true
+            # Classictic affiliate discovery (apps/worker/src/discovery/classictic.ts,
+            # classictic-ingest job) - same optional/absent-disables-cleanly shape
+            # as Ticketmaster above.
+            - name: CLASSICTIC_AFFILIATE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: CLASSICTIC_AFFILIATE_ID
+                  optional: true
             # DeepSeek (preferred) / OpenAI fallback for the event-classification
             # job (see apps/worker/src/jobs/event-classification.ts) - absent,
             # aiChat() returns null and the job skips classification this run.

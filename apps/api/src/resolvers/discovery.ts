@@ -1,3 +1,4 @@
+import { GraphQLError } from 'graphql';
 import { requireAuth } from '../middleware/auth.js';
 import type { GraphQLContext } from '../types.js';
 
@@ -82,6 +83,57 @@ export const discoveryResolvers = {
         take: safeLimit,
         orderBy: { startsAt: 'asc' },
       });
+    },
+
+    async myRecentlyViewedExternalEvents(_: unknown, { limit = 10 }: any, { prisma, user }: GraphQLContext) {
+      requireAuth(user);
+      const safeLimit = Math.max(1, Math.min(limit, 50));
+      return prisma.externalEventEngagement.findMany({
+        where: { userId: user.id },
+        orderBy: { lastViewedAt: 'desc' },
+        take: safeLimit,
+      });
+    },
+  },
+
+  Mutation: {
+    // Called when a student actually clicks through to an external event
+    // (e.g. "View tickets on Classictic") - upserts the engagement row so
+    // it shows up in "recently visited," bumping lastViewedAt on a repeat
+    // view rather than creating a duplicate row.
+    async recordExternalEventView(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
+      requireAuth(user);
+      const projection = await prisma.externalEventProjection.findUnique({ where: { id } });
+      if (!projection) throw new GraphQLError('Event not found.', { extensions: { code: 'NOT_FOUND' } });
+      return prisma.externalEventEngagement.upsert({
+        where: { userId_externalEventProjectionId: { userId: user.id, externalEventProjectionId: id } },
+        create: { userId: user.id, externalEventProjectionId: id },
+        update: { lastViewedAt: new Date() },
+      });
+    },
+
+    // Self-reported attendance, only allowed once the event has actually
+    // started - there's no scanned-ticket signal available for an external
+    // provider's event, this is the same trust level as any other
+    // self-attested confirmation. Gates leaving a review (see reviews.ts).
+    async confirmExternalEventAttendance(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
+      requireAuth(user);
+      const projection = await prisma.externalEventProjection.findUnique({ where: { id } });
+      if (!projection) throw new GraphQLError('Event not found.', { extensions: { code: 'NOT_FOUND' } });
+      if (projection.startsAt > new Date()) {
+        throw new GraphQLError('You can confirm attendance once the event has started.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      return prisma.externalEventEngagement.upsert({
+        where: { userId_externalEventProjectionId: { userId: user.id, externalEventProjectionId: id } },
+        create: { userId: user.id, externalEventProjectionId: id, attendanceConfirmedAt: new Date() },
+        update: { attendanceConfirmedAt: new Date() },
+      });
+    },
+  },
+
+  ExternalEventEngagement: {
+    async externalEventProjection(engagement: any, _: unknown, { prisma }: GraphQLContext) {
+      return prisma.externalEventProjection.findUnique({ where: { id: engagement.externalEventProjectionId } });
     },
   },
 };

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { gql, useQuery } from '@apollo/client';
+import { gql, useQuery, useMutation } from '@apollo/client';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { Calendar, CalendarX, Search, SlidersHorizontal, Sparkles, X } from 'lucide-react';
@@ -41,6 +41,21 @@ const GET_RECOMMENDED = gql`
       id provider title url imageUrl startsAt venueName city country
       minPrice maxPrice currency classifications attribution
       instruments musicStyles skillLevels
+    }
+  }
+`;
+
+// Fired when a signed-in student actually clicks through to an external
+// event - upserts an ExternalEventEngagement row so it shows up as
+// "recently visited" on their profile (see /profile's recently-viewed
+// section). Fire-and-forget: never blocks or delays the outbound
+// navigation, and a failure (e.g. a guest without a live session) is
+// silently ignored rather than surfaced as a broken link.
+const RECORD_EXTERNAL_EVENT_VIEW = gql`
+  mutation RecordExternalEventView($id: ID!) {
+    recordExternalEventView(id: $id) {
+      id
+      lastViewedAt
     }
   }
 `;
@@ -98,12 +113,13 @@ function formatPriceRange(minPrice: number | null, maxPrice: number | null, curr
   return cur ? `${cur} ${amount}` : amount;
 }
 
-function ExternalEventCard({ ext }: { ext: any }) {
+function ExternalEventCard({ ext, onView }: { ext: any; onView?: (id: string) => void }) {
   return (
     <a
       href={ext.url}
       target="_blank"
-      rel="noopener noreferrer"
+      rel="sponsored noopener noreferrer"
+      onClick={() => onView?.(ext.id)}
       className="card flex flex-col overflow-hidden p-0 transition hover:-translate-y-0.5 hover:border-primary-300"
     >
       {ext.imageUrl && <img src={ext.imageUrl} alt="" className="h-36 w-full object-cover" />}
@@ -161,6 +177,17 @@ export default function EventsPage() {
     skip: !liveApiEnabled,
   });
   const { data: recommendedData } = useQuery(GET_RECOMMENDED, { skip: !liveApiEnabled || !session });
+  const [recordExternalEventView] = useMutation(RECORD_EXTERNAL_EVENT_VIEW);
+  // Signed-out visitors can still browse and click through to external
+  // events (no engagement/"recently visited" tracking for them, since
+  // there's no profile to attach it to) - recordExternalEventView requires
+  // auth, so only wire the click handler when there's a live session.
+  const handleExternalEventView =
+    liveApiEnabled && session
+      ? (id: string) => {
+          recordExternalEventView({ variables: { id } }).catch(() => {});
+        }
+      : undefined;
 
   // Fallback demo data is only for when the live API genuinely can't be
   // reached (disabled in this environment, or the query errored) - a
@@ -209,7 +236,7 @@ export default function EventsPage() {
               Matched to your instruments and music styles.
             </p>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {recommended.map((ext) => <ExternalEventCard key={ext.id} ext={ext} />)}
+              {recommended.map((ext) => <ExternalEventCard key={ext.id} ext={ext} onView={handleExternalEventView} />)}
             </div>
           </div>
         )}
@@ -361,7 +388,7 @@ export default function EventsPage() {
               Discovered from external listings — purchase happens on the provider&rsquo;s own site.
             </p>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {externalEvents.map((ext) => <ExternalEventCard key={ext.id} ext={ext} />)}
+              {externalEvents.map((ext) => <ExternalEventCard key={ext.id} ext={ext} onView={handleExternalEventView} />)}
             </div>
           </div>
         )}

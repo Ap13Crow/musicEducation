@@ -48,6 +48,10 @@ enum QuizFeedbackMode {
 }
 
 enum BookingStatus {
+  // Also doubles as "awaiting the teacher's manual approval" (see
+  // TeacherProfile.autoApproveNewStudents/autoApproveRecurringStudents) -
+  // Booking.holdExpiresAt bounds how long a manual-approval request stays
+  // blocking the slot for other students while awaiting a decision.
   PENDING
   CONFIRMED
   CANCELLED
@@ -114,6 +118,15 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  // Opaque bearer token authenticating the read-only calendar subscription
+  // feed (GET /calendar/feed/:token.ics - see apps/api/src/lib/
+  // calendarFeed.ts). Calendar apps (Apple Calendar, Google Calendar,
+  // Outlook "subscribe from web") poll this URL directly with no session
+  // cookie and no OAuth, so the token itself is the credential - null until
+  // rotateCalendarFeedToken is first called, and replaceable any time the
+  // student/teacher wants to invalidate a previously shared link.
+  calendarFeedToken String? @unique
+
   credential         UserCredential?
   profile            UserProfile?
   teacherProfile     TeacherProfile?
@@ -135,6 +148,11 @@ model User {
   studentAvailability StudentAvailability[]
   quizAttempts        QuizAttempt[]
   xpAwards            XpAward[]
+  personalAppointments PersonalAppointment[]
+  lessonPackagePurchases LessonPackagePurchase[]
+  subscriptionPurchases  SubscriptionPurchase[]
+  externalEventEngagements ExternalEventEngagement[]
+  externalCalendarConnections ExternalCalendarConnection[]
 }
 
 model UserCredential {
@@ -153,6 +171,10 @@ model UserProfile {
   displayName    String?
   bio            String?
   avatarUrl      String?
+  // Optional second address for transactional email (booking confirmations,
+  // etc.), distinct from the account/login email (User.email). Outbox
+  // recipients are the unique set of both when both are present.
+  notificationEmail String?
   instruments    String[]
   musicStyles    String[]
   skillLevel     SkillLevel @default(BEGINNER)
@@ -187,16 +209,52 @@ model TeacherProfile {
   experienceYears    Int?
   introVideoUrl      String?
   introVideoVisible  Boolean  @default(true)
+  // Public professional photo shown on the teacher directory/profile to
+  // guests and other users - deliberately separate from UserProfile.avatarUrl
+  // (the private account avatar). Set via requestUploadUrl(purpose:
+  // TEACHER_PROFILE_IMAGE) + updateTeacherProfile, never reused from the
+  // account avatar automatically.
+  publicImageUrl     String?
+  // Was a hardcoded [] in the TeacherProfile.teachingFormats field resolver
+  // (users.ts) - schema.graphql and updateTeacherProfile's arg have existed
+  // since teachingFormats was added, but nothing ever stored or returned a
+  // real value. Free-form strings matching the BookingFormat vocabulary
+  // (IN_PERSON/ONLINE/HYBRID) rather than the enum itself, since a teacher
+  // may offer more than one.
+  teachingFormats    String[] @default([])
   // Stripe Connect Express account this teacher's share of course/booking/event
   // revenue is transferred to. Null until the teacher completes onboarding.
   stripeAccountId      String?  @unique
   stripePayoutsEnabled Boolean  @default(false)
+  // Advance-booking rule (0-7, validated in the resolver): 0 = open until
+  // 23:59 in the teacher's timezone on the day before the lesson; 1-7 =
+  // closes exactly that many x 24h before the lesson start. Enforced in
+  // both slot discovery and bookSession server-side, never only client UI.
+  leadDays Int @default(1)
+  // Cancellation rule (2-7, validated in the resolver): must be
+  // >= leadDays + 1 so a cancelled slot can still be rebooked under the
+  // lead-time rule. On-time releases the slot; late/no-show charges the
+  // full lesson price or consumes a credit (ledger/credit consumption is
+  // Phase 5 - this phase records the on-time/late determination itself).
+  cancellationDays Int @default(2)
+  // Separate auto/manual approval switches for a brand-new student vs a
+  // "recurring" one (has >=1 CONFIRMED/COMPLETED booking with this teacher
+  // already - see isRecurringStudent in bookings.ts). Both default to
+  // auto-approve, matching today's actual behavior before this migration.
+  autoApproveNewStudents      Boolean @default(true)
+  autoApproveRecurringStudents Boolean @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   user           User                   @relation(fields: [userId], references: [id])
   certifications TeacherCertification[]
   availability   TeacherAvailability[]
+  unavailability TeacherUnavailability[]
+  instrumentCapacities TeacherInstrumentCapacity[]
+  lessonPackageOffers  LessonPackageOffer[]
+  lessonPackagePurchases LessonPackagePurchase[]
+  subscriptionOffers   SubscriptionOffer[]
+  subscriptionPurchases SubscriptionPurchase[]
   courses        Course[]
   bookings       Booking[]
 }
@@ -238,6 +296,10 @@ model TeacherApplication {
   cvUrl           String?
   audioSampleUrl  String?
   documentUrls    String[]                  @default([])
+  // Public teacher photo (TEACHER_PROFILE_IMAGE purpose) - copied to
+  // TeacherProfile.publicImageUrl on approval. Deliberately separate from
+  // UserProfile.avatarUrl (the private account avatar).
+  imageUrl        String?
   // YouTube link, not an uploaded file - keeps the site light (see
   // apps/web/src/lib/youtube.ts). Required to apply; copied to
   // TeacherProfile.introVideoUrl on approval.
@@ -591,12 +653,162 @@ model Booking {
   zoomJoinUrl      String?
   zoomStartUrl     String?
   externalBookingId String?
+  // Incremented each time an ICS invitation is regenerated for this booking
+  // (confirm, later reschedule) - RFC 5545 requires SEQUENCE to increase on
+  // every update so a calendar client applies changes instead of treating a
+  // resend as a duplicate. Cancellation reuses the same UID/latest sequence
+  // with METHOD:CANCEL (see apps/api/src/lib/ics.ts).
+  icsSequence      Int           @default(0)
+  // Only set while status is AWAITING_APPROVAL - once passed, the hold no
+  // longer blocks the slot for other students (checked lazily in the
+  // conflict query, see bookings.ts) and the request is treated as expired
+  // rather than left blocking forever.
+  holdExpiresAt    DateTime?
+  // Set once, on cancellation: true = late (inside cancellationDays) or a
+  // no-show, false = on-time. Null until then. Phase 5 owns actually
+  // charging/consuming a credit off this determination; this phase records
+  // the determination itself.
+  lateCancellation Boolean?
+  // When set, this booking was made against a prepaid package credit
+  // instead of a one-off charge - see apps/api/src/lib/lessonCredits.ts.
+  // Plain column, no FK, same pattern as paymentId above.
+  packagePurchaseId String?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
   user           User           @relation(fields: [userId], references: [id])
   teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
   reviews        Review[]
+}
+
+// Independent per-instrument cap on a teacher's active (CONFIRMED/COMPLETED
+// booking having occurred) student count - e.g. violin max 3, piano
+// unlimited. maxActiveStudents null/absent = unlimited; an explicit 0 is a
+// real cap (fully booked out), never treated as unlimited.
+model TeacherInstrumentCapacity {
+  id               String   @id @default(cuid())
+  teacherProfileId String
+  instrument       String
+  maxActiveStudents Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+
+  @@unique([teacherProfileId, instrument])
+}
+
+enum UnavailabilityLabel {
+  UNAVAILABLE
+  PRIVATE_APPOINTMENT
+  HOLIDAY
+  VACATION
+  OTHER_UNAVAILABLE
+}
+
+// A teacher-declared block that overrides TeacherAvailability for a
+// specific date/time range - one-time only for now (see the comment on
+// Phase 3 scope in docs/development.md); recurring unavailability and full
+// RFC 5545 recurrence for both availability and unavailability is later
+// follow-up work, not implemented here. Overlapping this range removes it
+// from bookable slot discovery; an existing booking inside the range is
+// NOT auto-cancelled (see cancelBooking / the conflict check in
+// bookings.ts) - conflict resolution stays a manual, explicit teacher
+// action, never a silent cancellation of a paid booking.
+model TeacherUnavailability {
+  id               String              @id @default(cuid())
+  teacherProfileId String
+  startsAt         DateTime
+  endsAt           DateTime
+  // The only thing ever shown to students/guests - see the enum above.
+  // Never expose `note` (below) to anyone but the teacher/an admin.
+  label            UnavailabilityLabel @default(UNAVAILABLE)
+  // Private detail only the teacher (and an admin) can see - never
+  // resolved to students, matching the "never expose private appointment
+  // titles/descriptions" requirement.
+  note             String?
+  createdAt        DateTime            @default(now())
+
+  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+
+  @@index([teacherProfileId, startsAt, endsAt])
+}
+
+// A user's own private appointment - visible only to them, never to anyone
+// else including their own teacher/students. Distinct from Booking
+// (platform lesson) and TeacherUnavailability (a teacher's declared block);
+// this is personal calendar content that layers on top for the owning user
+// only.
+model PersonalAppointment {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  startsAt  DateTime
+  endsAt    DateTime
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, startsAt, endsAt])
+}
+
+// Phase 6 (scoped): the OAuth-backed direction of calendar sync (reading a
+// user's busy time FROM Google/Microsoft, to block their teacher
+// availability against events on their external calendar). This is the
+// schema/adapter *contract* only - CLAUDE.md's guardrail is deliberate
+// ("Google Calendar / Meet integration is intentionally not in scope for
+// now... do not add Google Calendar coupling unless a task explicitly
+// reintroduces it"), so a live OAuth flow, token storage, and background
+// sync are NOT implemented here. connectExternalCalendar
+// (apps/api/src/resolvers/externalCalendar.ts) always rejects with
+// NOT_CONFIGURED - there is no GOOGLE_CALENDAR_CLIENT_ID/
+// MICROSOFT_CALENDAR_CLIENT_ID anywhere in this codebase or deploy
+// manifests, and none should be fabricated. A row can only exist here once
+// that OAuth implementation is a separate, explicitly-scoped task.
+enum ExternalCalendarProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+enum ExternalCalendarConnectionStatus {
+  CONNECTED
+  ERROR
+}
+
+model ExternalCalendarConnection {
+  id                    String                            @id @default(cuid())
+  userId                String
+  provider              ExternalCalendarProvider
+  status                ExternalCalendarConnectionStatus   @default(CONNECTED)
+  externalAccountEmail  String?
+  // Deliberately no access/refresh token columns yet - there is no OAuth
+  // exchange in this codebase to produce one (see the model comment above).
+  // Add them alongside the real token-exchange implementation, not before.
+  lastSyncedAt          DateTime?
+  createdAt             DateTime                          @default(now())
+  updatedAt             DateTime                          @updatedAt
+
+  user          User                    @relation(fields: [userId], references: [id])
+  busyIntervals ExternalBusyInterval[]
+
+  @@unique([userId, provider])
+}
+
+// One synced "don't book me here" block from an external calendar. Never
+// populated today (see ExternalCalendarConnection above) - the shape exists
+// so a future real sync job has a landing table without a schema change.
+model ExternalBusyInterval {
+  id           String   @id @default(cuid())
+  connectionId String
+  startsAt     DateTime
+  endsAt       DateTime
+  fetchedAt    DateTime @default(now())
+
+  connection ExternalCalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId, startsAt])
 }
 
 model Event {
@@ -686,6 +898,189 @@ model Payment {
   @@unique([provider, providerRef])
 }
 
+// ── Phase 5 (scoped): prepaid lesson packages, upfront-term subscriptions,
+// course bundling. True monthly recurring billing (Stripe Subscription
+// objects with dunning/proration) is out of scope for this phase - both
+// product types here are single upfront Stripe Checkout payments, reusing
+// the existing createCheckoutSession/handleStripeWebhook type-dispatch
+// pattern rather than a second payment integration. See
+// apps/api/src/lib/pricing.ts for the discount/rounding math.
+
+// A teacher-published prepaid package offer (5/10/20 one-hour lessons).
+// Unpublishing/editing never touches existing LessonPackagePurchase rows -
+// every commercial term a student actually paid is snapshotted onto the
+// purchase at checkout time.
+model LessonPackageOffer {
+  id               String   @id @default(cuid())
+  teacherProfileId String
+  instrument       String?
+  lessonCount      Int
+  pricePerPackage  Decimal  @db.Decimal(10, 2)
+  currency         String   @default("CHF")
+  isPublished      Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  teacherProfile TeacherProfile          @relation(fields: [teacherProfileId], references: [id])
+  purchases      LessonPackagePurchase[]
+}
+
+// Snapshot of everything that mattered at checkout time - name/inclusions/
+// price/policy - so a later teacher edit to LessonPackageOffer or their
+// default leadDays/cancellationDays never retroactively changes what this
+// student already bought.
+model LessonPackagePurchase {
+  id                     String    @id @default(cuid())
+  userId                 String
+  teacherProfileId       String
+  offerId                String?
+  instrument             String?
+  lessonCount            Int
+  pricePaid              Decimal   @db.Decimal(10, 2)
+  currency               String
+  policyLeadDays         Int
+  policyCancellationDays Int
+  // Plain column, no FK - same pattern Booking.paymentId already uses
+  // (Payment has no reverse relation declared to keep this one-directional).
+  paymentId              String?   @unique
+  purchasedAt            DateTime  @default(now())
+
+  user           User                     @relation(fields: [userId], references: [id])
+  teacherProfile TeacherProfile           @relation(fields: [teacherProfileId], references: [id])
+  offer          LessonPackageOffer?      @relation(fields: [offerId], references: [id])
+  ledgerEntries  LessonCreditLedgerEntry[]
+}
+
+enum LessonCreditEntryType {
+  GRANT
+  CONSUME
+  RESTORE
+  EXPIRE
+  ADJUST
+}
+
+// Signed ledger, never mutated in place - the credit balance for a
+// purchase is always SUM(amount) over its entries (GRANT/RESTORE positive,
+// CONSUME/EXPIRE negative), auditable end to end. See
+// apps/api/src/lib/lessonCredits.ts.
+model LessonCreditLedgerEntry {
+  id         String                @id @default(cuid())
+  purchaseId String
+  type       LessonCreditEntryType
+  amount     Int
+  bookingId  String?
+  note       String?
+  createdAt  DateTime              @default(now())
+
+  purchase LessonPackagePurchase @relation(fields: [purchaseId], references: [id])
+
+  @@index([purchaseId])
+}
+
+// A teacher-published fixed-term subscription offer. termMonths is 6 or 12
+// (validated in the resolver); the upfront discount for each term is a
+// stored AdminSetting (subscription_discount_pct_6mo /
+// subscription_discount_pct_12mo, defaulting to 10/20) so the business can
+// change the default without touching any SubscriptionPurchase already
+// sold at the old rate.
+model SubscriptionOffer {
+  id                    String   @id @default(cuid())
+  teacherProfileId      String
+  includedHoursPerMonth Int
+  termMonths            Int
+  monthlyPrice          Decimal  @db.Decimal(10, 2)
+  currency              String   @default("CHF")
+  // Course entitlements bundled with this subscription - the existing
+  // Enrollment model is the actual entitlement; these ids just say which
+  // courses to enroll into on purchase.
+  includedCourseIds     String[] @default([])
+  isPublished           Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  teacherProfile TeacherProfile         @relation(fields: [teacherProfileId], references: [id])
+  purchases      SubscriptionPurchase[]
+}
+
+enum SubscriptionPurchaseStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+}
+
+model SubscriptionPurchase {
+  id                     String                     @id @default(cuid())
+  userId                 String
+  teacherProfileId       String
+  offerId                String?
+  termMonths             Int
+  includedHoursPerMonth  Int
+  monthlyPrice           Decimal                    @db.Decimal(10, 2)
+  discountPct            Int
+  totalPricePaid         Decimal                    @db.Decimal(10, 2)
+  currency               String
+  includedCourseIds      String[]                   @default([])
+  policyLeadDays         Int
+  policyCancellationDays Int
+  paymentId              String?                    @unique
+  status                 SubscriptionPurchaseStatus @default(ACTIVE)
+  startsAt               DateTime                   @default(now())
+  endsAt                 DateTime
+  cancelledAt            DateTime?
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id])
+  teacherProfile TeacherProfile  @relation(fields: [teacherProfileId], references: [id])
+  offer          SubscriptionOffer? @relation(fields: [offerId], references: [id])
+}
+
+enum MailOutboxStatus {
+  PENDING
+  SENT
+  FAILED
+  DEAD_LETTER
+}
+
+enum MailOutboxKind {
+  BOOKING_CONFIRMATION
+  BOOKING_CANCELLED
+}
+
+// Durable transactional-email outbox (see 021-mail-outbox.sql). A booking
+// mutation writes a row here in the same transaction as the booking change
+// it announces, instead of calling the SMTP relay synchronously - mail
+// delivery failure or slowness must never fail or block the booking itself.
+// apps/worker's mail-dispatch job polls PENDING/due rows and delivers with
+// retry/backoff; a message that exhausts maxAttempts becomes DEAD_LETTER,
+// which admins can see via Query.mailOutbox rather than the notification
+// silently vanishing.
+model MailOutboxMessage {
+  id            String           @id @default(cuid())
+  kind          MailOutboxKind
+  bookingId     String?
+  recipients    String[]
+  subject       String
+  html          String
+  // Optional RFC 5545 calendar invitation attached to this message (see
+  // apps/api/src/lib/ics.ts) - icsMethod is 'REQUEST' (create/update) or
+  // 'CANCEL', matching the VEVENT's own METHOD so calendar clients apply
+  // it correctly rather than just showing an .ics file attachment.
+  icsContent    String?
+  icsMethod     String?
+  status        MailOutboxStatus @default(PENDING)
+  attempts      Int              @default(0)
+  maxAttempts   Int              @default(8)
+  lastError     String?
+  nextAttemptAt DateTime         @default(now())
+  sentAt        DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([bookingId])
+}
+
 model FeedPost {
   id         String   @id @default(cuid())
   authorId   String
@@ -745,10 +1140,19 @@ model Review {
   isPublic  Boolean  @default(true)
   createdAt DateTime @default(now())
 
+  // A student's evaluation of an external (Classictic/Ticketmaster) event
+  // they attended - gated on ExternalEventEngagement.attendanceConfirmedAt
+  // being set first (see reviews.ts createReview), same spirit as
+  // bookingId requiring status COMPLETED above. Many different students
+  // can each review the same external event once - see the compound
+  // unique on ExternalEventEngagement instead of a plain unique column here.
+  externalEventProjectionId String?
+
   user    User     @relation(fields: [userId], references: [id])
   course  Course?  @relation(fields: [courseId], references: [id])
   event   Event?   @relation(fields: [eventId], references: [id])
   booking Booking? @relation(fields: [bookingId], references: [id])
+  externalEventProjection ExternalEventProjection? @relation(fields: [externalEventProjectionId], references: [id])
 }
 
 model AdminSetting {
@@ -811,4 +1215,31 @@ model ExternalEventProjection {
   @@index([startsAt])
   @@index([city])
   @@index([classifiedAt])
+
+  engagements ExternalEventEngagement[]
+  reviews     Review[]
+}
+
+// One row per (user, external event) - "recently visited" for a profile
+// page is just this ordered by lastViewedAt. attendanceConfirmedAt gates
+// leaving a Review (see reviews.ts); xpAwardedAt is a durable marker
+// alongside awardXpOnce's own idempotency guard, kept for admin
+// visibility into whether/when XP was actually granted for this event.
+model ExternalEventEngagement {
+  id                        String    @id @default(cuid())
+  userId                    String
+  externalEventProjectionId String
+  firstViewedAt             DateTime  @default(now())
+  lastViewedAt              DateTime  @default(now())
+  // Only settable once the event has actually started (see
+  // confirmExternalEventAttendance) - self-reported, same trust level as
+  // any other attendance confirmation without a scanned ticket.
+  attendanceConfirmedAt     DateTime?
+  xpAwardedAt               DateTime?
+
+  user                    User                    @relation(fields: [userId], references: [id])
+  externalEventProjection ExternalEventProjection @relation(fields: [externalEventProjectionId], references: [id])
+
+  @@unique([userId, externalEventProjectionId])
+  @@index([userId, lastViewedAt])
 }

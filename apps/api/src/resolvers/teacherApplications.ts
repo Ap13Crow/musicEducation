@@ -114,6 +114,9 @@ export const teacherApplicationResolvers = {
       const documentUrls: string[] | undefined = input.documentUrls !== undefined
         ? input.documentUrls.map((url: string) => requireOwnedUploadUrl(url, 'TEACHER_APPLICATION_DOCUMENT', user.id, 'Document'))
         : undefined;
+      const imageUrl = input.imageUrl !== undefined
+        ? (input.imageUrl ? requireOwnedUploadUrl(input.imageUrl, 'TEACHER_PROFILE_IMAGE', user.id, 'Photo') : null)
+        : undefined;
 
       // Upsert rather than create-only: a previously rejected applicant can
       // resubmit, which resets status to PENDING and clears the prior review.
@@ -132,6 +135,7 @@ export const teacherApplicationResolvers = {
           cvUrl,
           audioSampleUrl,
           documentUrls,
+          imageUrl,
           videoUrl: input.videoUrl,
         },
         update: {
@@ -146,6 +150,7 @@ export const teacherApplicationResolvers = {
           cvUrl,
           audioSampleUrl,
           documentUrls,
+          imageUrl,
           videoUrl: input.videoUrl,
           status: 'PENDING',
           reviewedBy: null,
@@ -194,15 +199,20 @@ export const teacherApplicationResolvers = {
               isAvailable: true,
               experienceYears: application.experienceYears,
               introVideoUrl: application.videoUrl,
+              publicImageUrl: application.imageUrl,
             },
-            // A resubmission-then-reapproval refreshes the bio/video (the
-            // teacher may have edited either) but leaves introVideoVisible
-            // alone - that's the teacher's own toggle, not something
-            // re-approval should silently reset.
+            // A resubmission-then-reapproval refreshes the bio/video/photo
+            // (the teacher may have edited any of them) but leaves
+            // introVideoVisible alone - that's the teacher's own toggle, not
+            // something re-approval should silently reset. Only overwrite
+            // publicImageUrl when the reapproved application actually has an
+            // image - never blank out a photo the teacher already has live
+            // just because a resubmission happened to omit it.
             update: {
               bio: combinedBio,
               experienceYears: application.experienceYears,
               introVideoUrl: application.videoUrl,
+              ...(application.imageUrl ? { publicImageUrl: application.imageUrl } : {}),
             },
           });
         }

@@ -1,11 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { gql, useMutation, useQuery } from '@apollo/client';
-import { BookOpen, Calendar, CalendarClock, CalendarPlus, CreditCard, User, UserRoundCheck, Video } from 'lucide-react';
+import { gql, useQuery } from '@apollo/client';
+import { BookOpen, Calendar, CalendarClock, CalendarPlus, CreditCard, User, UserRoundCheck } from 'lucide-react';
 import RoleGate from '@/components/auth/RoleGate';
-import { toYouTubeEmbedUrl } from '@/lib/youtube';
 
 const GET_TEACHER_BOOKINGS = gql`
   query TeacherBookings {
@@ -67,100 +65,6 @@ function UpcomingSessions() {
   );
 }
 
-const GET_PUBLIC_PROFILE = gql`
-  query TeacherPublicProfileSettings {
-    me {
-      id
-      teacherProfile { id headline teachingBio specializations introVideoUrl introVideoVisible }
-    }
-  }
-`;
-const UPDATE_TEACHER_PROFILE = gql`
-  mutation UpdateTeacherProfilePublicFields($headline: String, $teachingBio: String, $specializations: [String!], $introVideoVisible: Boolean) {
-    updateTeacherProfile(headline: $headline, teachingBio: $teachingBio, specializations: $specializations, introVideoVisible: $introVideoVisible) {
-      id headline teachingBio specializations introVideoUrl introVideoVisible
-    }
-  }
-`;
-
-function PublicProfileSettings() {
-  const { data, loading } = useQuery(GET_PUBLIC_PROFILE, { fetchPolicy: 'cache-and-network' });
-  const [update, { loading: saving }] = useMutation(UPDATE_TEACHER_PROFILE);
-  const profile = data?.me?.teacherProfile;
-  const [form, setForm] = useState({ headline: '', teachingBio: '', specializations: '' });
-  const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    if (!profile) return;
-    setForm({
-      headline: profile.headline ?? '',
-      teachingBio: profile.teachingBio ?? '',
-      specializations: (profile.specializations ?? []).join(', '),
-    });
-  }, [profile]);
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    setSaved(false);
-    await update({
-      variables: {
-        headline: form.headline.trim() || null,
-        teachingBio: form.teachingBio.trim() || null,
-        specializations: form.specializations.split(',').map((s) => s.trim()).filter(Boolean),
-      },
-    });
-    setSaved(true);
-  }
-
-  async function toggleVideoVisible() {
-    await update({ variables: { introVideoVisible: !profile.introVideoVisible } });
-  }
-
-  if (loading && !data) return null;
-
-  return (
-    <section className="card p-6">
-      <h2 className="flex items-center gap-2 font-semibold text-gray-900">
-        <UserRoundCheck className="h-4 w-4 text-primary-600" /> Public teacher profile
-      </h2>
-      <p className="mt-1 text-sm text-gray-500">What students see on your profile page — your name and photo come from your account settings.</p>
-      <form onSubmit={save} className="mt-4 space-y-3">
-        <label className="block text-sm font-medium">
-          Headline
-          <input className="input mt-1 w-full" value={form.headline} onChange={(e) => setForm({ ...form, headline: e.target.value })} />
-        </label>
-        <label className="block text-sm font-medium">
-          Self-presentation
-          <textarea rows={4} className="input mt-1 w-full" value={form.teachingBio} onChange={(e) => setForm({ ...form, teachingBio: e.target.value })} />
-        </label>
-        <label className="block text-sm font-medium">
-          Specializations
-          <input className="input mt-1 w-full" placeholder="Jazz, Classical, Music theory…" value={form.specializations} onChange={(e) => setForm({ ...form, specializations: e.target.value })} />
-        </label>
-        <div className="flex items-center gap-3">
-          <button disabled={saving} className="btn-primary rounded-lg px-4 py-2 text-sm">{saving ? 'Saving…' : 'Save'}</button>
-          {saved && <span className="text-xs text-green-700">Saved.</span>}
-        </div>
-      </form>
-
-      {profile?.introVideoUrl && (
-        <div className="mt-6 border-t border-gray-100 pt-6">
-          <h3 className="flex items-center gap-2 text-sm font-medium"><Video className="h-4 w-4" /> Presentation video</h3>
-          {toYouTubeEmbedUrl(profile.introVideoUrl) && (
-            <div className="mt-3 aspect-video overflow-hidden rounded-lg bg-gray-900">
-              <iframe className="h-full w-full" src={toYouTubeEmbedUrl(profile.introVideoUrl)!} title="Your presentation video" allowFullScreen />
-            </div>
-          )}
-          <label className="mt-3 flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={Boolean(profile.introVideoVisible)} onChange={() => void toggleVideoVisible()} />
-            Show this video on my public profile
-          </label>
-        </div>
-      )}
-    </section>
-  );
-}
-
 export default function TeacherWorkspacePage() {
   return (
     <RoleGate allow={['TEACHER', 'ADMIN']} callbackUrl="/dashboard/teacher">
@@ -176,14 +80,13 @@ export default function TeacherWorkspacePage() {
           </div>
         </section>
         <div className="mx-auto grid max-w-6xl gap-4 px-6 py-8 md:grid-cols-4">
-          <WorkspaceCard href="/dashboard/profile" icon={<UserRoundCheck />} title="Teacher profile" text="Complete your public teaching profile and instruments." />
+          <WorkspaceCard href="/dashboard/teacher/profile" icon={<UserRoundCheck />} title="Teacher profile" text="Complete your public teaching profile, photo and instruments." />
           <WorkspaceCard href="/dashboard/teacher/availability" icon={<CalendarClock />} title="Lesson availability" text="Publish the recurring times students can book." />
           <WorkspaceCard href="/dashboard/teacher/content" icon={<BookOpen />} title="Theory studio" text="Create and publish native courses." />
           <WorkspaceCard href="/dashboard/teacher/content/performance" icon={<CalendarPlus />} title="Performance studio" text="Create and publish events." />
           <WorkspaceCard href="/dashboard/teacher/payouts" icon={<CreditCard />} title="Payouts" text="Connect Stripe to receive your share of sales." />
         </div>
         <div className="mx-auto max-w-6xl space-y-6 px-6 pb-10">
-          <PublicProfileSettings />
           <UpcomingSessions />
         </div>
       </main>

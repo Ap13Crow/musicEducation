@@ -7,6 +7,7 @@ import {
   User, Mail, MapPin, Music, Globe, Edit3, Save, X,
   Trophy, Flame, GraduationCap, Star, Lock,
   ExternalLink, CheckCircle, AlertCircle, Phone, ImagePlus, Calendar,
+  Ticket, Copy, RefreshCw,
 } from 'lucide-react';
 import { externalLinks, keycloakAccountUrl, keycloakAdminUrl, keycloakSigningInUrl } from '@/lib/external-links';
 
@@ -62,6 +63,54 @@ const UPDATE_PROFILE = gql`
   }
 `;
 
+// "Recently visited" -> "confirm participation" -> "evaluate" -> XP credited.
+// See apps/api/src/resolvers/discovery.ts / reviews.ts.
+const GET_RECENTLY_VIEWED_EVENTS = gql`
+  query GetRecentlyViewedEvents {
+    myRecentlyViewedExternalEvents(limit: 10) {
+      id
+      lastViewedAt
+      attendanceConfirmedAt
+      xpAwardedAt
+      externalEventProjection {
+        id title url provider startsAt venueName city
+      }
+    }
+  }
+`;
+
+// Calendar sync (Phase 6, scoped) - a provider-agnostic ICS subscription
+// feed (works in Apple Calendar, Google Calendar, and Outlook, all via
+// "subscribe from URL", no OAuth). See docs/integration-architecture.md.
+const GET_CALENDAR_FEED_TOKEN = gql`
+  query GetCalendarFeedToken {
+    myCalendarFeedToken
+  }
+`;
+
+const ROTATE_CALENDAR_FEED_TOKEN = gql`
+  mutation RotateCalendarFeedToken {
+    rotateCalendarFeedToken
+  }
+`;
+
+const CONFIRM_EXTERNAL_EVENT_ATTENDANCE = gql`
+  mutation ConfirmExternalEventAttendance($id: ID!) {
+    confirmExternalEventAttendance(id: $id) {
+      id
+      attendanceConfirmedAt
+    }
+  }
+`;
+
+const EVALUATE_EXTERNAL_EVENT = gql`
+  mutation EvaluateExternalEvent($input: CreateReviewInput!) {
+    createReview(input: $input) {
+      id
+    }
+  }
+`;
+
 type EditState = {
   displayName: string;
   bio: string;
@@ -97,6 +146,17 @@ export default function ProfilePage() {
   });
   const [updateProfile, { loading: saving, error: saveError }] = useMutation(UPDATE_PROFILE);
 
+  const { data: recentlyViewedData, loading: recentlyViewedLoading, refetch: refetchRecentlyViewed } = useQuery(
+    GET_RECENTLY_VIEWED_EVENTS,
+    { skip: !liveApiEnabled, fetchPolicy: 'network-only' },
+  );
+  const [confirmAttendance, { loading: confirming }] = useMutation(CONFIRM_EXTERNAL_EVENT_ATTENDANCE);
+  const [evaluateEvent, { loading: evaluating }] = useMutation(EVALUATE_EXTERNAL_EVENT);
+
+  const { data: feedTokenData, refetch: refetchFeedToken } = useQuery(GET_CALENDAR_FEED_TOKEN, { skip: !liveApiEnabled });
+  const [rotateFeedToken, { loading: rotatingFeedToken }] = useMutation(ROTATE_CALENDAR_FEED_TOKEN);
+  const [feedLinkCopied, setFeedLinkCopied] = useState(false);
+
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -105,10 +165,20 @@ export default function ProfilePage() {
     displayName: '', bio: '', city: '', country: '', timezone: 'Europe/Zurich',
     instruments: [], musicStyles: '',
   });
+  // Which recently-viewed event currently has its evaluation form open, and
+  // the in-progress rating/comment for it - keyed by the external event's
+  // projection id (not the engagement row), since that's what createReview
+  // takes.
+  const [evaluatingEventId, setEvaluatingEventId] = useState<string | null>(null);
+  const [evaluationRating, setEvaluationRating] = useState(5);
+  const [evaluationComment, setEvaluationComment] = useState('');
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [engagementError, setEngagementError] = useState('');
 
   const me = data?.me;
   const bookings = data?.myBookings ?? [];
   const enrollments = me?.enrollments?.nodes ?? [];
+  const recentlyViewedEvents = recentlyViewedData?.myRecentlyViewedExternalEvents ?? [];
   const latestAssessment = [...(data?.myAssessments ?? [])]
     .filter((a: any) => a.completedAt)
     .sort((a: any, b: any) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())[0] ?? null;
@@ -203,6 +273,71 @@ export default function ProfilePage() {
       setTimeout(() => setSaved(false), 3000);
     } catch {
       // saveError is shown inline
+    }
+  }
+
+  const calendarFeedToken = feedTokenData?.myCalendarFeedToken ?? null;
+  const calendarFeedUrl =
+    calendarFeedToken && typeof window !== 'undefined'
+      ? `${window.location.origin}/api/calendar/feed/${calendarFeedToken}.ics`
+      : null;
+
+  async function handleRotateFeedToken() {
+    await rotateFeedToken();
+    await refetchFeedToken();
+    setFeedLinkCopied(false);
+  }
+
+  async function handleCopyFeedUrl() {
+    if (!calendarFeedUrl) return;
+    try {
+      await navigator.clipboard.writeText(calendarFeedUrl);
+      setFeedLinkCopied(true);
+      setTimeout(() => setFeedLinkCopied(false), 2500);
+    } catch {
+      // Clipboard API unavailable (e.g. insecure context) - the URL is
+      // still visible and selectable in the input below.
+    }
+  }
+
+  async function handleConfirmAttendance(externalEventProjectionId: string) {
+    setEngagementError('');
+    setConfirmingId(externalEventProjectionId);
+    try {
+      await confirmAttendance({ variables: { id: externalEventProjectionId } });
+      await refetchRecentlyViewed();
+    } catch (error) {
+      setEngagementError(error instanceof Error ? error.message : 'Could not confirm attendance.');
+    } finally {
+      setConfirmingId(null);
+    }
+  }
+
+  function startEvaluation(externalEventProjectionId: string) {
+    setEvaluatingEventId(externalEventProjectionId);
+    setEvaluationRating(5);
+    setEvaluationComment('');
+    setEngagementError('');
+  }
+
+  async function submitEvaluation() {
+    if (!evaluatingEventId) return;
+    setEngagementError('');
+    try {
+      await evaluateEvent({
+        variables: {
+          input: {
+            rating: evaluationRating,
+            comment: evaluationComment.trim() || null,
+            externalEventProjectionId: evaluatingEventId,
+            isPublic: true,
+          },
+        },
+      });
+      setEvaluatingEventId(null);
+      await refetchRecentlyViewed();
+    } catch (error) {
+      setEngagementError(error instanceof Error ? error.message : 'Could not save your evaluation.');
     }
   }
 
@@ -504,6 +639,106 @@ export default function ProfilePage() {
                 </ul>
               )}
             </section>
+
+            {/* Recently visited external events (Ticketmaster/Classictic
+                discovery) - view -> confirm participation -> evaluate ->
+                XP credited. See GET_RECENTLY_VIEWED_EVENTS above. */}
+            {liveApiEnabled && (recentlyViewedLoading || recentlyViewedEvents.length > 0) && (
+              <section className="card p-6">
+                <h2 className="mb-4 flex items-center gap-2 font-semibold text-gray-900">
+                  <Ticket className="h-4 w-4 text-primary-600" /> Recently visited events
+                </h2>
+                {engagementError && (
+                  <div className="mb-3 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" /> {engagementError}
+                  </div>
+                )}
+                {recentlyViewedLoading ? (
+                  <div className="space-y-3">
+                    {[1, 2].map(i => <div key={i} className="h-16 animate-pulse rounded-lg bg-gray-100" />)}
+                  </div>
+                ) : (
+                  <ul className="space-y-3">
+                    {(recentlyViewedEvents as any[]).map((engagement: any) => {
+                      const ev = engagement.externalEventProjection;
+                      if (!ev) return null;
+                      const hasStarted = new Date(ev.startsAt).getTime() <= Date.now();
+                      const isEvaluating = evaluatingEventId === ev.id;
+                      return (
+                        <li key={engagement.id} className="rounded-lg border border-gray-100 p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <a href={ev.url} target="_blank" rel="sponsored noopener noreferrer"
+                                className="truncate text-sm font-medium text-gray-900 hover:text-primary-700">
+                                {ev.title}
+                              </a>
+                              <p className="mt-0.5 truncate text-xs text-gray-500">
+                                {[ev.city ?? ev.venueName, new Date(ev.startsAt).toLocaleDateString(undefined, { dateStyle: 'medium' })].filter(Boolean).join(' · ')}
+                              </p>
+                            </div>
+                            {engagement.xpAwardedAt ? (
+                              <span className="flex shrink-0 items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+                                <CheckCircle className="h-3 w-3" /> Evaluated · +40 XP
+                              </span>
+                            ) : engagement.attendanceConfirmedAt ? (
+                              <button
+                                onClick={() => startEvaluation(ev.id)}
+                                className="shrink-0 rounded-full border border-primary-200 bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100"
+                              >
+                                Evaluate
+                              </button>
+                            ) : hasStarted ? (
+                              <button
+                                onClick={() => handleConfirmAttendance(ev.id)}
+                                disabled={confirming && confirmingId === ev.id}
+                                className="shrink-0 rounded-full border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                              >
+                                {confirming && confirmingId === ev.id ? 'Confirming…' : 'Confirm participation'}
+                              </button>
+                            ) : (
+                              <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-500">Visited</span>
+                            )}
+                          </div>
+
+                          {isEvaluating && (
+                            <div className="mt-3 space-y-2 rounded-lg border border-gray-100 bg-gray-50 p-3">
+                              <div className="flex items-center gap-1">
+                                {[1, 2, 3, 4, 5].map((n) => (
+                                  <button
+                                    key={n}
+                                    type="button"
+                                    onClick={() => setEvaluationRating(n)}
+                                    aria-label={`${n} star${n === 1 ? '' : 's'}`}
+                                    className="p-0.5"
+                                  >
+                                    <Star className={`h-5 w-5 ${n <= evaluationRating ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`} />
+                                  </button>
+                                ))}
+                              </div>
+                              <textarea
+                                className="input w-full text-sm"
+                                rows={2}
+                                placeholder="How was it? (optional)"
+                                value={evaluationComment}
+                                onChange={(e) => setEvaluationComment(e.target.value)}
+                              />
+                              <div className="flex gap-2">
+                                <button onClick={submitEvaluation} disabled={evaluating} className="btn-primary rounded-lg px-3 py-1.5 text-xs disabled:opacity-60">
+                                  {evaluating ? 'Saving…' : 'Submit evaluation'}
+                                </button>
+                                <button onClick={() => setEvaluatingEventId(null)} className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+            )}
           </div>
 
           {/* ── Right column: stats + security ── */}
@@ -609,6 +844,51 @@ export default function ProfilePage() {
                 Password, MFA, and linked accounts are managed via your identity provider.
               </p>
             </section>
+
+            {/* Calendar sync - a provider-agnostic ICS subscription feed
+                (Apple Calendar, Google Calendar, and Outlook all support
+                "subscribe from URL" with no OAuth). See
+                docs/integration-architecture.md. */}
+            {liveApiEnabled && (
+              <section className="card p-6">
+                <h2 className="mb-4 flex items-center gap-2 font-semibold text-gray-900">
+                  <Calendar className="h-4 w-4 text-primary-600" /> Calendar sync
+                </h2>
+                <p className="mb-3 text-xs text-gray-500">
+                  Subscribe to this link in Apple Calendar, Google Calendar, or Outlook to see your booked lessons and personal appointments automatically.
+                </p>
+                {calendarFeedUrl ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        readOnly
+                        value={calendarFeedUrl}
+                        onFocus={(e) => e.currentTarget.select()}
+                        className="input w-full truncate text-xs text-gray-600"
+                      />
+                      <button
+                        onClick={handleCopyFeedUrl}
+                        title="Copy link"
+                        className="flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
+                      >
+                        <Copy className="h-3.5 w-3.5" /> {feedLinkCopied ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                    <button
+                      onClick={handleRotateFeedToken}
+                      disabled={rotatingFeedToken}
+                      className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline disabled:opacity-60"
+                    >
+                      <RefreshCw className="h-3 w-3" /> {rotatingFeedToken ? 'Regenerating…' : 'Regenerate link (invalidates the old one)'}
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={handleRotateFeedToken} disabled={rotatingFeedToken} className="btn-secondary flex items-center gap-2 rounded-lg px-4 py-2 text-sm disabled:opacity-60">
+                    <Calendar className="h-4 w-4" /> {rotatingFeedToken ? 'Generating…' : 'Get my calendar link'}
+                  </button>
+                )}
+              </section>
+            )}
 
             {/* Quick links to pillars */}
             <section className="card p-6">

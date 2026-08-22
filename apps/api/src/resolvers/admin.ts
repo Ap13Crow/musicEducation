@@ -1,3 +1,4 @@
+import { GraphQLError } from 'graphql';
 import { requireRole } from '../middleware/auth.js';
 import type { GraphQLContext } from '../types.js';
 
@@ -30,6 +31,16 @@ export const adminResolvers = {
     async adminSettings(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
       requireRole(user, 'ADMIN');
       return prisma.adminSetting.findMany();
+    },
+
+    async mailOutbox(_: unknown, { status, limit = 100 }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'ADMIN');
+      const safeLimit = Math.max(1, Math.min(limit, 200));
+      return prisma.mailOutboxMessage.findMany({
+        where: status ? { status } : undefined,
+        orderBy: { createdAt: 'desc' },
+        take: safeLimit,
+      });
     },
 
     async adminStats(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
@@ -80,6 +91,16 @@ export const adminResolvers = {
         where: { key },
         create: { key, value },
         update: { value },
+      });
+    },
+
+    async retryMailOutboxMessage(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'ADMIN');
+      const message = await prisma.mailOutboxMessage.findUnique({ where: { id } });
+      if (!message) throw new GraphQLError('Mail message not found.', { extensions: { code: 'NOT_FOUND' } });
+      return prisma.mailOutboxMessage.update({
+        where: { id },
+        data: { status: 'PENDING', attempts: 0, lastError: null, nextAttemptAt: new Date() },
       });
     },
 
