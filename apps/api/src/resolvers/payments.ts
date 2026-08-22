@@ -173,10 +173,27 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
         });
       }
     } else if (type === 'booking') {
-      await prisma.booking.update({ where: { id: refId }, data: { paymentId: payment.id, status: 'CONFIRMED' } });
-      if (await claimConfirmationEmail()) {
-        void notifyBookingConfirmed(prisma, refId!);
-      }
+      // Unlike the course/event branches above, notifyBookingConfirmed
+      // doesn't call SMTP itself - it only writes a MailOutboxMessage row
+      // (the worker's mail-dispatch job does the actual send later), so
+      // there's no external round-trip forcing a fire-and-forget/non-atomic
+      // shape here. The booking-status transition and the outbox claim+write
+      // run in one transaction, exactly like every other confirm path in
+      // bookings.ts (bookSession/confirmBooking) - a crash between them rolls
+      // both back, so a Stripe retry re-claims and re-enqueues instead of
+      // silently losing the email (the accepted gap documented on
+      // claimConfirmationEmail above is specific to the course/event
+      // branches' real SMTP call, not this one).
+      await prisma.$transaction(async (tx) => {
+        await tx.booking.update({ where: { id: refId }, data: { paymentId: payment.id, status: 'CONFIRMED' } });
+        const claimed = await tx.payment.updateMany({
+          where: { id: payment.id, confirmationEmailAt: null },
+          data: { confirmationEmailAt: new Date() },
+        });
+        if (claimed.count > 0) {
+          await notifyBookingConfirmed(tx, refId!);
+        }
+      });
     } else if (type === 'event') {
       await prisma.eventBooking.upsert({
         where: { userId_eventId: { userId: userId!, eventId: refId! } },
