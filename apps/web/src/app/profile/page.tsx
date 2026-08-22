@@ -22,7 +22,7 @@ const GET_PROFILE = gql`
     me {
       id email username displayName role avatarUrl
       profile {
-        bio city country timezone
+        bio city country timezone notificationEmail
         instruments musicStyles onboardingDone
       }
       teacherProfile {
@@ -57,7 +57,7 @@ const UPDATE_PROFILE = gql`
     updateProfile(input: $input) {
       id displayName
       profile {
-        bio city country timezone instruments musicStyles
+        bio city country timezone instruments musicStyles notificationEmail
       }
     }
   }
@@ -119,6 +119,7 @@ type EditState = {
   timezone: string;
   instruments: string[];
   musicStyles: string;
+  notificationEmail: string;
 };
 
 const SKILL_LABELS: Record<string, string> = {
@@ -163,7 +164,7 @@ export default function ProfilePage() {
   const [photoError, setPhotoError] = useState('');
   const [edit, setEdit] = useState<EditState>({
     displayName: '', bio: '', city: '', country: '', timezone: 'Europe/Zurich',
-    instruments: [], musicStyles: '',
+    instruments: [], musicStyles: '', notificationEmail: '',
   });
   // Which recently-viewed event currently has its evaluation form open, and
   // the in-progress rating/comment for it - keyed by the external event's
@@ -204,6 +205,7 @@ export default function ProfilePage() {
       timezone: me?.profile?.timezone ?? 'Europe/Zurich',
       instruments: me?.profile?.instruments ?? [],
       musicStyles: (me?.profile?.musicStyles ?? []).join(', '),
+      notificationEmail: me?.profile?.notificationEmail ?? '',
     });
     setEditing(true);
     setSaved(false);
@@ -261,6 +263,7 @@ export default function ProfilePage() {
             timezone: edit.timezone,
             instruments: edit.instruments,
             musicStyles,
+            notificationEmail: edit.notificationEmail.trim(),
           },
         },
       });
@@ -453,6 +456,15 @@ export default function ProfilePage() {
                   value={email} editing={false}
                   editNode={<span className="text-sm text-gray-500">{email}</span>}
                   hint="Managed by your identity provider" />
+
+                <Field label="Notification email" icon={<Mail className="h-4 w-4" />}
+                  editing={editing} value={me?.profile?.notificationEmail || '—'}
+                  editNode={
+                    <input type="email" className="input w-full" value={edit.notificationEmail}
+                      placeholder="Optional - leave blank to use your account email only"
+                      onChange={e => setEdit(p => ({ ...p, notificationEmail: e.target.value }))} />
+                  }
+                  hint="Also gets a copy of booking confirmations, cancellations, and calendar invites" />
 
                 <Field label="Biography" icon={<Edit3 className="h-4 w-4" />}
                   editing={editing} value={me?.profile?.bio ?? '—'}

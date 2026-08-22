@@ -17,6 +17,7 @@ const UPDATE_LESSON=gql`mutation UpdateLesson($id:ID!,$input:UpdateLessonInput!)
 const DELETE_LESSON=gql`mutation DeleteLesson($id:ID!){deleteLesson(id:$id)}`;
 const PUBLISH=gql`mutation PublishBuilderCourse($id:ID!){publishCourse(id:$id){id status}}`;
 const ARCHIVE=gql`mutation ArchiveBuilderCourse($id:ID!){archiveCourse(id:$id){id status}}`;
+const UNARCHIVE=gql`mutation UnarchiveBuilderCourse($id:ID!){unarchiveCourse(id:$id){id status}}`;
 const ADD_QUIZ_QUESTION=gql`mutation AddQuizQuestion($input:CreateQuizQuestionInput!){createQuizQuestion(input:$input){id}}`;
 const DELETE_QUIZ_QUESTION=gql`mutation DeleteQuizQuestion($id:ID!){deleteQuizQuestion(id:$id)}`;
 const GET_ENROLLMENTS=gql`query CourseEnrollmentsForBuilder($courseId:ID!){courseEnrollments(courseId:$courseId,limit:200){nodes{id progress completedAt user{id profile{displayName}}}}}`;
@@ -37,7 +38,7 @@ export default function CourseBuilderPage(){
  const {courseId}=useParams<{courseId:string}>();const {data,loading,error,refetch}=useQuery(GET,{variables:{id:courseId}});
  const router=useRouter();
  const [update,{loading:saving}]=useMutation(UPDATE);const [addSection]=useMutation(ADD_SECTION);const [deleteSection]=useMutation(DELETE_SECTION);
- const [archive,{loading:archiving}]=useMutation(ARCHIVE);
+ const [archive,{loading:archiving}]=useMutation(ARCHIVE);const [unarchive,{loading:unarchiving}]=useMutation(UNARCHIVE);
  const [addLesson]=useMutation(ADD_LESSON);const [updateLesson]=useMutation(UPDATE_LESSON);const [deleteLesson]=useMutation(DELETE_LESSON);const [publish]=useMutation(PUBLISH);
  const [addQuizQuestion]=useMutation(ADD_QUIZ_QUESTION);const [deleteQuizQuestion]=useMutation(DELETE_QUIZ_QUESTION);
  const [requestUploadUrl]=useMutation(REQUEST_UPLOAD_URL);const [addLessonSlide]=useMutation(ADD_LESSON_SLIDE);const [deleteLessonSlide]=useMutation(DELETE_LESSON_SLIDE);const [reorderLessonSlides]=useMutation(REORDER_LESSON_SLIDES);
@@ -52,9 +53,13 @@ export default function CourseBuilderPage(){
  useEffect(()=>{const course=data?.course;if(course)setForm({title:course.title,description:course.description??'',shortSummary:course.shortSummary??'',level:course.level,price:String(course.price),currency:course.currency,language:course.language,instruments:(course.instruments??[]).join(', '),musicStyles:(course.musicStyles??[]).join(', '),thumbnailUrl:course.thumbnailUrl??''});},[data]);
  const course=data?.course;
  async function archiveCourse(){
-  if(!confirm('Archive this course? It will be removed from discovery and your course list, but existing enrollments, progress, and payment records stay intact.'))return;
+  if(!confirm('Archive this course? It will be removed from discovery, but stays in your course list (marked Archived, with an option to restore it) and existing enrollments, progress, and payment records stay intact.'))return;
   await archive({variables:{id:courseId}});
   router.push('/dashboard/teacher/content');
+ }
+ async function unarchiveCourse(){
+  await unarchive({variables:{id:courseId}});
+  await refetch();
  }
  async function saveCourse(e:React.FormEvent){e.preventDefault();await update({variables:{id:courseId,input:{title:form.title.trim(),description:form.description.trim()||null,shortSummary:form.shortSummary.trim()||null,level:form.level,price:Number(form.price),currency:form.currency,language:form.language,instruments:form.instruments.split(',').map(v=>v.trim()).filter(Boolean),musicStyles:form.musicStyles.split(',').map(v=>v.trim()).filter(Boolean),thumbnailUrl:form.thumbnailUrl.trim()||null,isFreeTier:Number(form.price)===0}}});await refetch();}
  async function createSection(e:React.FormEvent){e.preventDefault();if(!sectionTitle.trim())return;await addSection({variables:{input:{courseId,title:sectionTitle.trim(),order:course.sections?.length??0}}});setSectionTitle('');await refetch();}
@@ -107,7 +112,7 @@ export default function CourseBuilderPage(){
  }
  return <RoleGate allow={['TEACHER','ADMIN']} callbackUrl={`/dashboard/teacher/courses/${courseId}`}><main className="mx-auto max-w-6xl px-6 py-10">
   <Link href="/dashboard/teacher/content" className="text-sm text-primary-700">← Theory studio</Link>{loading?<p className="mt-8">Loading…</p>:error||!course?<p className="mt-8 text-red-600">{error?.message??'Course not found.'}</p>:<>
-  <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div><h1 className="font-serif text-3xl font-bold">Course builder</h1><p className="text-sm text-gray-600">{course.status} · /courses/{course.slug}</p></div><div className="flex items-center gap-3">{course.status==='DRAFT'&&<button className="btn-primary rounded-lg px-4 py-2" onClick={async()=>{await publish({variables:{id:courseId}});await refetch();}}>Publish course</button>}{course.status!=='ARCHIVED'&&<button disabled={archiving} className="inline-flex items-center gap-2 rounded-lg border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50" onClick={()=>void archiveCourse()}><Trash2 className="h-4 w-4"/>{archiving?'Archiving…':'Archive course'}</button>}</div></div>
+  <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div><h1 className="font-serif text-3xl font-bold">Course builder</h1><p className="text-sm text-gray-600">{course.status} · /courses/{course.slug}</p></div><div className="flex items-center gap-3">{course.status==='DRAFT'&&<button className="btn-primary rounded-lg px-4 py-2" onClick={async()=>{await publish({variables:{id:courseId}});await refetch();}}>Publish course</button>}{course.status!=='ARCHIVED'&&<button disabled={archiving} className="inline-flex items-center gap-2 rounded-lg border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50" onClick={()=>void archiveCourse()}><Trash2 className="h-4 w-4"/>{archiving?'Archiving…':'Archive course'}</button>}{course.status==='ARCHIVED'&&<button disabled={unarchiving} className="inline-flex items-center gap-2 rounded-lg border border-primary-300 px-4 py-2 text-sm text-primary-700 hover:bg-primary-50" onClick={()=>void unarchiveCourse()}>{unarchiving?'Restoring…':'Restore to draft'}</button>}</div></div>
   <form onSubmit={saveCourse} className="card mt-8 space-y-4 p-6"><h2 className="text-xl font-semibold">Course information</h2>
    <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Title<input className="input mt-1 w-full" required value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/></label><label className="text-sm font-medium">Short summary<input className="input mt-1 w-full" value={form.shortSummary} onChange={e=>setForm({...form,shortSummary:e.target.value})}/></label></div>
    <label className="block text-sm font-medium">Description<textarea rows={5} className="input mt-1 w-full" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></label>
