@@ -17,6 +17,31 @@ describe('Review.comment field resolver', () => {
   });
 });
 
+describe('Query.reviews', () => {
+  it('filters to public reviews for exactly the given courseId/eventId/bookingId, paginating like the nested Course.reviews/Event.reviews resolvers', async () => {
+    const findMany = jest.fn().mockResolvedValue([{ id: 'review-1' }]);
+    const count = jest.fn().mockResolvedValue(1);
+    const prisma = fakePrisma({ review: { findMany, count } });
+
+    const result = await (reviewResolvers as any).Query.reviews(null, { courseId: 'course-1' }, { prisma } as any);
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { isPublic: true, courseId: 'course-1' } }),
+    );
+    expect(result.nodes).toEqual([{ id: 'review-1' }]);
+    expect(result.pageInfo.totalCount).toBe(1);
+  });
+
+  it('works unauthenticated (no requireAuth call) - it is a public browsing query, same as Course.reviews', async () => {
+    const prisma = fakePrisma({
+      review: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
+    });
+    await expect(
+      (reviewResolvers as any).Query.reviews(null, { eventId: 'event-1' }, { prisma } as any),
+    ).resolves.toBeDefined();
+  });
+});
+
 describe('createReview - comment persistence', () => {
   it('saves input.comment into the DB column `body`', async () => {
     const create = jest.fn().mockResolvedValue({ id: 'review-3' });

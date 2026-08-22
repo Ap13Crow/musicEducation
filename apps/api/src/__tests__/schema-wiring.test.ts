@@ -17,7 +17,7 @@ process.env.JWT_SECRET = 'test-secret-key-for-unit-tests';
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { graphql } from 'graphql';
+import { graphql, isObjectType } from 'graphql';
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import { resolvers } from '../resolvers/index';
 
@@ -67,5 +67,37 @@ describe('index.ts wires the complete resolvers/index.ts map', () => {
       contextValue: { prisma: fakePrisma(), user: { id: 'student-1', role: 'STUDENT' } },
     });
     expect(result.errors?.[0]?.message).toMatch(/FORBIDDEN/);
+  });
+});
+
+// Phase 8 release-readiness audit: a Query/Mutation field declared in the
+// SDL with no matching entry in the merged resolver map falls back to the
+// same "read a same-named property off an empty root value" trap described
+// above - it just hasn't been hit by a real query yet. Caught
+// Query.reviews exactly this way (declared `ReviewConnection!`, no
+// resolver at all, invisible because the current frontend only ever reads
+// the nested Course.reviews/Event.reviews fields instead). This test
+// fails loudly the moment a future schema.graphql edit outruns its
+// resolver, rather than waiting for a client to discover it.
+describe('every root Query/Mutation field has a matching resolver', () => {
+  it('has no field in the SDL without a resolver function, and no resolver for a field the SDL no longer declares', () => {
+    const missing: string[] = [];
+    const orphaned: string[] = [];
+
+    for (const typeName of ['Query', 'Mutation'] as const) {
+      const type = schema.getType(typeName);
+      const sdlFields = type && isObjectType(type) ? type.getFields() : {};
+      const resolverMap = (resolvers as any)[typeName] ?? {};
+
+      for (const fieldName of Object.keys(sdlFields)) {
+        if (typeof resolverMap[fieldName] !== 'function') missing.push(`${typeName}.${fieldName}`);
+      }
+      for (const fieldName of Object.keys(resolverMap)) {
+        if (!(fieldName in sdlFields)) orphaned.push(`${typeName}.${fieldName}`);
+      }
+    }
+
+    expect(missing).toEqual([]);
+    expect(orphaned).toEqual([]);
   });
 });
