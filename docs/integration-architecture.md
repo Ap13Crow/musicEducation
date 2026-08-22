@@ -22,7 +22,7 @@ never a second source of truth for platform state:
 | **Keycloak** | Sole identity provider (OIDC) | `apps/api/src/middleware/keycloak.ts` (RS256 verification via JWKS), `apps/web` NextAuth Keycloak provider |
 | **Stripe** | Checkout payments + Stripe Connect Express payouts | `apps/api/src/resolvers/payments.ts`, webhooks below |
 | **S3-compatible object storage** | Teacher application files, course slides (presigned uploads) | `apps/api/src/lib/storage.ts` |
-| **Google Workspace SMTP relay** | Transactional email | `apps/api/src/lib/mailer.ts` |
+| **Google Workspace SMTP relay** | Transactional email | `apps/api/src/lib/mailer.ts`, `apps/worker/src/lib/mailer.ts` + `mail-dispatch.ts` |
 | **DeepSeek / OpenAI** | Advisory-only AI text (assessment feedback, event classification) | `apps/api/src/lib/ai.ts`, `apps/worker/src/lib/ai.ts` |
 | **Ticketmaster** | External event discovery ingestion | `apps/worker/src/discovery/ticketmaster.ts`, `apps/worker/src/jobs/ticketmaster-ingest.ts` |
 | **Classictic** | External affiliate event discovery (official "event list widget") | `apps/worker/src/discovery/classictic.ts`, `apps/worker/src/jobs/classictic-ingest.ts` |
@@ -84,20 +84,39 @@ Separately, `POST /profile/avatar` (`apps/api/src/index.ts`) is its own, indepen
 path for the **general account avatar**: it accepts a small (<500 KB) inline
 `data:image/{jpeg,png,webp};base64,...` payload and writes straight to
 `UserProfile.avatarUrl` — it does not go through `storage.ts`/S3 at all. Any future
-public teacher image should go through the S3 presigned-upload path above (a new
-`UploadPurpose`, e.g. `TEACHER_PROFILE_IMAGE`) rather than this inline-base64 route,
-since it needs to be publicly servable at scale, not embedded per-request.
+public teacher image goes through the S3 presigned-upload path above — the
+`TEACHER_PROFILE_IMAGE` `UploadPurpose` (`storage.ts`), landing in
+`TeacherProfile.publicImageUrl`, distinct from the general account avatar — since it
+needs to be publicly servable at scale, not embedded per-request.
 
 ## Transactional email: Google Workspace SMTP relay
 
-`apps/api/src/lib/mailer.ts` sends via `smtp-relay.gmail.com:587` (STARTTLS) using
-Nodemailer, configured through `SMTP_HOST/PORT/USER/PASSWORD/FROM/FROM_NAME`.
-`mailConfigured()` gates whether sending is attempted at all. `sendMail()` is
-currently **synchronous and best-effort**: on failure it logs a warning and returns
-`false`, and callers must not let that block the mutation that triggered it (a
-booking, a purchase). There is no outbox table, retry, or dead-letter queue yet —
-a transient SMTP failure silently drops the notification rather than queuing it for
-retry. This is a known gap to close (see the Phase 1 booking-email work).
+Both `apps/api/src/lib/mailer.ts` and `apps/worker/src/lib/mailer.ts` send via
+`smtp-relay.gmail.com:587` (STARTTLS) using Nodemailer, configured through the same
+`SMTP_HOST/PORT/USER/PASSWORD/FROM/FROM_NAME` (synced into each workload's env from
+the `application-integrations` Secret independently — see `deploy/workloads/
+application/api.yaml` and `worker.yaml`). `mailConfigured()` gates whether sending is
+attempted at all in each.
+
+Two distinct delivery paths exist, not one:
+
+- **Durable outbox (booking confirm/cancel)** — `apps/api/src/lib/mailOutbox.ts`'s
+  `enqueueMail` writes a `MailOutboxMessage` row inside the same transaction as the
+  booking state change (see `notifyBookingConfirmed`/`notifyBookingCancelled` in
+  `apps/api/src/resolvers/bookings.ts`); `apps/worker/src/jobs/mail-dispatch.ts` polls
+  due `PENDING`/`FAILED` rows every minute and delivers them, with exponential
+  backoff and a `DEAD_LETTER` status once `maxAttempts` is exhausted (never silently
+  dropped — visible to admins via the Mail Queue admin tab, `Query.mailOutbox`).
+  ICS calendar invitations (RFC 5545, `apps/api/src/lib/ics.ts`) ride along on the
+  same row via nodemailer's `icalEvent` option.
+- **Synchronous best-effort (course/event purchase confirmation)** —
+  `sendPurchaseConfirmedEmail` (`apps/api/src/lib/emails.ts`, called from
+  `payments.ts`'s Stripe webhook handler) calls `apps/api/src/lib/mailer.ts`'s
+  `sendMail()` directly and does not await it. On failure it logs a warning and
+  returns `false`; a transient SMTP failure silently drops this one rather than
+  queuing a retry. This narrower path is a known, disclosed gap (see "Known gaps" in
+  `docs/architecture.md`), not an oversight — migrating it onto the same outbox is
+  future work, not yet done.
 
 This is separate from Keycloak's own email verification/reset flows, which are
 configured on the realm itself (`deploy/overlays/dev/keycloak-realm/realm-import.yaml`),

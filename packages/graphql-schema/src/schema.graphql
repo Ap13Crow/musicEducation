@@ -1,7 +1,7 @@
 scalar DateTime
 scalar JSON
 
-# ── Enums ──────────────────────────────────
+# ── Enums ─────────────────────────────
 
 enum Role {
   GUEST
@@ -120,7 +120,7 @@ enum TeacherApplicationStatus {
   REJECTED
 }
 
-# ── Pagination ────────────────────────
+# ── Pagination ───────────────────
 
 type PageInfo {
   hasNextPage: Boolean!
@@ -128,7 +128,7 @@ type PageInfo {
   totalCount: Int!
 }
 
-# ── Auth ──────────────────────────
+# ── Auth ─────────────────
 
 type AuthPayload {
   accessToken: String!
@@ -142,7 +142,7 @@ type ZoomMeetingInfo {
   startUrl: String!
 }
 
-# ── Users ────────────────────────
+# ── Users ────────────────
 
 type User {
   id: ID!
@@ -175,6 +175,10 @@ type UserProfile {
   musicStyles: [String!]!
   onboardingDone: Boolean!
   onboardingStep: Int!
+  # Optional second recipient for transactional email (booking
+  # confirmations/cancellations) alongside the account/login email - see
+  # apps/api/src/lib/mailOutbox.ts's recipientAddresses.
+  notificationEmail: String
 }
 
 type TeacherProfile {
@@ -433,7 +437,7 @@ input TeacherApplicationInput {
   videoUrl: String
 }
 
-# ── Courses ────────────────────────
+# ── Courses ────────────────
 
 type Category {
   id: ID!
@@ -577,7 +581,7 @@ type EnrollmentConnection {
   pageInfo: PageInfo!
 }
 
-# ── Assessment ───────────────────────
+# ── Assessment ───────────────
 
 type Assessment {
   id: ID!
@@ -608,7 +612,7 @@ type AssessmentAnswer {
   isCorrect: Boolean
 }
 
-# ── Bookings ────────────────────────
+# ── Bookings ────────────────
 
 type Booking {
   id: ID!
@@ -647,7 +651,7 @@ type BookingConnection {
   pageInfo: PageInfo!
 }
 
-# ── Events ────────────────────────
+# ── Events ────────────────
 
 type Event {
   id: ID!
@@ -752,7 +756,7 @@ input ExternalEventFilterInput {
   search: String
 }
 
-# ── Payments ───────────────────────
+# ── Payments ───────────────
 
 type Payment {
   id: ID!
@@ -771,7 +775,7 @@ type CheckoutSession {
   checkoutUrl: String!
 }
 
-# ── Phase 5: lesson packages, subscriptions ─────────
+# ── Phase 5: lesson packages, subscriptions ─────
 
 type LessonPackageOffer {
   id: ID!
@@ -863,7 +867,7 @@ type StripeConnectStatus {
   requirementsStatus: String
 }
 
-# ── Social Feed ──────────────────────
+# ── Social Feed ────────────────
 
 type FeedPost {
   id: ID!
@@ -892,7 +896,7 @@ type FeedPostConnection {
   pageInfo: PageInfo!
 }
 
-# ── Reviews ──────────────────────
+# ── Reviews ────────────────
 
 type Review {
   id: ID!
@@ -926,7 +930,7 @@ type ReviewConnection {
   pageInfo: PageInfo!
 }
 
-# ── Admin ────────────────────────
+# ── Admin ────────────────
 
 type AdminSetting {
   id: ID!
@@ -983,7 +987,7 @@ type PlatformStats {
   totalStudents: Int!
 }
 
-# ── Input Types ──────────────────────
+# ── Input Types ───────────────
 
 input RegisterInput {
   email: String!
@@ -1000,6 +1004,8 @@ input UpdateProfileInput {
   timezone: String
   instruments: [String!]
   musicStyles: [String!]
+  # Pass an empty string to clear a previously-set notification email.
+  notificationEmail: String
 }
 
 input ApplyAsTeacherInput {
@@ -1241,7 +1247,7 @@ input CreateReviewInput {
   isPublic: Boolean
 }
 
-# ── Queries ──────────────────────
+# ── Queries ────────────────
 
 type Query {
   # Auth
@@ -1353,7 +1359,7 @@ type Query {
   stripeConnectStatus: StripeConnectStatus!
 }
 
-# ── Mutations ───────────────────────
+# ── Mutations ───────────────
 
 type Mutation {
   # Auth
@@ -1435,6 +1441,7 @@ type Mutation {
   updateCourse(id: ID!, input: UpdateCourseInput!): Course!
   publishCourse(id: ID!): Course!
   archiveCourse(id: ID!): Course!
+  unarchiveCourse(id: ID!): Course!
   createSection(input: CreateSectionInput!): CourseSection!
   updateSection(id: ID!, input: UpdateSectionInput!): CourseSection!
   deleteSection(id: ID!): Boolean!

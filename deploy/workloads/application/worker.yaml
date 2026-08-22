@@ -83,6 +83,50 @@ spec:
                   name: application-integrations
                   key: OPENAI_API_KEY
                   optional: true
+            # This worker is the only sender for MailOutboxMessage rows
+            # (apps/worker/src/jobs/mail-dispatch.ts, apps/worker/src/lib/
+            # mailer.ts) - without these, mailConfigured() is always false
+            # and every queued message retries until it dead-letters,
+            # regardless of api.yaml having its own copy of the same six
+            # keys (that copy only covers the synchronous course/event
+            # purchase-confirmation path in apps/api/src/lib/mailer.ts,
+            # a separate sender).
+            - name: SMTP_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: SMTP_HOST
+                  optional: true
+            - name: SMTP_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: SMTP_PORT
+                  optional: true
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: SMTP_USER
+                  optional: true
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: SMTP_PASSWORD
+                  optional: true
+            - name: SMTP_FROM
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: SMTP_FROM
+                  optional: true
+            - name: SMTP_FROM_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: SMTP_FROM_NAME
+                  optional: true
           volumeMounts:
             - name: postgres-ca
               mountPath: /etc/postgres-ca

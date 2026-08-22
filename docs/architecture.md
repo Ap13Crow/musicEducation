@@ -33,7 +33,7 @@ implemented natively (no external LMS, booking, or ticketing system):
 | AI | DeepSeek preferred, OpenAI as fallback (both OpenAI-wire-compatible) — advisory text only (assessment reports, event classification); never mutates payment/entitlement/progress/XP state |
 | Payments | Stripe (Checkout + Stripe Connect Express for teacher payouts) |
 | Object storage | S3-compatible (DigitalOcean Spaces in the deployed environment), purpose-scoped presigned uploads |
-| Transactional email | Google Workspace SMTP relay (`smtp-relay.gmail.com`) via Nodemailer, best-effort/fire-and-forget today |
+| Transactional email | Google Workspace SMTP relay (`smtp-relay.gmail.com`) via Nodemailer — booking confirm/cancel go through a durable `MailOutboxMessage` outbox with `apps/worker` retry/backoff/dead-letter; course/event purchase confirmations remain synchronous/best-effort |
 
 ### Frontend
 | Concern | Technology |
@@ -89,28 +89,29 @@ musicEducation/
 ## Data model summary (`packages/database/prisma/schema.prisma`)
 
 ```
-User ──────────────────────────────────────────────────────────
+User ─────────────────────────────────────────────────
   ├── UserExternalIdentity   (immutable Keycloak `sub` link)
   ├── UserProfile            (account avatar, instruments, styles, timezone)
-  ├── TeacherProfile         (bio, instruments, rates, Stripe Connect account —
-  │                            no dedicated public teacher image field today)
+  ├── TeacherProfile         (bio, instruments, rates, Stripe Connect account,
+  │                            publicImageUrl, booking policy, per-instrument
+  │                            capacity)
   └── TeacherApplication     (PENDING/APPROVED/REJECTED review queue)
 
-Learning ──────────────────────────────────────────────────────
+Learning ───────────────────────────────────────────────
   Course → CourseSection → Lesson → Quiz → QuizQuestion
   Enrollment → LessonProgress
   Assessment → AssessmentQuestion → AssessmentAnswer
 
-Booking ───────────────────────────────────────────────────────
+Booking ──────────────────────────────────────────────────
   Booking (student ↔ teacher, Stripe payment)
   TeacherAvailability
 
-Events ────────────────────────────────────────────────────────
+Events ──────────────────────────────────────────────────
   Event (teacher-published, capacity-managed)
   EventBooking → Payment
   ExternalEventProjection (Ticketmaster ingestion output)
 
-Social / gamification ─────────────────────────────────────────
+Social / gamification ────────────────────────────────────────────
   FeedPost → FeedLike, FeedComment
   Review, Message, Notification
   GamificationProfile (XP, level)
@@ -190,14 +191,16 @@ explicitly permitted.
 
 ## Known gaps (as of this writing — verify against current source before relying on this)
 
-- No dedicated public teacher profile image: `TeacherProfile` has no image field and
-  `storage.ts` has no upload purpose for one; the general `UserProfile.avatarUrl` is
-  the only image field that exists today.
-- Booking confirmation email is synchronous and best-effort (`apps/api/src/lib/
-  mailer.ts`) — no outbox table, retry, or dead-letter; a temporarily unreachable SMTP
-  relay silently drops the notification rather than queuing it.
-- `apps/worker` does not yet process mail — CLAUDE.md notes async work is moving there
-  but the migration isn't complete for email.
+- Course/event purchase confirmation email (`sendPurchaseConfirmedEmail` in
+  `apps/api/src/lib/emails.ts`, called from `payments.ts`) is still synchronous and
+  best-effort — unlike booking confirm/cancel, it doesn't go through the
+  `MailOutboxMessage` outbox, so a temporarily unreachable SMTP relay silently drops it
+  rather than queuing a retry.
+- Google/Microsoft calendar busy-time sync (`ExternalCalendarConnection`/
+  `ExternalBusyInterval` in `packages/database/prisma/schema.prisma`) is a schema/
+  adapter contract only — deliberately not implemented; see
+  `apps/api/src/lib/externalCalendar.ts` and `docs/integration-architecture.md`'s
+  Calendar sync section for why.
 
 ## Scalability notes
 
