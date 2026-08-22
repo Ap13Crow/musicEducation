@@ -48,7 +48,8 @@ const schemaPath =
 const typeDefs = readFileSync(schemaPath, 'utf-8');
 
 // `resolvers` is the single merged map from resolvers/index.ts (every
-// resolver module plus the DateTime/JSON/Decimal scalars) - previously this
+// resolver module plus the DateTime/JSON scalars - no `Decimal`, the SDL
+// declares none; see that file's own comment) - previously this
 // file hand-rolled its own, narrower mergeResolvers() call that silently
 // omitted teacherApplications/uploads/quizzes/xp/recommendations. A field
 // with no resolver in the map falls back to reading a same-named property
