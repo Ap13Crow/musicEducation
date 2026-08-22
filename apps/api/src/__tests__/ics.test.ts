@@ -1,4 +1,4 @@
-import { buildBookingIcs } from '../lib/ics';
+import { buildBookingIcs, buildCalendarFeedIcs } from '../lib/ics';
 
 // Parses an ICS VEVENT into a plain property map rather than asserting on
 // substrings - unfolds RFC 5545 continuation lines first (a line starting
@@ -102,5 +102,79 @@ describe('buildBookingIcs', () => {
   it('omits LOCATION entirely when none is given, rather than an empty property', () => {
     const ics = buildBookingIcs({ ...baseInput, method: 'REQUEST', location: null });
     expect(ics).not.toContain('LOCATION');
+  });
+});
+
+// Splits a multi-VEVENT feed into one property map per VEVENT block -
+// buildBookingIcs's single-event parseIcs above can't distinguish repeated
+// keys (UID, DTSTART, ...) across multiple events.
+function parseFeedEvents(ics: string): Record<string, string>[] {
+  const unfolded = ics.replace(/\r\n /g, '');
+  const blocks = unfolded.match(/BEGIN:VEVENT\r\n[\s\S]*?END:VEVENT/g) ?? [];
+  return blocks.map((block) => {
+    const props: Record<string, string> = {};
+    for (const rawLine of block.split('\r\n')) {
+      const idx = rawLine.indexOf(':');
+      if (idx === -1) continue;
+      const key = rawLine.slice(0, idx).split(';')[0];
+      props[key] = rawLine.slice(idx + 1);
+    }
+    return props;
+  });
+}
+
+describe('buildCalendarFeedIcs', () => {
+  const events = [
+    {
+      uid: 'booking-b1@mymusic.coach',
+      startsAt: new Date('2026-09-01T14:00:00.000Z'),
+      endsAt: new Date('2026-09-01T15:00:00.000Z'),
+      summary: 'Lesson with Jens Teacher',
+      description: 'Piano · Status: CONFIRMED',
+    },
+    {
+      uid: 'appointment-a1@mymusic.coach',
+      startsAt: new Date('2026-09-02T09:00:00.000Z'),
+      endsAt: new Date('2026-09-02T10:00:00.000Z'),
+      summary: 'Practice session',
+      description: null,
+    },
+  ];
+
+  it('produces one VCALENDAR with METHOD:PUBLISH and every event as its own VEVENT', () => {
+    const ics = buildCalendarFeedIcs('MyMusic.Coach', events);
+    expect(ics).toMatch(/^BEGIN:VCALENDAR\r\n/);
+    expect(ics.trim()).toMatch(/END:VCALENDAR$/);
+    expect(ics).toContain('METHOD:PUBLISH\r\n');
+    expect(ics).toContain('X-WR-CALNAME:MyMusic.Coach\r\n');
+    expect((ics.match(/BEGIN:VEVENT/g) ?? []).length).toBe(2);
+
+    const [first, second] = parseFeedEvents(ics);
+    expect(first.UID).toBe('booking-b1@mymusic.coach');
+    expect(first.DTSTART).toBe('20260901T140000Z');
+    expect(first.SUMMARY).toBe('Lesson with Jens Teacher');
+    expect(second.UID).toBe('appointment-a1@mymusic.coach');
+    expect(second.SUMMARY).toBe('Practice session');
+  });
+
+  it('omits DESCRIPTION for an event with none, without breaking the ones that have it', () => {
+    const ics = buildCalendarFeedIcs('MyMusic.Coach', events);
+    const [first, second] = parseFeedEvents(ics);
+    expect(first.DESCRIPTION).toBe('Piano · Status: CONFIRMED');
+    expect(second.DESCRIPTION).toBeUndefined();
+  });
+
+  it('produces a valid empty feed (no events) rather than an error', () => {
+    const ics = buildCalendarFeedIcs('MyMusic.Coach', []);
+    expect(ics).toContain('BEGIN:VCALENDAR');
+    expect(ics).toContain('END:VCALENDAR');
+    expect(ics).not.toContain('BEGIN:VEVENT');
+  });
+
+  it('escapes TEXT properties the same way as buildBookingIcs', () => {
+    const ics = buildCalendarFeedIcs('MyMusic.Coach', [
+      { ...events[0], summary: 'Lesson: Jazz, Blues; Advanced' },
+    ]);
+    expect(ics).toContain('SUMMARY:Lesson: Jazz\\, Blues\\; Advanced');
   });
 });

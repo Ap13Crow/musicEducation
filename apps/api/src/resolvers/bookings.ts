@@ -7,6 +7,7 @@ import { buildBookingIcs } from '../lib/ics.js';
 import { isWithinBookingWindow, isLateCancellation, APPROVAL_HOLD_HOURS } from '../lib/bookingPolicy.js';
 import { reserveInstrumentCapacity } from '../lib/capacity.js';
 import { consumeCredit, restoreCredit } from '../lib/lessonCredits.js';
+import { displayNameOf } from '../lib/displayName.js';
 import type { GraphQLContext } from '../types.js';
 import type { Prisma, PrismaClient } from '@my-music-coach/database';
 
@@ -23,12 +24,6 @@ export async function isRecurringStudent(prisma: PrismaClient, teacherProfileId:
 }
 
 const TEACHER_FOUND_XP = 30;
-
-// Same displayName fallback chain as the User.displayName field resolver in
-// users.ts (profile.displayName -> local part of the email -> generic).
-function displayNameOf(user: { email: string | null; profile?: { displayName?: string | null } | null }): string {
-  return user.profile?.displayName || user.email?.split('@')[0] || 'there';
-}
 
 const PLATFORM_ORGANIZER = { name: 'MyMusic.Coach', email: process.env.SMTP_FROM ?? 'no-reply@mymusic.coach' };
 

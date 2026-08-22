@@ -7,7 +7,7 @@ import {
   User, Mail, MapPin, Music, Globe, Edit3, Save, X,
   Trophy, Flame, GraduationCap, Star, Lock,
   ExternalLink, CheckCircle, AlertCircle, Phone, ImagePlus, Calendar,
-  Ticket,
+  Ticket, Copy, RefreshCw,
 } from 'lucide-react';
 import { externalLinks, keycloakAccountUrl, keycloakAdminUrl, keycloakSigningInUrl } from '@/lib/external-links';
 
@@ -79,6 +79,21 @@ const GET_RECENTLY_VIEWED_EVENTS = gql`
   }
 `;
 
+// Calendar sync (Phase 6, scoped) - a provider-agnostic ICS subscription
+// feed (works in Apple Calendar, Google Calendar, and Outlook, all via
+// "subscribe from URL", no OAuth). See docs/integration-architecture.md.
+const GET_CALENDAR_FEED_TOKEN = gql`
+  query GetCalendarFeedToken {
+    myCalendarFeedToken
+  }
+`;
+
+const ROTATE_CALENDAR_FEED_TOKEN = gql`
+  mutation RotateCalendarFeedToken {
+    rotateCalendarFeedToken
+  }
+`;
+
 const CONFIRM_EXTERNAL_EVENT_ATTENDANCE = gql`
   mutation ConfirmExternalEventAttendance($id: ID!) {
     confirmExternalEventAttendance(id: $id) {
@@ -137,6 +152,10 @@ export default function ProfilePage() {
   );
   const [confirmAttendance, { loading: confirming }] = useMutation(CONFIRM_EXTERNAL_EVENT_ATTENDANCE);
   const [evaluateEvent, { loading: evaluating }] = useMutation(EVALUATE_EXTERNAL_EVENT);
+
+  const { data: feedTokenData, refetch: refetchFeedToken } = useQuery(GET_CALENDAR_FEED_TOKEN, { skip: !liveApiEnabled });
+  const [rotateFeedToken, { loading: rotatingFeedToken }] = useMutation(ROTATE_CALENDAR_FEED_TOKEN);
+  const [feedLinkCopied, setFeedLinkCopied] = useState(false);
 
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -254,6 +273,30 @@ export default function ProfilePage() {
       setTimeout(() => setSaved(false), 3000);
     } catch {
       // saveError is shown inline
+    }
+  }
+
+  const calendarFeedToken = feedTokenData?.myCalendarFeedToken ?? null;
+  const calendarFeedUrl =
+    calendarFeedToken && typeof window !== 'undefined'
+      ? `${window.location.origin}/api/calendar/feed/${calendarFeedToken}.ics`
+      : null;
+
+  async function handleRotateFeedToken() {
+    await rotateFeedToken();
+    await refetchFeedToken();
+    setFeedLinkCopied(false);
+  }
+
+  async function handleCopyFeedUrl() {
+    if (!calendarFeedUrl) return;
+    try {
+      await navigator.clipboard.writeText(calendarFeedUrl);
+      setFeedLinkCopied(true);
+      setTimeout(() => setFeedLinkCopied(false), 2500);
+    } catch {
+      // Clipboard API unavailable (e.g. insecure context) - the URL is
+      // still visible and selectable in the input below.
     }
   }
 
@@ -801,6 +844,51 @@ export default function ProfilePage() {
                 Password, MFA, and linked accounts are managed via your identity provider.
               </p>
             </section>
+
+            {/* Calendar sync - a provider-agnostic ICS subscription feed
+                (Apple Calendar, Google Calendar, and Outlook all support
+                "subscribe from URL" with no OAuth). See
+                docs/integration-architecture.md. */}
+            {liveApiEnabled && (
+              <section className="card p-6">
+                <h2 className="mb-4 flex items-center gap-2 font-semibold text-gray-900">
+                  <Calendar className="h-4 w-4 text-primary-600" /> Calendar sync
+                </h2>
+                <p className="mb-3 text-xs text-gray-500">
+                  Subscribe to this link in Apple Calendar, Google Calendar, or Outlook to see your booked lessons and personal appointments automatically.
+                </p>
+                {calendarFeedUrl ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        readOnly
+                        value={calendarFeedUrl}
+                        onFocus={(e) => e.currentTarget.select()}
+                        className="input w-full truncate text-xs text-gray-600"
+                      />
+                      <button
+                        onClick={handleCopyFeedUrl}
+                        title="Copy link"
+                        className="flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
+                      >
+                        <Copy className="h-3.5 w-3.5" /> {feedLinkCopied ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                    <button
+                      onClick={handleRotateFeedToken}
+                      disabled={rotatingFeedToken}
+                      className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline disabled:opacity-60"
+                    >
+                      <RefreshCw className="h-3 w-3" /> {rotatingFeedToken ? 'Regenerating…' : 'Regenerate link (invalidates the old one)'}
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={handleRotateFeedToken} disabled={rotatingFeedToken} className="btn-secondary flex items-center gap-2 rounded-lg px-4 py-2 text-sm disabled:opacity-60">
+                    <Calendar className="h-4 w-4" /> {rotatingFeedToken ? 'Generating…' : 'Get my calendar link'}
+                  </button>
+                )}
+              </section>
+            )}
 
             {/* Quick links to pillars */}
             <section className="card p-6">

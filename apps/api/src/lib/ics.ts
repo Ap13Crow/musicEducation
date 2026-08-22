@@ -32,7 +32,7 @@ function pad(n: number, width = 2): string {
 }
 
 // RFC 5545 §3.3.5 form #2: UTC time, e.g. 20260901T140000Z.
-function formatIcsUtc(date: Date): string {
+export function formatIcsUtc(date: Date): string {
   return (
     `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}` +
     `T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`
@@ -43,7 +43,7 @@ function formatIcsUtc(date: Date): string {
 // encode newlines as literal "\n" - required for TEXT-valued properties
 // (SUMMARY, DESCRIPTION, LOCATION) or a value containing any of these
 // characters produces an invalid/misparsed calendar file.
-function escapeText(value: string): string {
+export function escapeText(value: string): string {
   return value
     .replace(/\\/g, '\\\\')
     .replace(/;/g, '\\;')
@@ -54,7 +54,7 @@ function escapeText(value: string): string {
 // RFC 5545 §3.1: a content line longer than 75 octets must be "folded" by
 // inserting CRLF followed by a single space before continuing - a client
 // that doesn't unfold long lines will otherwise truncate or reject them.
-function foldLine(line: string): string {
+export function foldLine(line: string): string {
   if (line.length <= 75) return line;
   const parts: string[] = [];
   let rest = line;
@@ -97,6 +97,58 @@ export function buildBookingIcs(input: BookingIcsInput): string {
         `ATTENDEE;CN=${escapeText(a.name)};ROLE=REQ-PARTICIPANT;PARTSTAT=${input.method === 'CANCEL' ? 'DECLINED' : 'NEEDS-ACTION'};RSVP=TRUE:mailto:${a.email}`,
     ),
     'END:VEVENT',
+    'END:VCALENDAR',
+  ];
+  return lines.map(foldLine).join('\r\n') + '\r\n';
+}
+
+export interface CalendarFeedEventInput {
+  /** Stable id, e.g. `booking-${bookingId}` - reused across polls so a client updates in place rather than duplicating. */
+  uid: string;
+  startsAt: Date;
+  endsAt: Date;
+  summary: string;
+  description?: string | null;
+  location?: string | null;
+}
+
+/**
+ * Builds a multi-VEVENT, METHOD:PUBLISH RFC 5545 calendar object for a
+ * subscription feed (see apps/api/src/lib/calendarFeed.ts and the
+ * `/calendar/feed/:token.ics` route) - the "subscribe to this URL" flow
+ * every mainstream calendar client (Apple Calendar, Google Calendar,
+ * Outlook) supports without any OAuth. Unlike buildBookingIcs above
+ * (one invitation, METHOD:REQUEST/CANCEL, re-sent by email on every
+ * change), this is a single passive document the client itself re-polls -
+ * DTSTAMP is regenerated fresh each call, so a client always sees the
+ * current state on its next poll without needing per-event SEQUENCE
+ * bookkeeping here.
+ */
+export function buildCalendarFeedIcs(calendarName: string, events: CalendarFeedEventInput[]): string {
+  const now = formatIcsUtc(new Date());
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//MyMusic.Coach//Calendar Feed//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    `X-WR-CALNAME:${escapeText(calendarName)}`,
+    // Refresh hints a subscribing client may honor (Apple Calendar and
+    // Outlook do; Google Calendar ignores both and polls on its own
+    // multi-hour schedule regardless) - not a guarantee, just a request.
+    'X-PUBLISHED-TTL:PT30M',
+    'REFRESH-INTERVAL;VALUE=DURATION:PT30M',
+    ...events.flatMap((e) => [
+      'BEGIN:VEVENT',
+      `UID:${e.uid}`,
+      `DTSTAMP:${now}`,
+      `DTSTART:${formatIcsUtc(e.startsAt)}`,
+      `DTEND:${formatIcsUtc(e.endsAt)}`,
+      `SUMMARY:${escapeText(e.summary)}`,
+      ...(e.description ? [`DESCRIPTION:${escapeText(e.description)}`] : []),
+      ...(e.location ? [`LOCATION:${escapeText(e.location)}`] : []),
+      'END:VEVENT',
+    ]),
     'END:VCALENDAR',
   ];
   return lines.map(foldLine).join('\r\n') + '\r\n';

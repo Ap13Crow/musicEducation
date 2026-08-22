@@ -301,6 +301,34 @@ type PersonalAppointment {
   notes: String
 }
 
+# Phase 6 (scoped) - see the ExternalCalendarConnection model comment in
+# packages/database/prisma/schema.prisma and
+# apps/api/src/lib/externalCalendar.ts for why GOOGLE/MICROSOFT sync is a
+# schema contract only right now: connectExternalCalendar always rejects
+# with NOT_CONFIGURED (no OAuth client credentials exist in this
+# deployment). Apple's calendar sync is the working feature instead - a
+# provider-agnostic ICS subscription feed (Query.myCalendarFeedToken /
+# Mutation.rotateCalendarFeedToken), which Apple Calendar, Google Calendar,
+# and Outlook can all subscribe to without any OAuth.
+enum ExternalCalendarProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+enum ExternalCalendarConnectionStatus {
+  CONNECTED
+  ERROR
+}
+
+type ExternalCalendarConnection {
+  id: ID!
+  provider: ExternalCalendarProvider!
+  status: ExternalCalendarConnectionStatus!
+  externalAccountEmail: String
+  lastSyncedAt: DateTime
+  createdAt: DateTime!
+}
+
 type StudentAvailability {
   id: ID!
   userId: ID!
@@ -1252,6 +1280,11 @@ type Query {
   # a personal-calendar view can't turn into an unbounded query.
   myAppointments(from: DateTime!, to: DateTime!): [PersonalAppointment!]!
 
+  # Calendar sync (Phase 6, scoped - see ExternalCalendarConnection above)
+  myExternalCalendarConnections: [ExternalCalendarConnection!]!
+  # Null until rotateCalendarFeedToken has been called once.
+  myCalendarFeedToken: String
+
   # Events
   events(filter: EventFilterInput, page: Int, limit: Int): EventConnection!
   event(id: ID, slug: String): Event
@@ -1376,6 +1409,14 @@ type Mutation {
   createAppointment(title: String!, startsAt: DateTime!, endsAt: DateTime!, notes: String): PersonalAppointment!
   updateAppointment(id: ID!, title: String, startsAt: DateTime, endsAt: DateTime, notes: String): PersonalAppointment!
   deleteAppointment(id: ID!): Boolean!
+
+  # Calendar sync (Phase 6, scoped) - connectExternalCalendar always
+  # rejects with NOT_CONFIGURED today (see ExternalCalendarConnection's
+  # schema comment above). rotateCalendarFeedToken is the working feature:
+  # get-or-rotate the caller's personal ICS subscription-feed token.
+  connectExternalCalendar(provider: ExternalCalendarProvider!): ExternalCalendarConnection!
+  disconnectExternalCalendar(provider: ExternalCalendarProvider!): Boolean!
+  rotateCalendarFeedToken: String!
 
   # Student availability self-declaration
   setStudentAvailability(slots: [AvailabilitySlotInput!]!): [StudentAvailability!]!

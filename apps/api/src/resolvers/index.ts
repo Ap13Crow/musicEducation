@@ -15,6 +15,7 @@ import { quizResolvers } from './quizzes.js';
 import { xpResolvers } from './xp.js';
 import { uploadResolvers } from './uploads.js';
 import { commerceResolvers } from './commerce.js';
+import { externalCalendarResolvers } from './externalCalendar.js';
 import { DateTimeResolver, JSONResolver } from 'graphql-scalars';
 
 // Only DateTime and JSON are actually declared as `scalar` in schema.graphql
@@ -47,4 +48,5 @@ export const resolvers = mergeResolvers([
   xpResolvers,
   uploadResolvers,
   commerceResolvers,
+  externalCalendarResolvers,
 ]);

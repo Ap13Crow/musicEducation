@@ -13,6 +13,7 @@ import { authMiddleware, resolveRequestUser } from './middleware/auth.js';
 import { resolvers } from './resolvers/index.js';
 import { createLoaders } from './lib/loaders.js';
 import { handleStripeWebhook, handleStripeV2Webhook } from './resolvers/payments.js';
+import { buildUserCalendarFeed } from './lib/calendarFeed.js';
 import type { GraphQLContext } from './types.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -112,6 +113,32 @@ async function main() {
     });
     return res.json({ avatarUrl });
   });
+  // Token-authenticated calendar subscription feed (Phase 6) - a calendar
+  // app (Apple Calendar, Google Calendar, Outlook "subscribe from web")
+  // polls this URL directly with no session cookie and no OAuth, so it's
+  // deliberately outside authMiddleware/the GraphQL context. The token
+  // itself is the credential (see User.calendarFeedToken and
+  // rotateCalendarFeedToken in externalCalendar.ts) - constant-time
+  // comparison isn't needed here since it's a unique-indexed DB lookup, not
+  // a string comparison against a known value.
+  app.get('/calendar/feed/:token', async (req, res) => {
+    const raw = req.params.token;
+    const token = raw.endsWith('.ics') ? raw.slice(0, -4) : raw;
+    if (!token) return res.status(404).send('Not found');
+    try {
+      const user = await prisma.user.findUnique({ where: { calendarFeedToken: token } });
+      if (!user) return res.status(404).send('Not found');
+      const ics = await buildUserCalendarFeed(prisma, user.id);
+      res.setHeader('content-type', 'text/calendar; charset=utf-8');
+      res.setHeader('cache-control', 'no-store');
+      res.setHeader('content-disposition', 'inline; filename="mymusic-coach.ics"');
+      return res.send(ics);
+    } catch (error) {
+      logger.error({ error }, 'Calendar feed generation failed');
+      return res.status(500).send('Calendar feed temporarily unavailable');
+    }
+  });
+
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
   app.get('/health/ready', async (_req, res) => {
     try {

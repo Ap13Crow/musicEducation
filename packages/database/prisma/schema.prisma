@@ -118,6 +118,15 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  // Opaque bearer token authenticating the read-only calendar subscription
+  // feed (GET /calendar/feed/:token.ics - see apps/api/src/lib/
+  // calendarFeed.ts). Calendar apps (Apple Calendar, Google Calendar,
+  // Outlook "subscribe from web") poll this URL directly with no session
+  // cookie and no OAuth, so the token itself is the credential - null until
+  // rotateCalendarFeedToken is first called, and replaceable any time the
+  // student/teacher wants to invalidate a previously shared link.
+  calendarFeedToken String? @unique
+
   credential         UserCredential?
   profile            UserProfile?
   teacherProfile     TeacherProfile?
@@ -143,6 +152,7 @@ model User {
   lessonPackagePurchases LessonPackagePurchase[]
   subscriptionPurchases  SubscriptionPurchase[]
   externalEventEngagements ExternalEventEngagement[]
+  externalCalendarConnections ExternalCalendarConnection[]
 }
 
 model UserCredential {
@@ -742,6 +752,63 @@ model PersonalAppointment {
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId, startsAt, endsAt])
+}
+
+// Phase 6 (scoped): the OAuth-backed direction of calendar sync (reading a
+// user's busy time FROM Google/Microsoft, to block their teacher
+// availability against events on their external calendar). This is the
+// schema/adapter *contract* only - CLAUDE.md's guardrail is deliberate
+// ("Google Calendar / Meet integration is intentionally not in scope for
+// now... do not add Google Calendar coupling unless a task explicitly
+// reintroduces it"), so a live OAuth flow, token storage, and background
+// sync are NOT implemented here. connectExternalCalendar
+// (apps/api/src/resolvers/externalCalendar.ts) always rejects with
+// NOT_CONFIGURED - there is no GOOGLE_CALENDAR_CLIENT_ID/
+// MICROSOFT_CALENDAR_CLIENT_ID anywhere in this codebase or deploy
+// manifests, and none should be fabricated. A row can only exist here once
+// that OAuth implementation is a separate, explicitly-scoped task.
+enum ExternalCalendarProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+enum ExternalCalendarConnectionStatus {
+  CONNECTED
+  ERROR
+}
+
+model ExternalCalendarConnection {
+  id                    String                            @id @default(cuid())
+  userId                String
+  provider              ExternalCalendarProvider
+  status                ExternalCalendarConnectionStatus   @default(CONNECTED)
+  externalAccountEmail  String?
+  // Deliberately no access/refresh token columns yet - there is no OAuth
+  // exchange in this codebase to produce one (see the model comment above).
+  // Add them alongside the real token-exchange implementation, not before.
+  lastSyncedAt          DateTime?
+  createdAt             DateTime                          @default(now())
+  updatedAt             DateTime                          @updatedAt
+
+  user          User                    @relation(fields: [userId], references: [id])
+  busyIntervals ExternalBusyInterval[]
+
+  @@unique([userId, provider])
+}
+
+// One synced "don't book me here" block from an external calendar. Never
+// populated today (see ExternalCalendarConnection above) - the shape exists
+// so a future real sync job has a landing table without a schema change.
+model ExternalBusyInterval {
+  id           String   @id @default(cuid())
+  connectionId String
+  startsAt     DateTime
+  endsAt       DateTime
+  fetchedAt    DateTime @default(now())
+
+  connection ExternalCalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId, startsAt])
 }
 
 model Event {

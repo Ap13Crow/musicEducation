@@ -27,6 +27,8 @@ never a second source of truth for platform state:
 | **Ticketmaster** | External event discovery ingestion | `apps/worker/src/discovery/ticketmaster.ts`, `apps/worker/src/jobs/ticketmaster-ingest.ts` |
 | **Classictic** | External affiliate event discovery (official "event list widget") | `apps/worker/src/discovery/classictic.ts`, `apps/worker/src/jobs/classictic-ingest.ts` |
 | **Europeana** | Planned cultural-heritage content for learning — not yet implemented | — |
+| **Calendar subscription feed (ICS)** | Outbound-only — Apple Calendar/Google Calendar/Outlook "subscribe from URL" | `apps/api/src/lib/calendarFeed.ts`, `GET /calendar/feed/:token` |
+| **Google/Microsoft Calendar sync** | Schema/adapter contract only, deliberately not implemented — see below | `apps/api/src/lib/externalCalendar.ts` |
 
 ## Identity: Keycloak
 
@@ -194,6 +196,53 @@ schema.prisma`), driven entirely from `apps/api`:
 
 None of this touches ingestion or provider credentials — it's pure application state
 over rows the ingest jobs already wrote.
+
+## Calendar sync (Phase 6, scoped)
+
+**Decision, stated up front:** `CLAUDE.md` is explicit that "Google Calendar / Meet
+integration is intentionally not in scope for now... Do not add Google Calendar
+coupling unless a task explicitly reintroduces it." This phase honors that guardrail.
+Nothing here performs a live Google or Microsoft OAuth exchange, stores an access
+token, or writes to an external calendar. What exists is a schema/adapter *contract*
+for that direction (so adding it later is additive, not a redesign) plus one fully
+real, working feature that needs no OAuth at all.
+
+### Working today: the ICS subscription feed
+
+`GET /calendar/feed/:token` (`apps/api/src/lib/calendarFeed.ts`) returns a live,
+regenerated-on-every-request RFC 5545 `VCALENDAR` of the caller's own booked lessons
+(as a student, and as a teacher if applicable) and personal appointments —
+`buildCalendarFeedIcs` in `apps/api/src/lib/ics.ts`, `METHOD:PUBLISH`, one `VEVENT`
+per item. This is the standard "subscribe from URL" flow every mainstream calendar
+client supports without any OAuth: Apple Calendar, Google Calendar, and Outlook can
+all subscribe to the same link.
+
+- **Auth**: the URL's token *is* the credential — a calendar app polls it directly
+  with no session cookie. `User.calendarFeedToken` is a random, unique, nullable
+  token; `Mutation.rotateCalendarFeedToken` (`apps/api/src/resolvers/
+  externalCalendar.ts`) is get-or-rotate — first call provisions it, every later call
+  replaces it so a previously shared link can be invalidated.
+- **Reachability**: `apps/api` is cluster-internal only (see the platform-reality note
+  in `CLAUDE.md`), so `apps/web` proxies the request the same way it already does for
+  `/api/graphql` — `apps/web/src/app/api/calendar/feed/[token]/route.ts` forwards to
+  `GRAPHQL_SERVER_URL`'s origin, reusing that existing env var rather than adding a
+  new one.
+- **UI**: `/profile`'s "Calendar sync" section shows the copyable link and a
+  regenerate action.
+
+### Contract only, deliberately not implemented: Google/Microsoft busy-time sync
+
+`ExternalCalendarConnection` / `ExternalBusyInterval` (`packages/database/prisma/
+schema.prisma`) model the *other* direction — reading a user's busy time FROM Google
+or Microsoft, to block a teacher's availability against events on their external
+calendar. `apps/api/src/lib/externalCalendar.ts` defines `isProviderConfigured()`
+(checks `GOOGLE_CALENDAR_CLIENT_ID`/`_SECRET`, `MICROSOFT_CALENDAR_CLIENT_ID`/
+`_SECRET` — none of which exist in this codebase or `deploy/`) and the
+`ExternalCalendarSyncAdapter` interface a real provider adapter would implement,
+mirroring `DiscoveryAdapter`'s shape in `apps/worker/src/discovery/types.ts`.
+`Mutation.connectExternalCalendar` always throws `NOT_CONFIGURED` today — by design,
+not as a bug to fix, until a task explicitly asks for real Google/Microsoft OAuth
+credentials and reintroduces that coupling.
 
 ## Webhooks summary
 
