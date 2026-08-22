@@ -605,6 +605,9 @@ type Booking {
   # Set once, on cancellation: true = late/no-show (charges/consumes a
   # credit - Phase 5), false = on-time (slot released). Null until cancelled.
   lateCancellation: Boolean
+  # Set when this booking was made against a prepaid LessonPackagePurchase
+  # credit instead of a one-off charge.
+  packagePurchaseId: ID
   student: User
   teacher: TeacherProfile
   payment: Payment
@@ -738,6 +741,81 @@ type Payment {
 type CheckoutSession {
   sessionId: String!
   checkoutUrl: String!
+}
+
+# ── Phase 5: lesson packages, subscriptions ─────────
+
+type LessonPackageOffer {
+  id: ID!
+  teacherProfileId: ID!
+  instrument: String
+  lessonCount: Int!
+  pricePerPackage: Float!
+  currency: String!
+  isPublished: Boolean!
+  # Effective price per lesson - honest comparison figure, never a
+  # misleading "savings" number (there's nothing to compare a single
+  # package price against).
+  pricePerLesson: Float!
+}
+
+# Snapshot of the commercial terms at checkout time - never changes after
+# purchase even if the originating offer is edited/unpublished.
+type LessonPackagePurchase {
+  id: ID!
+  teacherProfileId: ID!
+  teacherProfile: TeacherProfile
+  instrument: String
+  lessonCount: Int!
+  pricePaid: Float!
+  currency: String!
+  policyLeadDays: Int!
+  policyCancellationDays: Int!
+  # SUM of the ledger - never a mutable counter. See
+  # apps/api/src/lib/lessonCredits.ts.
+  creditBalance: Int!
+  purchasedAt: DateTime!
+}
+
+type SubscriptionOffer {
+  id: ID!
+  teacherProfileId: ID!
+  includedHoursPerMonth: Int!
+  termMonths: Int!
+  monthlyPrice: Float!
+  currency: String!
+  includedCourseIds: [ID!]!
+  isPublished: Boolean!
+  # The two upfront totals a student compares before checkout - both
+  # derived from the same stored discount setting, never duplicated UI math.
+  upfrontDiscountPct: Int!
+  upfrontTotal: Float!
+  undiscountedTotal: Float!
+}
+
+type SubscriptionPurchase {
+  id: ID!
+  teacherProfileId: ID!
+  teacherProfile: TeacherProfile
+  termMonths: Int!
+  includedHoursPerMonth: Int!
+  monthlyPrice: Float!
+  discountPct: Int!
+  totalPricePaid: Float!
+  currency: String!
+  includedCourseIds: [ID!]!
+  policyLeadDays: Int!
+  policyCancellationDays: Int!
+  status: SubscriptionPurchaseStatus!
+  startsAt: DateTime!
+  endsAt: DateTime!
+  cancelledAt: DateTime
+}
+
+enum SubscriptionPurchaseStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
 }
 
 type StripeConnectLink {
@@ -1006,6 +1084,10 @@ input BookSessionInput {
   format: BookingFormat!
   instrument: String
   notes: String
+  # Book against a prepaid LessonPackagePurchase credit instead of a
+  # one-off charge - must belong to the caller and have a remaining credit
+  # and matching teacher/instrument, or the mutation rejects it.
+  packagePurchaseId: ID
 }
 
 input CreateEventInput {
@@ -1186,6 +1268,14 @@ type Query {
   # Student availability (self-declaration)
   myAvailability: [StudentAvailability!]!
 
+  # Lesson packages / subscriptions (Phase 5). Directory queries return
+  # published offers only unless the caller owns the teacher profile or is
+  # an admin.
+  teacherPackageOffers(teacherProfileId: ID!): [LessonPackageOffer!]!
+  teacherSubscriptionOffers(teacherProfileId: ID!): [SubscriptionOffer!]!
+  myPackagePurchases: [LessonPackagePurchase!]!
+  mySubscriptionPurchases: [SubscriptionPurchase!]!
+
   # Admin
   adminStats: AdminStats!
   adminSettings: [AdminSetting!]!
@@ -1337,10 +1427,24 @@ type Mutation {
   createReview(input: CreateReviewInput!): Review!
 
   # Payments
+  # type also accepts "package" and "subscription" (refId = the offer id) -
+  # see LessonPackageOffer/SubscriptionOffer.
   createCheckoutSession(type: String!, refId: ID!, provider: PaymentProvider): CheckoutSession!
   # Teacher payouts — creates (once) a Stripe Connect Express account for the
   # calling teacher and returns a fresh hosted onboarding link.
   createStripeConnectOnboardingLink: StripeConnectLink!
+
+  # Lesson packages / subscriptions (Phase 5)
+  createPackageOffer(instrument: String, lessonCount: Int!, pricePerPackage: Float!, currency: String): LessonPackageOffer!
+  updatePackageOffer(id: ID!, pricePerPackage: Float, isPublished: Boolean): LessonPackageOffer!
+  # Refuses to delete an offer with existing purchases - unpublish instead;
+  # existing purchases keep their snapshotted terms regardless either way.
+  deletePackageOffer(id: ID!): Boolean!
+  createSubscriptionOffer(includedHoursPerMonth: Int!, termMonths: Int!, monthlyPrice: Float!, currency: String, includedCourseIds: [ID!]): SubscriptionOffer!
+  updateSubscriptionOffer(id: ID!, monthlyPrice: Float, includedCourseIds: [ID!], isPublished: Boolean): SubscriptionOffer!
+  deleteSubscriptionOffer(id: ID!): Boolean!
+  # Takes effect immediately (no proration - see apps/api/src/lib/pricing.ts).
+  cancelSubscription(id: ID!): SubscriptionPurchase!
 
   # Admin
   updateAdminSetting(key: String!, value: String!): AdminSetting!

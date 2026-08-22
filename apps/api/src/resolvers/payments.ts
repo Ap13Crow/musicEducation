@@ -4,6 +4,8 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
 import { sendPurchaseConfirmedEmail } from '../lib/emails.js';
 import { notifyBookingConfirmed } from './bookings.js';
+import { isValidSubscriptionTermMonths, computeSubscriptionTotal, currentSubscriptionDiscountPct } from '../lib/pricing.js';
+import { grantCredits } from '../lib/lessonCredits.js';
 import type { GraphQLContext } from '../types.js';
 
 const EVENT_ATTENDED_XP = 40;
@@ -61,6 +63,14 @@ async function getPayoutDestination(prisma: GraphQLContext['prisma'], type: stri
     const event = await prisma.event.findUnique({ where: { id: refId } });
     if (!event) return null;
     return prisma.teacherProfile.findUnique({ where: { userId: event.publisherId } });
+  }
+  if (type === 'package') {
+    const offer = await prisma.lessonPackageOffer.findUnique({ where: { id: refId }, include: { teacherProfile: true } });
+    return offer?.teacherProfile ?? null;
+  }
+  if (type === 'subscription') {
+    const offer = await prisma.subscriptionOffer.findUnique({ where: { id: refId }, include: { teacherProfile: true } });
+    return offer?.teacherProfile ?? null;
   }
   return null;
 }
@@ -187,6 +197,88 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
           amount: payment.amount.toNumber(), currency: payment.currency,
         });
       }
+    } else if (type === 'package') {
+      const meta = session.metadata ?? {};
+      // create() (not update, unlike the booking branch above) - a package
+      // purchase has no pre-existing row to attach to, this webhook is
+      // what creates it. The paymentId unique constraint is the same
+      // idempotency guard the Payment row itself uses just above: a retry
+      // hits P2002 and is treated as already-processed, so credits are
+      // granted exactly once no matter how many times Stripe redelivers.
+      try {
+        const purchase = await prisma.lessonPackagePurchase.create({
+          data: {
+            userId: userId!,
+            teacherProfileId: meta.teacherProfileId!,
+            instrument: meta.instrument || null,
+            lessonCount: Number(meta.lessonCount),
+            pricePaid: payment.amount,
+            currency: payment.currency,
+            policyLeadDays: Number(meta.policyLeadDays),
+            policyCancellationDays: Number(meta.policyCancellationDays),
+            paymentId: payment.id,
+          },
+        });
+        await grantCredits(prisma as any, purchase.id, purchase.lessonCount);
+        if (await claimConfirmationEmail()) {
+          const buyer = await getBuyerInfo();
+          void sendPurchaseConfirmedEmail({
+            toEmail: buyer.email, toName: buyer.name,
+            description: `${meta.lessonCount}-lesson package`,
+            amount: payment.amount.toNumber(), currency: payment.currency,
+          });
+        }
+      } catch (error: any) {
+        if (error?.code !== 'P2002') throw error;
+      }
+    } else if (type === 'subscription') {
+      const meta = session.metadata ?? {};
+      const termMonths = Number(meta.termMonths);
+      try {
+        const startsAt = new Date();
+        const endsAt = new Date(startsAt);
+        endsAt.setMonth(endsAt.getMonth() + termMonths);
+        const includedCourseIds = meta.includedCourseIds ? meta.includedCourseIds.split(',').filter(Boolean) : [];
+        const purchase = await prisma.subscriptionPurchase.create({
+          data: {
+            userId: userId!,
+            teacherProfileId: meta.teacherProfileId!,
+            termMonths,
+            includedHoursPerMonth: Number(meta.includedHoursPerMonth),
+            monthlyPrice: Number(meta.monthlyPrice),
+            discountPct: Number(meta.discountPct),
+            totalPricePaid: payment.amount,
+            currency: payment.currency,
+            includedCourseIds,
+            policyLeadDays: Number(meta.policyLeadDays),
+            policyCancellationDays: Number(meta.policyCancellationDays),
+            paymentId: payment.id,
+            startsAt,
+            endsAt,
+          },
+        });
+        // Course bundling: grant an Enrollment for every included course,
+        // reusing the existing Enrollment model rather than a parallel
+        // entitlement system - respects the same course-authority boundary
+        // as a direct course purchase.
+        for (const courseId of purchase.includedCourseIds) {
+          await prisma.enrollment.upsert({
+            where: { userId_courseId: { userId: userId!, courseId } },
+            update: {},
+            create: { userId: userId!, courseId },
+          });
+        }
+        if (await claimConfirmationEmail()) {
+          const buyer = await getBuyerInfo();
+          void sendPurchaseConfirmedEmail({
+            toEmail: buyer.email, toName: buyer.name,
+            description: `${termMonths}-month subscription`,
+            amount: payment.amount.toNumber(), currency: payment.currency,
+          });
+        }
+      } catch (error: any) {
+        if (error?.code !== 'P2002') throw error;
+      }
     }
   } else if (event.type === 'account.updated') {
     // v1 accounts only - a v2-created account (see
@@ -249,6 +341,13 @@ export const paymentResolvers = {
       let amount = 0;
       let currency = 'chf';
       let description = '';
+      // Extra checkout.session metadata beyond {userId, type, refId} -
+      // package/subscription snapshot their full commercial terms here so
+      // the webhook (which may run long after checkout, once payment
+      // actually clears) recreates the exact price/discount/policy the
+      // student saw at checkout time, never whatever the offer looks like
+      // by then. Metadata values must be strings.
+      let extraMetadata: Record<string, string> = {};
 
       if (type === 'course') {
         const course = await prisma.course.findUnique({ where: { id: refId } });
@@ -269,6 +368,40 @@ export const paymentResolvers = {
         amount = Number(event.price) * 100;
         currency = event.currency.toLowerCase();
         description = `Ticket: ${event.title}`;
+      } else if (type === 'package') {
+        const offer = await prisma.lessonPackageOffer.findUnique({ where: { id: refId }, include: { teacherProfile: true } });
+        if (!offer || !offer.isPublished) throw new GraphQLError('Package offer not found.', { extensions: { code: 'NOT_FOUND' } });
+        amount = Math.round(Number(offer.pricePerPackage) * 100);
+        currency = offer.currency.toLowerCase();
+        description = `${offer.lessonCount}-lesson package${offer.instrument ? ` (${offer.instrument})` : ''}`;
+        extraMetadata = {
+          lessonCount: String(offer.lessonCount),
+          instrument: offer.instrument ?? '',
+          teacherProfileId: offer.teacherProfileId,
+          policyLeadDays: String(offer.teacherProfile.leadDays),
+          policyCancellationDays: String(offer.teacherProfile.cancellationDays),
+        };
+      } else if (type === 'subscription') {
+        const offer = await prisma.subscriptionOffer.findUnique({ where: { id: refId }, include: { teacherProfile: true } });
+        if (!offer || !offer.isPublished) throw new GraphQLError('Subscription offer not found.', { extensions: { code: 'NOT_FOUND' } });
+        if (!isValidSubscriptionTermMonths(offer.termMonths)) {
+          throw new GraphQLError('Subscription offer has an invalid term.', { extensions: { code: 'BAD_USER_INPUT' } });
+        }
+        const discountPct = await currentSubscriptionDiscountPct(prisma, offer.termMonths as 6 | 12);
+        const total = computeSubscriptionTotal(Number(offer.monthlyPrice), offer.termMonths, discountPct);
+        amount = Math.round(total * 100);
+        currency = offer.currency.toLowerCase();
+        description = `${offer.termMonths}-month subscription (${offer.includedHoursPerMonth}h/mo)`;
+        extraMetadata = {
+          teacherProfileId: offer.teacherProfileId,
+          termMonths: String(offer.termMonths),
+          includedHoursPerMonth: String(offer.includedHoursPerMonth),
+          monthlyPrice: String(offer.monthlyPrice),
+          discountPct: String(discountPct),
+          includedCourseIds: offer.includedCourseIds.join(','),
+          policyLeadDays: String(offer.teacherProfile.leadDays),
+          policyCancellationDays: String(offer.teacherProfile.cancellationDays),
+        };
       } else {
         throw new GraphQLError('Invalid checkout type.', { extensions: { code: 'BAD_USER_INPUT' } });
       }
@@ -287,7 +420,7 @@ export const paymentResolvers = {
           mode: 'payment',
           success_url: `${frontendUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}&type=${type}&ref=${refId}`,
           cancel_url: `${frontendUrl}/payment/cancel?type=${type}&ref=${refId}`,
-          metadata: { userId: user.id, type, refId },
+          metadata: { userId: user.id, type, refId, ...extraMetadata },
           ...(payoutReady && amount > 0
             ? {
                 payment_intent_data: {

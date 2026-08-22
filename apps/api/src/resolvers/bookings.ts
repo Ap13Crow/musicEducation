@@ -6,6 +6,7 @@ import { enqueueMail, recipientAddresses } from '../lib/mailOutbox.js';
 import { buildBookingIcs } from '../lib/ics.js';
 import { isWithinBookingWindow, isLateCancellation, APPROVAL_HOLD_HOURS } from '../lib/bookingPolicy.js';
 import { reserveInstrumentCapacity } from '../lib/capacity.js';
+import { consumeCredit, restoreCredit } from '../lib/lessonCredits.js';
 import type { GraphQLContext } from '../types.js';
 import type { Prisma, PrismaClient } from '@my-music-coach/database';
 
@@ -198,7 +199,21 @@ export const bookingResolvers = {
   Mutation: {
     async bookSession(_: unknown, { input }: any, { prisma, user }: GraphQLContext) {
       requireAuth(user);
-      const { teacherProfileId, startsAt, durationMin, format, instrument, notes } = input;
+      const { teacherProfileId, startsAt, durationMin, format, instrument, notes, packagePurchaseId } = input;
+
+      let packagePurchase = null as Awaited<ReturnType<typeof prisma.lessonPackagePurchase.findUnique>>;
+      if (packagePurchaseId) {
+        packagePurchase = await prisma.lessonPackagePurchase.findUnique({ where: { id: packagePurchaseId } });
+        if (!packagePurchase || packagePurchase.userId !== user.id) {
+          throw new GraphQLError('Package not found.', { extensions: { code: 'NOT_FOUND' } });
+        }
+        if (packagePurchase.teacherProfileId !== teacherProfileId) {
+          throw new GraphQLError('This package is not for this teacher.', { extensions: { code: 'BAD_USER_INPUT' } });
+        }
+        if (packagePurchase.instrument && packagePurchase.instrument !== instrument) {
+          throw new GraphQLError(`This package only covers ${packagePurchase.instrument}.`, { extensions: { code: 'BAD_USER_INPUT' } });
+        }
+      }
 
       const teacherProfile = await prisma.teacherProfile.findUnique({
         where: { id: teacherProfileId },
@@ -308,8 +323,16 @@ export const bookingResolvers = {
             notes,
             status: autoApprove ? 'CONFIRMED' : 'PENDING',
             holdExpiresAt: autoApprove ? null : new Date(Date.now() + APPROVAL_HOLD_HOURS * 60 * 60 * 1000),
+            packagePurchaseId: packagePurchase?.id ?? null,
           },
         });
+        // Same "only at actual confirmation" rule as capacity - a credit is
+        // only spent once the lesson is really on the books, not merely
+        // requested. A manually-approved request spends it later, in
+        // confirmBooking.
+        if (autoApprove && packagePurchase) {
+          await consumeCredit(tx, packagePurchase.id, created.id);
+        }
         // Auto-approved (whether free or paid) is CONFIRMED immediately -
         // that's the moment to notify, same as confirmBooking below for a
         // manually-approved one.
@@ -339,6 +362,9 @@ export const bookingResolvers = {
         // bookSession - a manually-approved booking becomes an active
         // relationship right here, not at the original request.
         await reserveInstrumentCapacity(tx, booking.teacherProfileId, booking.instrument, booking.userId);
+        if (booking.packagePurchaseId) {
+          await consumeCredit(tx, booking.packagePurchaseId, booking.id);
+        }
         const updated = await tx.booking.update({ where: { id: bookingId }, data: { status: 'CONFIRMED', holdExpiresAt: null } });
         await notifyBookingConfirmed(tx, bookingId);
         return updated;
@@ -355,15 +381,24 @@ export const bookingResolvers = {
       const wasConfirmed = booking.status === 'CONFIRMED';
       // Only a confirmed lesson can be "late" or "on time" - a still-
       // PENDING request being withdrawn/rejected was never a commitment to
-      // charge against. lateCancellation itself only *records* the
-      // determination; actually charging the full price or consuming a
-      // prepaid/subscription credit is Phase 5 (packages/subscriptions
-      // don't exist yet to consume a credit from).
+      // charge against.
       const lateCancellation = wasConfirmed
         ? isLateCancellation(booking.startsAt, booking.teacherProfile.cancellationDays)
         : null;
       return prisma.$transaction(async (tx) => {
         const updated = await tx.booking.update({ where: { id: bookingId }, data: { status: 'CANCELLED', lateCancellation } });
+        // Package credit: on-time restores the credit the confirmation
+        // consumed (the released slot can go to another student); late
+        // keeps it consumed - that consumption *is* the charge for a
+        // package-booked lesson. A one-off (non-package) paid booking's
+        // "charge the full price" side isn't implemented this phase - it
+        // needs an off-session Stripe charge against a saved payment
+        // method, a materially bigger integration than restoring a ledger
+        // entry; lateCancellation is still recorded so that charge can be
+        // added later without re-deriving which cancellations qualify.
+        if (wasConfirmed && booking.packagePurchaseId && lateCancellation === false) {
+          await restoreCredit(tx, booking.packagePurchaseId, booking.id);
+        }
         // A PENDING booking never had a confirmation/invitation sent, so
         // there is nothing to cancel a notice for - only a previously
         // CONFIRMED booking gets a cancellation email + METHOD:CANCEL ICS.

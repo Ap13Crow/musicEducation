@@ -140,6 +140,8 @@ model User {
   quizAttempts        QuizAttempt[]
   xpAwards            XpAward[]
   personalAppointments PersonalAppointment[]
+  lessonPackagePurchases LessonPackagePurchase[]
+  subscriptionPurchases  SubscriptionPurchase[]
 }
 
 model UserCredential {
@@ -238,6 +240,10 @@ model TeacherProfile {
   availability   TeacherAvailability[]
   unavailability TeacherUnavailability[]
   instrumentCapacities TeacherInstrumentCapacity[]
+  lessonPackageOffers  LessonPackageOffer[]
+  lessonPackagePurchases LessonPackagePurchase[]
+  subscriptionOffers   SubscriptionOffer[]
+  subscriptionPurchases SubscriptionPurchase[]
   courses        Course[]
   bookings       Booking[]
 }
@@ -652,6 +658,10 @@ model Booking {
   // charging/consuming a credit off this determination; this phase records
   // the determination itself.
   lateCancellation Boolean?
+  // When set, this booking was made against a prepaid package credit
+  // instead of a one-off charge - see apps/api/src/lib/lessonCredits.ts.
+  // Plain column, no FK, same pattern as paymentId above.
+  packagePurchaseId String?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
@@ -818,6 +828,143 @@ model Payment {
   // each NULL providerRef as distinct, so non-webhook-created payments
   // (providerRef left unset) never collide with each other under this.
   @@unique([provider, providerRef])
+}
+
+// ── Phase 5 (scoped): prepaid lesson packages, upfront-term subscriptions,
+// course bundling. True monthly recurring billing (Stripe Subscription
+// objects with dunning/proration) is out of scope for this phase - both
+// product types here are single upfront Stripe Checkout payments, reusing
+// the existing createCheckoutSession/handleStripeWebhook type-dispatch
+// pattern rather than a second payment integration. See
+// apps/api/src/lib/pricing.ts for the discount/rounding math.
+
+// A teacher-published prepaid package offer (5/10/20 one-hour lessons).
+// Unpublishing/editing never touches existing LessonPackagePurchase rows -
+// every commercial term a student actually paid is snapshotted onto the
+// purchase at checkout time.
+model LessonPackageOffer {
+  id               String   @id @default(cuid())
+  teacherProfileId String
+  instrument       String?
+  lessonCount      Int
+  pricePerPackage  Decimal  @db.Decimal(10, 2)
+  currency         String   @default("CHF")
+  isPublished      Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  teacherProfile TeacherProfile          @relation(fields: [teacherProfileId], references: [id])
+  purchases      LessonPackagePurchase[]
+}
+
+// Snapshot of everything that mattered at checkout time - name/inclusions/
+// price/policy - so a later teacher edit to LessonPackageOffer or their
+// default leadDays/cancellationDays never retroactively changes what this
+// student already bought.
+model LessonPackagePurchase {
+  id                     String    @id @default(cuid())
+  userId                 String
+  teacherProfileId       String
+  offerId                String?
+  instrument             String?
+  lessonCount            Int
+  pricePaid              Decimal   @db.Decimal(10, 2)
+  currency               String
+  policyLeadDays         Int
+  policyCancellationDays Int
+  // Plain column, no FK - same pattern Booking.paymentId already uses
+  // (Payment has no reverse relation declared to keep this one-directional).
+  paymentId              String?   @unique
+  purchasedAt            DateTime  @default(now())
+
+  user           User                     @relation(fields: [userId], references: [id])
+  teacherProfile TeacherProfile           @relation(fields: [teacherProfileId], references: [id])
+  offer          LessonPackageOffer?      @relation(fields: [offerId], references: [id])
+  ledgerEntries  LessonCreditLedgerEntry[]
+}
+
+enum LessonCreditEntryType {
+  GRANT
+  CONSUME
+  RESTORE
+  EXPIRE
+  ADJUST
+}
+
+// Signed ledger, never mutated in place - the credit balance for a
+// purchase is always SUM(amount) over its entries (GRANT/RESTORE positive,
+// CONSUME/EXPIRE negative), auditable end to end. See
+// apps/api/src/lib/lessonCredits.ts.
+model LessonCreditLedgerEntry {
+  id         String                @id @default(cuid())
+  purchaseId String
+  type       LessonCreditEntryType
+  amount     Int
+  bookingId  String?
+  note       String?
+  createdAt  DateTime              @default(now())
+
+  purchase LessonPackagePurchase @relation(fields: [purchaseId], references: [id])
+
+  @@index([purchaseId])
+}
+
+// A teacher-published fixed-term subscription offer. termMonths is 6 or 12
+// (validated in the resolver); the upfront discount for each term is a
+// stored AdminSetting (subscription_discount_pct_6mo /
+// subscription_discount_pct_12mo, defaulting to 10/20) so the business can
+// change the default without touching any SubscriptionPurchase already
+// sold at the old rate.
+model SubscriptionOffer {
+  id                    String   @id @default(cuid())
+  teacherProfileId      String
+  includedHoursPerMonth Int
+  termMonths            Int
+  monthlyPrice          Decimal  @db.Decimal(10, 2)
+  currency              String   @default("CHF")
+  // Course entitlements bundled with this subscription - the existing
+  // Enrollment model is the actual entitlement; these ids just say which
+  // courses to enroll into on purchase.
+  includedCourseIds     String[] @default([])
+  isPublished           Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  teacherProfile TeacherProfile         @relation(fields: [teacherProfileId], references: [id])
+  purchases      SubscriptionPurchase[]
+}
+
+enum SubscriptionPurchaseStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+}
+
+model SubscriptionPurchase {
+  id                     String                     @id @default(cuid())
+  userId                 String
+  teacherProfileId       String
+  offerId                String?
+  termMonths             Int
+  includedHoursPerMonth  Int
+  monthlyPrice           Decimal                    @db.Decimal(10, 2)
+  discountPct            Int
+  totalPricePaid         Decimal                    @db.Decimal(10, 2)
+  currency               String
+  includedCourseIds      String[]                   @default([])
+  policyLeadDays         Int
+  policyCancellationDays Int
+  paymentId              String?                    @unique
+  status                 SubscriptionPurchaseStatus @default(ACTIVE)
+  startsAt               DateTime                   @default(now())
+  endsAt                 DateTime
+  cancelledAt            DateTime?
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id])
+  teacherProfile TeacherProfile  @relation(fields: [teacherProfileId], references: [id])
+  offer          SubscriptionOffer? @relation(fields: [offerId], references: [id])
 }
 
 enum MailOutboxStatus {
