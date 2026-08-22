@@ -353,16 +353,40 @@ export const bookingResolvers = {
         throw new GraphQLError('This request has expired and can no longer be approved.', { extensions: { code: 'CONFLICT' } });
       }
       return prisma.$transaction(async (tx) => {
-        // Same capacity enforcement point as the auto-approved path in
-        // bookSession - a manually-approved booking becomes an active
-        // relationship right here, not at the original request.
-        await reserveInstrumentCapacity(tx, booking.teacherProfileId, booking.instrument, booking.userId);
-        if (booking.packagePurchaseId) {
-          await consumeCredit(tx, booking.packagePurchaseId, booking.id);
+        // Atomic claim: only a booking that's still PENDING actually
+        // transitions here, and only that transition reserves capacity,
+        // consumes a credit, and enqueues the confirmation email/ICS. A
+        // repeat call (double-click, client retry after a timeout) used to
+        // re-run every one of those unconditionally - re-reserving
+        // capacity that was never released, and worse, writing a second
+        // MailOutboxMessage row (a duplicate confirmation email/invite)
+        // every single time. updateMany's WHERE guard makes at most one
+        // call ever win the transition, the same idempotency shape
+        // claimConfirmationEmail (payments.ts) uses for the Stripe path.
+        const claimed = await tx.booking.updateMany({
+          where: { id: bookingId, status: 'PENDING' },
+          data: { status: 'CONFIRMED', holdExpiresAt: null },
+        });
+        if (claimed.count > 0) {
+          // Same capacity enforcement point as the auto-approved path in
+          // bookSession - a manually-approved booking becomes an active
+          // relationship right here, not at the original request.
+          await reserveInstrumentCapacity(tx, booking.teacherProfileId, booking.instrument, booking.userId);
+          if (booking.packagePurchaseId) {
+            await consumeCredit(tx, booking.packagePurchaseId, booking.id);
+          }
+          await notifyBookingConfirmed(tx, bookingId);
+          return tx.booking.findUniqueOrThrow({ where: { id: bookingId } });
         }
-        const updated = await tx.booking.update({ where: { id: bookingId }, data: { status: 'CONFIRMED', holdExpiresAt: null } });
-        await notifyBookingConfirmed(tx, bookingId);
-        return updated;
+        // Lost the claim - either a concurrent/retried call already
+        // confirmed it (harmless no-op, return the current state) or it
+        // moved to some other status entirely (cancelled, completed) since
+        // the read above, which this must not force back to CONFIRMED.
+        const current = await tx.booking.findUniqueOrThrow({ where: { id: bookingId } });
+        if (current.status !== 'CONFIRMED') {
+          throw new GraphQLError('This booking is no longer pending approval.', { extensions: { code: 'CONFLICT' } });
+        }
+        return current;
       });
     },
 

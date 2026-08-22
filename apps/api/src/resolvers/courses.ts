@@ -234,8 +234,12 @@ export const courseResolvers = {
     // "Delete" a course: archiving (not a hard delete) is deliberate - a
     // published course can have enrolments and payment history, and losing
     // those rows would break a paying student's access and the teacher's
-    // own revenue records. Archived courses drop out of discovery/myCourses
-    // listings but stay intact for existing enrollees and audit purposes.
+    // own revenue records. Archived courses drop out of the public catalog
+    // (courses/course above only ever return PUBLISHED) but stay intact for
+    // existing enrollees and audit purposes - and deliberately stay visible
+    // in myCourses too (not filtered out), since a teacher's own management
+    // view is the only place they can see and unarchiveCourse a course they
+    // archived by mistake; hiding it there entirely would be a dead end.
     async archiveCourse(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'TEACHER', 'ADMIN');
       const course = await prisma.course.findUnique({ where: { id }, include: { teacherProfile: true } });
@@ -244,6 +248,22 @@ export const courseResolvers = {
         throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
       }
       return prisma.course.update({ where: { id }, data: { status: 'ARCHIVED' } });
+    },
+
+    // Restores an archived course to DRAFT (not straight back to PUBLISHED
+    // - the teacher reviews and republishes explicitly via publishCourse,
+    // same as any other draft) so archiving one by mistake isn't permanent.
+    async unarchiveCourse(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'TEACHER', 'ADMIN');
+      const course = await prisma.course.findUnique({ where: { id }, include: { teacherProfile: true } });
+      if (!course) throw new GraphQLError('Course not found.', { extensions: { code: 'NOT_FOUND' } });
+      if (user!.role !== 'ADMIN' && course.teacherProfile?.userId !== user!.id) {
+        throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
+      }
+      if (course.status !== 'ARCHIVED') {
+        throw new GraphQLError('Only an archived course can be unarchived.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      return prisma.course.update({ where: { id }, data: { status: 'DRAFT' } });
     },
 
     async createSection(_: unknown, { input }: any, { prisma, user }: GraphQLContext) {

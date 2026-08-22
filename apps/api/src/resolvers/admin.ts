@@ -112,14 +112,24 @@ export const adminResolvers = {
       });
     },
 
+    // "Retry" only ever means requeuing a message that actually failed
+    // (FAILED or DEAD_LETTER) - an unconditional update() here would also
+    // happily reset an already-SENT message back to PENDING, and the
+    // worker's mail-dispatch job would then send a real duplicate delivery
+    // (e.g. a second booking-confirmation email) the next time it polls.
+    // The updateMany WHERE guard makes that combination a no-op instead.
     async retryMailOutboxMessage(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'ADMIN');
       const message = await prisma.mailOutboxMessage.findUnique({ where: { id } });
       if (!message) throw new GraphQLError('Mail message not found.', { extensions: { code: 'NOT_FOUND' } });
-      return prisma.mailOutboxMessage.update({
-        where: { id },
+      const requeued = await prisma.mailOutboxMessage.updateMany({
+        where: { id, status: { in: ['FAILED', 'DEAD_LETTER'] } },
         data: { status: 'PENDING', attempts: 0, lastError: null, nextAttemptAt: new Date() },
       });
+      if (requeued.count === 0) {
+        throw new GraphQLError('Only a FAILED or DEAD_LETTER message can be retried.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      return prisma.mailOutboxMessage.findUniqueOrThrow({ where: { id } });
     },
 
     // Schema name: adminSetRole

@@ -2,6 +2,7 @@ import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
 import { isOwnedUploadUrl } from '../lib/storage.js';
+import { isValidEmail } from '../lib/mailOutbox.js';
 import {
   isValidLeadDays, isValidCancellationDays, isValidPolicyPair,
   LEAD_DAYS_MIN, LEAD_DAYS_MAX, CANCELLATION_DAYS_MIN, CANCELLATION_DAYS_MAX,
@@ -145,7 +146,17 @@ export const userResolvers = {
   Mutation: {
     async updateProfile(_: unknown, { input }: any, { prisma, user }: GraphQLContext) {
       requireAuth(user);
-      const { displayName, bio, city, country, timezone, instruments, musicStyles } = input;
+      const { displayName, bio, city, country, timezone, instruments, musicStyles, notificationEmail } = input;
+      // Empty string clears a previously-set value; anything else must be a
+      // real email - this feeds straight into an SMTP "to" address
+      // (mailOutbox.ts's recipientAddresses), so a typo here would silently
+      // blackhole every booking confirmation sent to it.
+      if (notificationEmail && !isValidEmail(notificationEmail)) {
+        throw new GraphQLError('Enter a valid notification email address, or leave it blank.', {
+          extensions: { code: 'BAD_USER_INPUT' },
+        });
+      }
+      const normalizedNotificationEmail = notificationEmail === undefined ? undefined : notificationEmail || null;
       const updated = await prisma.user.update({
         where: { id: user.id },
         data: {
@@ -159,8 +170,9 @@ export const userResolvers = {
                 timezone: timezone ?? 'Europe/Zurich',
                 instruments: instruments ?? [],
                 musicStyles: musicStyles ?? [],
+                notificationEmail: normalizedNotificationEmail,
               },
-              update: { displayName, bio, city, country, timezone, instruments, musicStyles },
+              update: { displayName, bio, city, country, timezone, instruments, musicStyles, notificationEmail: normalizedNotificationEmail },
             },
           },
         },
