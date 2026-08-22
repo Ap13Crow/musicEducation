@@ -1,207 +1,149 @@
 # Integration Architecture
 
+> Rewritten from a direct read of `apps/api/src`, `apps/worker/src`, and
+> `packages/database/prisma/schema.prisma`. The previous version of this document
+> described a hub-and-spoke model with Moodle, LibreBooking, and pretix as separate
+> backend systems behind a Caddy gateway, each with its own database, OIDC client, and
+> webhook adapter. **None of that exists in the current implementation.** It was an
+> early reference approach; the product is built natively instead (see `AGENTS.md`,
+> `CLAUDE.md`). The only integration layer that exists today is a set of direct,
+> server-side SDK/API calls from `apps/api` and `apps/worker` to external providers —
+> there is no generic adapter directory, no per-system database, and no per-system
+> OIDC client.
+
 ## Overview
 
-My Music Coach uses a hub-and-spoke model where the **platform API** (`apps/api`) is the central orchestrator and four specialised systems handle their respective domains:
+MyMusic.Coach (`apps/api` + `apps/web` + `apps/worker`) is the single application.
+External systems are narrow, server-side integrations behind small dedicated modules,
+never a second source of truth for platform state:
 
-| System | Role | Auth method |
-|--------|------|-------------|
-| **my-music-coach** (apps/api + apps/web) | User profiles, public event discovery, orchestration | Keycloak OIDC (NextAuth.js) |
-| **Keycloak** | Central identity provider | — |
-| **Moodle** | Online learning (courses, lessons, quizzes) | Keycloak OIDC via `moodle-oidc` client |
-| **LibreBooking** | Physical lesson scheduling (rooms, resources) | Keycloak OIDC via `librebooking-saml` client (native Keycloak login) |
-| **pretix** | Event ticketing (orders, check-in, refunds) | Keycloak OIDC via `pretix-oidc` client |
+| System | Role | Where it's wired in |
+|--------|------|----------------------|
+| **Keycloak** | Sole identity provider (OIDC) | `apps/api/src/middleware/keycloak.ts` (RS256 verification via JWKS), `apps/web` NextAuth Keycloak provider |
+| **Stripe** | Checkout payments + Stripe Connect Express payouts | `apps/api/src/resolvers/payments.ts`, webhooks below |
+| **S3-compatible object storage** | Teacher application files, course slides (presigned uploads) | `apps/api/src/lib/storage.ts` |
+| **Google Workspace SMTP relay** | Transactional email | `apps/api/src/lib/mailer.ts` |
+| **DeepSeek / OpenAI** | Advisory-only AI text (assessment feedback, event classification) | `apps/api/src/lib/ai.ts`, `apps/worker/src/lib/ai.ts` |
+| **Ticketmaster** | External event discovery ingestion | `apps/worker/src/discovery/ticketmaster.ts`, `apps/worker/src/jobs/ticketmaster-ingest.ts` |
+| **Classictic** | Planned external affiliate event discovery — not yet implemented | — |
+| **Europeana** | Planned cultural-heritage content for learning — not yet implemented | — |
 
-## Service Map
+## Identity: Keycloak
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Caddy Gateway                           │
-│  app.  │  api.  │  auth.  │  learn.  │  booking.  │  tickets.  │
-└───┬────┴───┬────┴────┬────┴────┬─────┴─────┬──────┴─────┬──────┘
-    │        │         │         │            │            │
-    ▼        ▼         ▼         ▼            ▼            ▼
-  [web]    [api]   [keycloak]  [moodle]  [librebooking]  [pretix]
-    │        │         │         │            │            │
-    │        ├─────────┤         │            │            │
-    │        │   OIDC  │◄────────┤            │            │
-    │        │  tokens │◄────────┼────────────┤            │
-    │        │         │◄────────┼────────────┼────────────┤
-    │        │         │         │            │            │
-    │        ▼         │         ▼            ▼            ▼
-    │   ┌─────────┐    │    [moodle-db]  [libre-db]   [pretix-db]
-    │   │postgres │    │                              [pretix-redis]
-    │   │ -main   │    │
-    │   └─────────┘    │
-    │   ┌─────────┐    │
-    │   │redis    │    │
-    │   │ -main   │    │
-    │   └─────────┘    │
-    │   ┌─────────┐    │
-    │   │ minio   │    │
-    │   └─────────┘    │
-    │   ┌─────────┐    │
-    │   │mcp-     │    │
-    │   │server   │    │
-    │   └─────────┘    │
-    │                  │
-    └──────────────────┘
-```
+- `apps/web` authenticates via NextAuth's Keycloak provider (OIDC + PKCE, server-side
+  session).
+- `apps/api/src/middleware/keycloak.ts` verifies the bearer token against Keycloak's
+  JWKS (RS256, key selected by `kid`).
+- `apps/api/src/middleware/auth.ts` resolves the verified token into GraphQL
+  `context.user`.
+- `UserExternalIdentity` maps the immutable Keycloak `sub` to the platform `User`; the
+  application database — not Keycloak — owns profiles, roles, marketplace, bookings,
+  courses, entitlements, and progress.
+- There is a single auth path. No parallel custom-JWT login/register/refresh system
+  exists in current source.
 
-## Integration Layer (`apps/api/src/integrations/`)
+## Payments: Stripe
 
-The integration layer is a dedicated module inside the API that owns:
+- Checkout: course purchases, lesson bookings, event bookings.
+- Payouts: Stripe Connect Express accounts for teachers (`TeacherProfile
+  .stripeAccountId` / `.stripePayoutsEnabled`).
+- Two webhook endpoints in `apps/api/src/index.ts`, each gated on its own env vars so
+  an unconfigured secret simply leaves that endpoint unregistered rather than
+  crashing the server:
+  - `POST /webhooks/stripe` (`STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET`) — the
+    main payment/checkout event stream.
+  - `POST /webhooks/stripe-v2` (`STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET_V2`) —
+    Stripe's newer "thin event" stream for Connect account-requirements/capability
+    changes only.
+- Both verify the `stripe-signature` header against raw request bytes
+  (`express.raw`) before parsing. Payment state is a state machine driven by these
+  signed webhooks; the browser redirect after checkout never confirms payment on its
+  own. Stripe test mode only in development.
 
-### Directory Structure
+## Object storage: S3-compatible (DigitalOcean Spaces in the deployed environment)
 
-```
-apps/api/src/integrations/
-├── adapters/
-│   ├── index.ts              # Re-exports
-│   ├── librebooking.ts       # SchedulingAdapter → LibreBooking REST API
-│   ├── moodle.ts             # Moodle REST API (user provisioning, courses)
-│   └── pretix.ts             # EventCoreAdapter → pretix REST API
-├── provisioning/
-│   └── user-provisioning.ts  # Idempotent user sync to external systems
-├── sync/
-│   └── event-sync.ts         # Event provisioning + periodic order sync
-├── types/
-│   └── index.ts              # Shared interfaces (adapters, webhooks, IDs)
-├── webhooks/
-│   ├── librebooking-webhook.ts
-│   └── pretix-webhook.ts     # POST handler for pretix webhook callbacks
-└── index.ts                  # Barrel export
-```
+`apps/api/src/lib/storage.ts`:
 
-### Adapter Abstractions
+- `storageConfigured()` — `true` only when `S3_ENDPOINT`, `S3_BUCKET`,
+  `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` are all set; exposed as the
+  `Query.storageConfigured` GraphQL field so the frontend can hide upload UI when
+  storage isn't configured rather than offering a control that will fail.
+- `createUploadTarget(purpose, ownerId, filename, contentType)` mints a short-lived
+  presigned PUT URL, namespaced by purpose and the uploading user's own id so two
+  callers can never collide. Current purposes: `TEACHER_APPLICATION_CV`,
+  `TEACHER_APPLICATION_AUDIO`, `TEACHER_APPLICATION_DOCUMENT`, `COURSE_SLIDE`. There
+  is **no purpose for a public teacher profile image** yet.
+- `isOwnedUploadUrl(...)` re-validates, server-side, that a `fileUrl` a client submits
+  back (e.g. as `cvUrl` on a teacher application) actually came from a URL this
+  service minted for that purpose and that user — closing off arbitrary external URLs
+  being persisted into fields an admin later opens.
 
-Two core interfaces decouple the platform from specific vendor APIs:
+Separately, `POST /profile/avatar` (`apps/api/src/index.ts`) is its own, independent
+path for the **general account avatar**: it accepts a small (<500 KB) inline
+`data:image/{jpeg,png,webp};base64,...` payload and writes straight to
+`UserProfile.avatarUrl` — it does not go through `storage.ts`/S3 at all. Any future
+public teacher image should go through the S3 presigned-upload path above (a new
+`UploadPurpose`, e.g. `TEACHER_PROFILE_IMAGE`) rather than this inline-base64 route,
+since it needs to be publicly servable at scale, not embedded per-request.
 
-1. **`SchedulingAdapter`** — replaces the previous Calendly assumptions. Provides `getAvailability()`, `createBooking()`, `cancelBooking()`, `getBooking()`. The `LibreBookingAdapter` is the first implementation.
+## Transactional email: Google Workspace SMTP relay
 
-2. **`EventCoreAdapter`** — abstracts event ticketing operations. Provides organiser, event, product, order, and check-in management. The `PretixAdapter` is the first implementation.
+`apps/api/src/lib/mailer.ts` sends via `smtp-relay.gmail.com:587` (STARTTLS) using
+Nodemailer, configured through `SMTP_HOST/PORT/USER/PASSWORD/FROM/FROM_NAME`.
+`mailConfigured()` gates whether sending is attempted at all. `sendMail()` is
+currently **synchronous and best-effort**: on failure it logs a warning and returns
+`false`, and callers must not let that block the mutation that triggered it (a
+booking, a purchase). There is no outbox table, retry, or dead-letter queue yet —
+a transient SMTP failure silently drops the notification rather than queuing it for
+retry. This is a known gap to close (see the Phase 1 booking-email work).
 
-### External Identity Mapping
+This is separate from Keycloak's own email verification/reset flows, which are
+configured on the realm itself (`deploy/overlays/dev/keycloak-realm/realm-import.yaml`),
+not through this mailer.
 
-Each platform user can be linked to external system accounts:
+## AI: DeepSeek / OpenAI
 
-| Field | Type | Source |
-|-------|------|--------|
-| `moodleUserId` | `number` | Provisioned via Moodle REST API |
-| `libreBookingUserId` | `number` | Created on first SSO login |
-| `pretixCustomerId` | `string` | Created on first SSO login |
+`apps/api/src/lib/ai.ts` and `apps/worker/src/lib/ai.ts` each wrap a single
+OpenAI-wire-compatible client: DeepSeek preferred (`DEEPSEEK_API_KEY`/
+`DEEPSEEK_API_URL`), OpenAI as fallback (`OPENAI_API_KEY`). `aiConfigured()` reports
+availability; `aiChat()` returns `null` on failure or when unconfigured, and every
+caller must have a real fallback — this only ever produces narrative/classification
+text (assessment feedback, event categorization). Per `CLAUDE.md`, AI never mutates
+payment, entitlement, progress, or XP state; that stays deterministic and auditable.
 
-### Data Flow
+`packages/mcp-server` is a separate MCP tool surface for AI-assisted development
+tooling, independent of the resolver-level helpers above.
 
-```
-Platform Event → provisionEventToPretix() → pretix API
-                                              ↓
-                                    pretix webhook POST
-                                              ↓
-                              pretix-webhook.ts handler
-                                              ↓
-                                    EventBooking upsert
-```
+## External event discovery: Ticketmaster (worker)
 
-### Webhook Endpoints
+`apps/worker/src/discovery/ticketmaster.ts` calls the Ticketmaster Discovery API
+(`TICKETMASTER_API_KEY`); `apps/worker/src/jobs/ticketmaster-ingest.ts` runs the sync
+and upserts into `ExternalEventProjection`; `apps/worker/src/jobs/
+event-classification.ts` uses the AI helper above to tag ingested events. Scheduling
+is `apps/worker/src/scheduler.ts` (in-process `node-cron` inside the worker, not a
+Kubernetes CronJob). Classictic (affiliate events) and Europeana (cultural-heritage
+content) are named in `CLAUDE.md` as planned providers for this same discovery layer
+but have no code yet — implementing them should follow this module's shape
+(provider-neutral GraphQL surface, `unique(provider, externalId)` upsert, no
+credentials or provider payloads copied into other systems as owned inventory).
 
-| Endpoint | Source | Purpose |
-|----------|--------|---------|
-| `POST /webhooks/pretix` | pretix | Order placed/paid/cancelled/refunded, check-in |
-| `POST /webhooks/librebooking` | LibreBooking | Reservation created/updated/deleted |
+## Webhooks summary
 
-## Moodle OIDC SSO (headless)
+| Endpoint | Source | Verification |
+|----------|--------|--------------|
+| `POST /webhooks/stripe` | Stripe | `stripe-signature` header, raw body |
+| `POST /webhooks/stripe-v2` | Stripe (Connect thin events) | `stripe-signature` header, raw body, separate signing secret |
 
-Moodle authenticates against Keycloak through the `moodle-oidc` confidential
-client (defined in `docker/keycloak/realm-export.json`). The integration is
-provisioned **headlessly** — no point-and-click admin wizard — so a clean
-`docker compose up` yields a working SSO login.
+No LibreBooking or pretix webhook endpoints exist; bookings and event tickets are
+native platform state, not synced from an external system.
 
-How it is wired:
+## Security boundaries
 
-1. **Plugin baked into the image.** `docker/moodle/Dockerfile` downloads the
-   `auth_oidc` plugin (the `auth/oidc` subtree of `microsoft/o365-moodle`,
-   `MOODLE_404_STABLE`, matching Moodle `4.4.4`) into `auth/oidc`.
-2. **Configured on boot.** `docker/moodle/docker-entrypoint.sh` runs
-   `admin/cli/upgrade.php` (installs the plugin tables) and then
-   `configure-oidc.php`, which idempotently applies the connection settings via
-   `set_config(...)` and enables `oidc` as a login method. It runs on both the
-   first install and subsequent boots, so config self-heals and tracks an
-   updated secret or endpoints.
-3. **Driven by the environment.** The same image works in dev and prod; only
-   the issuer changes.
-
-| Variable | Default (dev) | Purpose |
-|----------|---------------|---------|
-| `MOODLE_OIDC_CLIENT_ID` | `moodle-oidc` | Keycloak client ID |
-| `MOODLE_OIDC_CLIENT_SECRET` | _(unset)_ | Client secret; OIDC config is skipped when empty |
-| `MOODLE_OIDC_ISSUER` | `http://auth.mymusic-coach.test/realms/mymusic-coach` | Realm base URL; auth/token endpoints are derived from it |
-| `MOODLE_OIDC_OPNAME` | `My Music Coach` | Label shown on the Moodle login button |
-
-`docker-compose.prod.yml` overrides `MOODLE_OIDC_ISSUER` to
-`https://auth.mymusic.coach/realms/mymusic-coach`. The Moodle container must be
-able to resolve the issuer hostname (via the Caddy gateway) so server-side token
-exchange and `iss` validation match the browser-facing auth endpoint.
-
-Claim mapping (Keycloak → Moodle, refreshed on every login): `preferred_username`
-→ username, `email` → email, `given_name` → first name, `family_name` → last name.
-
-## pretix OIDC SSO (headless)
-
-pretix offers **customer-account** SSO against the Keycloak `pretix-oidc` client
-(defined in `docker/keycloak/realm-export.json`). Unlike Moodle, pretix stores
-SSO providers in the database per **organiser** rather than in a config file, so
-the headless provisioning runs a Django script instead of writing settings.
-
-How it is wired:
-
-1. **Provisioning script baked into the image.** `docker/pretix/Dockerfile`
-   copies `configure-sso.py`, executed via `pretix shell`.
-2. **Run on boot.** `docker/pretix/docker-entrypoint.sh` applies migrations
-   (`pretix migrate`), then — in the **background**, so it never blocks
-   `pretix all` — waits for Keycloak's discovery document and runs the script.
-   The script idempotently ensures the organiser exists, enables
-   `customer_accounts`, and upserts an OIDC `CustomerSSOProvider` keyed on
-   `(organiser, method, name)`. Re-running on later boots refreshes an updated
-   secret/endpoints without duplicating.
-3. **Driven by the environment.** The same image works in dev and prod; only
-   the issuer changes.
-
-| Variable | Default (dev) | Purpose |
-|----------|---------------|---------|
-| `PRETIX_ORGANISER_SLUG` | `mymusic-coach` | Organiser that owns the shop + SSO provider |
-| `PRETIX_OIDC_CLIENT_ID` | `pretix-oidc` | Keycloak client ID |
-| `PRETIX_OIDC_CLIENT_SECRET` | _(unset)_ | Client secret; provisioning is skipped when empty |
-| `PRETIX_OIDC_ISSUER` | `http://auth.mymusic-coach.test/realms/mymusic-coach` | OIDC **Base URL**; pretix appends `/.well-known/openid-configuration` |
-
-Unlike Moodle, pretix validates the provider against Keycloak's discovery
-document **at configuration time** (`oidc_validate_and_complete_config`). The
-entrypoint therefore waits for Keycloak before provisioning and retries, so the
-discovery endpoint must be reachable from the pretix container (via the Caddy
-gateway). Because the validator checks every requested scope and `*_field` claim
-against the discovery document, the realm's default Keycloak scopes/claims
-(`openid email profile`; `sub`, `email`, `given_name`, `family_name`) are used.
-
-The OIDC return URL pretix generates is
-`/<organiser-slug>/account/login/<provider-id>/return` (presale is served under
-the organiser slug). The `pretix-oidc` client's redirect URIs are set
-accordingly to `…/mymusic-coach/account/*` (plus a bare `/account/*` fallback for
-custom-domain deployments).
-
-## Startup Order
-
-1. **Databases** — `postgres-main`, `moodle-db`, `librebooking-db`, `pretix-db`
-2. **Caches** — `redis-main`, `pretix-redis`
-3. **Identity** — `keycloak` (waits for `postgres-main`)
-4. **Backend services** — `moodle`, `librebooking`, `pretix` (wait for their respective DBs)
-5. **Platform** — `api` (waits for `postgres-main` + `redis-main`), then `web` (waits for `api`)
-6. **AI** — `mcp-server` (waits for `postgres-main`)
-7. **Storage** — `minio`
-8. **Gateway** — `gateway` (waits for all upstream services)
-
-## Security Boundaries
-
-- Only the **Caddy gateway** is exposed on `0.0.0.0:80`.
-- All other services use Docker `expose` (internal network only).
-- Database and Redis ports are never mapped to the host.
-- Secrets are loaded from `.env` (never committed) — see `.env.example`.
+- Credentials for every integration above live in the `application-integrations`
+  Kubernetes Secret, synchronized from GitHub environment secrets by the deploy
+  workflow — never committed, never logged, never returned in a GraphQL response or
+  health endpoint. See `deploy/README.md` and `.github/workflows/deploy-application.yml`.
+- CORS is an explicit origin (`CORS_ORIGIN`, defaulting to the internal web service
+  address), not a wildcard.
+- Every external callback (Stripe webhooks today) must remain idempotent and treat
+  the payload as untrusted input, per `AGENTS.md`.
