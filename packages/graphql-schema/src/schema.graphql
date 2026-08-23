@@ -410,14 +410,26 @@ type TeacherApplication {
   # Private - admin review only, never copied onto the public TeacherProfile.
   gender: String
   motivation: String
-  # Populated via requestUploadUrl(purpose: TEACHER_APPLICATION_*) then
-  # attached here on submit - object storage, never inline file data.
+  # Either a small base64 data: URL saved directly by the /teacher-
+  # application/cv, /audio, /document REST endpoints (apps/api/src/
+  # index.ts - no S3_* secrets needed), or a real S3 fileUrl from
+  # requestUploadUrl(purpose: TEACHER_APPLICATION_*) on a deployment that
+  # has S3_* configured. Not "object storage only" - callers must handle
+  # either.
   cvUrl: String
   audioSampleUrl: String
   documentUrls: [String!]!
-  # Public teacher photo, via requestUploadUrl(purpose:
-  # TEACHER_PROFILE_IMAGE) - copied to TeacherProfile.publicImageUrl on
-  # approval. Deliberately separate from the account avatar.
+  # Lightweight existence/count companions to cvUrl/audioSampleUrl/
+  # documentUrls above - those can be several-MB inline data: URLs, so a
+  # caller that only needs to know "is something on file" (e.g. the
+  # become-teacher wizard) can query these instead of re-downloading the
+  # full payload on every refetch.
+  hasCv: Boolean!
+  hasAudioSample: Boolean!
+  documentCount: Int!
+  # Public teacher photo - same data: URL or S3 fileUrl duality as cvUrl
+  # above. Copied to TeacherProfile.publicImageUrl on approval.
+  # Deliberately separate from the account avatar.
   imageUrl: String
   # YouTube link, required to apply - copied to TeacherProfile.introVideoUrl
   # on approval (the teacher can hide it again via updateTeacherProfile).
@@ -724,7 +736,7 @@ type EventConnection {
   pageInfo: PageInfo!
 }
 
-# ── External event discovery (read-only projections; never authored Events) ──────────
+# ── External event discovery (read-only projections; never authored Events) ──────
 
 enum ExternalEventProvider {
   TICKETMASTER

@@ -385,5 +385,17 @@ export const teacherApplicationResolvers = {
       if (application.user) return application.user;
       return prisma.user.findUnique({ where: { id: application.userId }, include: { profile: true } });
     },
+    // Lightweight companions to cvUrl/audioSampleUrl/documentUrls - see the
+    // schema comment on those fields for why a caller that only needs
+    // existence/count should use these instead.
+    hasCv(application: any) {
+      return Boolean(application.cvUrl);
+    },
+    hasAudioSample(application: any) {
+      return Boolean(application.audioSampleUrl);
+    },
+    documentCount(application: any) {
+      return application.documentUrls?.length ?? 0;
+    },
   },
 };
