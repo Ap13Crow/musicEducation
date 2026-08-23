@@ -93,47 +93,53 @@ const STATE_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.'‘’\p{Pd}]{0,59}$/u;
 // Mirrors POSTAL_CODE_PATTERNS_BY_COUNTRY in teacherApplications.ts - a
 // generic pattern would accept "12" as a valid Swiss postal code just
 // because the characters were plausible. Keyed by the exact strings in
-// COUNTRIES above; the resolver is the authority and re-checks this.
-const POSTAL_CODE_PATTERNS_BY_COUNTRY: Record<string, RegExp> = {
-  Austria: /^\d{4}$/,
-  Belgium: /^\d{4}$/,
-  Bulgaria: /^\d{4}$/,
-  Canada: /^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$/,
-  Croatia: /^\d{5}$/,
-  Cyprus: /^\d{4}$/,
-  Czechia: /^\d{3} ?\d{2}$/,
-  Denmark: /^\d{4}$/,
-  Estonia: /^\d{5}$/,
-  Finland: /^\d{5}$/,
-  France: /^\d{5}$/,
-  Germany: /^\d{5}$/,
-  Greece: /^\d{3} ?\d{2}$/,
-  Hungary: /^\d{4}$/,
-  Iceland: /^\d{3}$/,
-  Ireland: /^[A-Za-z]\d[A-Za-z0-9] ?[A-Za-z0-9]{4}$/,
-  Italy: /^\d{5}$/,
-  Latvia: /^(LV-)?\d{4}$/,
-  Liechtenstein: /^\d{4}$/,
-  Lithuania: /^(LT-)?\d{5}$/,
-  Luxembourg: /^\d{4}$/,
-  Malta: /^[A-Za-z]{3} ?\d{4}$/,
-  Netherlands: /^\d{4} ?[A-Za-z]{2}$/,
-  Norway: /^\d{4}$/,
-  Poland: /^\d{2}-\d{3}$/,
-  Portugal: /^\d{4}-\d{3}$/,
-  Romania: /^\d{6}$/,
-  Slovakia: /^\d{3} ?\d{2}$/,
-  Slovenia: /^(SI-)?\d{4}$/,
-  Spain: /^\d{5}$/,
-  Sweden: /^\d{3} ?\d{2}$/,
-  Switzerland: /^\d{4}$/,
-  'United Kingdom': /^[A-Za-z]{1,2}\d[A-Za-z\d]? ?\d[A-Za-z]{2}$/,
-  'United States': /^\d{5}(-\d{4})?$/,
-};
+// COUNTRIES above; the resolver is the authority and re-checks this. A Map,
+// not a plain object - a plain object's lookup falls through to inherited
+// Object.prototype properties for a country value like "constructor" (a
+// function, not undefined), crashing on pattern.test(...) instead of
+// hitting the fallback below.
+const POSTAL_CODE_PATTERNS_BY_COUNTRY = new Map<string, RegExp>([
+  ['Austria', /^\d{4}$/],
+  ['Belgium', /^\d{4}$/],
+  ['Bulgaria', /^\d{4}$/],
+  ['Canada', /^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$/],
+  ['Croatia', /^\d{5}$/],
+  ['Cyprus', /^\d{4}$/],
+  ['Czechia', /^\d{3} ?\d{2}$/],
+  ['Denmark', /^\d{4}$/],
+  ['Estonia', /^\d{5}$/],
+  ['Finland', /^\d{5}$/],
+  ['France', /^\d{5}$/],
+  ['Germany', /^\d{5}$/],
+  ['Greece', /^\d{3} ?\d{2}$/],
+  ['Hungary', /^\d{4}$/],
+  ['Iceland', /^\d{3}$/],
+  ['Ireland', /^[A-Za-z]\d[A-Za-z0-9] ?[A-Za-z0-9]{4}$/],
+  ['Italy', /^\d{5}$/],
+  ['Latvia', /^(LV-)?\d{4}$/],
+  ['Liechtenstein', /^\d{4}$/],
+  ['Lithuania', /^(LT-)?\d{5}$/],
+  ['Luxembourg', /^\d{4}$/],
+  ['Malta', /^[A-Za-z]{3} ?\d{4}$/],
+  ['Netherlands', /^\d{4} ?[A-Za-z]{2}$/],
+  ['Norway', /^\d{4}$/],
+  ['Poland', /^\d{2}-\d{3}$/],
+  ['Portugal', /^\d{4}-\d{3}$/],
+  ['Romania', /^\d{6}$/],
+  ['Slovakia', /^\d{3} ?\d{2}$/],
+  ['Slovenia', /^(SI-)?\d{4}$/],
+  ['Spain', /^\d{5}$/],
+  ['Sweden', /^\d{3} ?\d{2}$/],
+  ['Switzerland', /^\d{4}$/],
+  // GIR 0AA is a real, still-valid special postcode that doesn't fit the
+  // standard outward-code shape (3 letters, not 1-2) - mirrors the resolver.
+  ['United Kingdom', /^(GIR ?0AA|[A-Za-z]{1,2}\d[A-Za-z\d]? ?\d[A-Za-z]{2})$/i],
+  ['United States', /^\d{5}(-\d{4})?$/],
+]);
 const POSTAL_CODE_FALLBACK_PATTERN = /^[\p{L}0-9][\p{L}0-9\s\p{Pd}]{0,11}$/u;
 
 function isValidPostalCode(postalCode: string, country: string): boolean {
-  const pattern = POSTAL_CODE_PATTERNS_BY_COUNTRY[country] ?? POSTAL_CODE_FALLBACK_PATTERN;
+  const pattern = POSTAL_CODE_PATTERNS_BY_COUNTRY.get(country) ?? POSTAL_CODE_FALLBACK_PATTERN;
   return pattern.test(postalCode);
 }
 

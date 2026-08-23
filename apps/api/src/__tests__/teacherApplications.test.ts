@@ -177,6 +177,50 @@ describe('applyForTeacher: structured address validation', () => {
       );
       expect(result.postalCode).toBe('ABC-1234');
     });
+
+    // Regression (Copilot review finding on PR #51): the country->pattern
+    // lookup was a plain object, so a country value matching an inherited
+    // Object.prototype property name (e.g. "constructor") resolved to that
+    // property (a function) instead of undefined, and pattern.test(...)
+    // threw a TypeError instead of hitting the documented fallback.
+    it.each(['constructor', 'toString', 'hasOwnProperty'])(
+      'falls back to the generic pattern instead of crashing for the inherited-property-name country %s',
+      async (country) => {
+        const prisma = fakePrisma();
+        const input = { ...VALID_INPUT, country, postalCode: 'ABC-1234' };
+        const result = await teacherApplicationResolvers.Mutation.applyForTeacher(
+          null,
+          { input },
+          { prisma, user: studentUser } as any,
+        );
+        expect(result.postalCode).toBe('ABC-1234');
+      },
+    );
+
+    // Regression (Copilot review finding on PR #51): GIR 0AA is a real,
+    // still-valid UK postcode (historically Girobank's) whose outward code
+    // has 3 letters, not the 1-2 the standard-shape pattern allows.
+    it.each(['GIR 0AA', 'GIR0AA', 'gir 0aa'])('accepts the UK special postcode %s', async (postalCode) => {
+      const prisma = fakePrisma();
+      const input = { ...VALID_INPUT, country: 'United Kingdom', postalCode };
+      const result = await teacherApplicationResolvers.Mutation.applyForTeacher(
+        null,
+        { input },
+        { prisma, user: studentUser } as any,
+      );
+      expect(result.postalCode).toBe(postalCode);
+    });
+
+    it('accepts a standard-shape UK postcode', async () => {
+      const prisma = fakePrisma();
+      const input = { ...VALID_INPUT, country: 'United Kingdom', postalCode: 'SW1A 1AA' };
+      const result = await teacherApplicationResolvers.Mutation.applyForTeacher(
+        null,
+        { input },
+        { prisma, user: studentUser } as any,
+      );
+      expect(result.postalCode).toBe('SW1A 1AA');
+    });
   });
 
   // Regression: a house number needed at least one letter OR digit, so a

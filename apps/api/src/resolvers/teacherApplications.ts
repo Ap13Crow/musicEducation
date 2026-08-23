@@ -39,43 +39,51 @@ const COUNTRY_PATTERN = /^[\p{L}][\p{L}\s.'‘’\p{Pd}]{0,59}$/u;
 // 4 digits + 2 letters; Poland is NN-NNN) - without this, "12" would pass
 // for a Swiss address as happily as "8001" does. Keyed by the exact country
 // strings this form and COUNTRIES (apps/web/become-teacher) both use.
-// Sources: national postal authorities' documented formats.
-const POSTAL_CODE_PATTERNS_BY_COUNTRY: Record<string, RegExp> = {
-  Austria: /^\d{4}$/,
-  Belgium: /^\d{4}$/,
-  Bulgaria: /^\d{4}$/,
-  Canada: /^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$/,
-  Croatia: /^\d{5}$/,
-  Cyprus: /^\d{4}$/,
-  Czechia: /^\d{3} ?\d{2}$/,
-  Denmark: /^\d{4}$/,
-  Estonia: /^\d{5}$/,
-  Finland: /^\d{5}$/,
-  France: /^\d{5}$/,
-  Germany: /^\d{5}$/,
-  Greece: /^\d{3} ?\d{2}$/,
-  Hungary: /^\d{4}$/,
-  Iceland: /^\d{3}$/,
-  Ireland: /^[A-Za-z]\d[A-Za-z0-9] ?[A-Za-z0-9]{4}$/, // Eircode
-  Italy: /^\d{5}$/,
-  Latvia: /^(LV-)?\d{4}$/,
-  Liechtenstein: /^\d{4}$/,
-  Lithuania: /^(LT-)?\d{5}$/,
-  Luxembourg: /^\d{4}$/,
-  Malta: /^[A-Za-z]{3} ?\d{4}$/,
-  Netherlands: /^\d{4} ?[A-Za-z]{2}$/,
-  Norway: /^\d{4}$/,
-  Poland: /^\d{2}-\d{3}$/,
-  Portugal: /^\d{4}-\d{3}$/,
-  Romania: /^\d{6}$/,
-  Slovakia: /^\d{3} ?\d{2}$/,
-  Slovenia: /^(SI-)?\d{4}$/,
-  Spain: /^\d{5}$/,
-  Sweden: /^\d{3} ?\d{2}$/,
-  Switzerland: /^\d{4}$/,
-  'United Kingdom': /^[A-Za-z]{1,2}\d[A-Za-z\d]? ?\d[A-Za-z]{2}$/,
-  'United States': /^\d{5}(-\d{4})?$/,
-};
+// Sources: national postal authorities' documented formats. A Map, not a
+// plain object - a plain object's lookup falls through to inherited
+// Object.prototype properties for a country value like "constructor" or
+// "toString" (returning a function, not undefined), which then crashes on
+// pattern.test(...) instead of hitting the documented fallback below. A Map
+// has no prototype-chain key collisions to worry about.
+const POSTAL_CODE_PATTERNS_BY_COUNTRY = new Map<string, RegExp>([
+  ['Austria', /^\d{4}$/],
+  ['Belgium', /^\d{4}$/],
+  ['Bulgaria', /^\d{4}$/],
+  ['Canada', /^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$/],
+  ['Croatia', /^\d{5}$/],
+  ['Cyprus', /^\d{4}$/],
+  ['Czechia', /^\d{3} ?\d{2}$/],
+  ['Denmark', /^\d{4}$/],
+  ['Estonia', /^\d{5}$/],
+  ['Finland', /^\d{5}$/],
+  ['France', /^\d{5}$/],
+  ['Germany', /^\d{5}$/],
+  ['Greece', /^\d{3} ?\d{2}$/],
+  ['Hungary', /^\d{4}$/],
+  ['Iceland', /^\d{3}$/],
+  ['Ireland', /^[A-Za-z]\d[A-Za-z0-9] ?[A-Za-z0-9]{4}$/], // Eircode
+  ['Italy', /^\d{5}$/],
+  ['Latvia', /^(LV-)?\d{4}$/],
+  ['Liechtenstein', /^\d{4}$/],
+  ['Lithuania', /^(LT-)?\d{5}$/],
+  ['Luxembourg', /^\d{4}$/],
+  ['Malta', /^[A-Za-z]{3} ?\d{4}$/],
+  ['Netherlands', /^\d{4} ?[A-Za-z]{2}$/],
+  ['Norway', /^\d{4}$/],
+  ['Poland', /^\d{2}-\d{3}$/],
+  ['Portugal', /^\d{4}-\d{3}$/],
+  ['Romania', /^\d{6}$/],
+  ['Slovakia', /^\d{3} ?\d{2}$/],
+  ['Slovenia', /^(SI-)?\d{4}$/],
+  ['Spain', /^\d{5}$/],
+  ['Sweden', /^\d{3} ?\d{2}$/],
+  ['Switzerland', /^\d{4}$/],
+  // GIR 0AA is a real, still-valid special postcode (historically
+  // Girobank's) that doesn't fit the standard outward-code shape (3
+  // letters, not 1-2) - excluding it would reject a genuine UK address.
+  ['United Kingdom', /^(GIR ?0AA|[A-Za-z]{1,2}\d[A-Za-z\d]? ?\d[A-Za-z]{2})$/i],
+  ['United States', /^\d{5}(-\d{4})?$/],
+]);
 // Fallback for "Other" (COUNTRIES' catch-all - see apps/web/become-teacher)
 // and any country name not in the map above - permissive rather than
 // hard-rejecting an applicant from a country this list doesn't cover yet.
@@ -101,7 +109,7 @@ function requirePostalCode(value: unknown, country: string): string {
   if (!trimmed) {
     throw new GraphQLError('Postal code is required.', { extensions: { code: 'BAD_USER_INPUT' } });
   }
-  const countryPattern = POSTAL_CODE_PATTERNS_BY_COUNTRY[country];
+  const countryPattern = POSTAL_CODE_PATTERNS_BY_COUNTRY.get(country);
   const pattern = countryPattern ?? POSTAL_CODE_FALLBACK_PATTERN;
   if (!pattern.test(trimmed)) {
     const forCountry = countryPattern ? ` for ${country}` : '';
