@@ -13,10 +13,14 @@ const SAVE=gql`mutation SaveTeacherSlots($slots:[AvailabilitySlotInput!]!){setAv
 type Slot={dayOfWeek:number;startTime:string;endTime:string;timezone:string};
 function oneHourAfter(start:string){const [h,m]=start.split(':').map(Number);const total=h*60+m+60;return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`;}
 function toMinutes(t:string){const [h,m]=t.split(':').map(Number);return h*60+m;}
-// Every startTime a valid endTime for a given block must come after -
-// filters TIMES down for the "Ends" select so a teacher can't pick an end
-// before (or equal to) the start.
-function endTimeOptions(start:string){return TIMES.filter(t=>toMinutes(t)>toMinutes(start));}
+// Every valid endTime for a given block - at least 60 minutes after start,
+// not just after it, since the booking page slices each block into
+// one-hour lessons: a shorter block (e.g. 11:30-12:00) would publish
+// successfully but produce zero actual bookable slots, silently confusing
+// both the teacher and any student who finds the day blank. Filters TIMES
+// down for the "Ends" select so that state can't be chosen in the first
+// place (Copilot review finding on PR #54).
+function endTimeOptions(start:string){return TIMES.filter(t=>toMinutes(t)>=toMinutes(start)+60);}
 
 const UNAVAILABILITY_LABELS:{value:string;label:string}[]=[
  {value:'UNAVAILABLE',label:'Unavailable'},
@@ -75,14 +79,17 @@ export default function TeacherAvailabilityPage(){
  // dayOfWeek/startTime/endTime are each independently editable now - a
  // block no longer has to be exactly one hour (Copilot/user feedback: "not
  // add every hour individually... create availability areas for... several
- // hours"). Changing startTime past the current endTime pushes endTime out
- // by the same one-hour default a brand-new block gets, rather than
- // silently leaving an invalid start>=end pair on screen.
+ // hours"). Changing startTime so the block drops below 60 minutes (not
+ // just below zero) pushes endTime out to exactly one hour after the new
+ // start - matching endTimeOptions()'s own +60min floor, so a shorter,
+ // unbookable block (e.g. 11:30-12:00) never lands on screen even
+ // transiently (Copilot review finding on PR #54: the previous
+ // start>=end-only check let that slip through).
  function change(i:number,key:'dayOfWeek'|'startTime'|'endTime',value:string|number){
   setSlots(current.map((slot:Slot,n:number)=>{
    if(n!==i)return slot;
    const updated={...slot,[key]:value};
-   if(key==='startTime'&&toMinutes(String(value))>=toMinutes(slot.endTime)){updated.endTime=oneHourAfter(String(value));}
+   if(key==='startTime'&&toMinutes(String(value))+60>toMinutes(slot.endTime)){updated.endTime=oneHourAfter(String(value));}
    return updated;
   }));
  }

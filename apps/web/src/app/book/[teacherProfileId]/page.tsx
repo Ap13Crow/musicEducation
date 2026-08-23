@@ -234,11 +234,21 @@ export default function BookTeacherPage() {
                             if (!cell.bookable) {
                               return <td key={d.toISOString()} className="rounded-lg p-1.5" />;
                             }
+                            // Every cell in the grid renders the same visible
+                            // "Book"/"Selected" text, so a screen reader
+                            // stepping through a row of identical buttons has
+                            // no way to tell them apart without this - the
+                            // full date and time, not just the hour, since
+                            // that's what's actually being booked (Copilot
+                            // review finding on PR #54).
+                            const cellLabel = `${isSelected ? 'Selected: ' : 'Book '}${cell.startsAt.toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}`;
                             return (
                               <td key={d.toISOString()} className="p-0.5">
                                 <button
                                   type="button"
                                   onClick={() => setStartsAt(cell.startsAt.toISOString())}
+                                  aria-pressed={isSelected}
+                                  aria-label={cellLabel}
                                   className={`w-full rounded-lg border py-1.5 text-xs transition-colors ${
                                     isSelected ? 'border-primary-600 bg-primary-50 font-semibold text-primary-700' : 'border-gray-200 hover:border-primary-300'
                                   }`}
