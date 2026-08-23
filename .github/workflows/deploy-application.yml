@@ -531,6 +531,37 @@ jobs:
           echo 'API environment contract (values are not printed):'
           kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
             "for (const key of ['PGHOST','PGPORT','PGDATABASE','PGUSER','PGPASSWORD','PGSSLROOTCERT','KEYCLOAK_ISSUER','KEYCLOAK_CLIENT_ID','DEEPSEEK_API_KEY','DEEPSEEK_API_URL','OPENAI_API_KEY','S3_ENDPOINT','S3_REGION','S3_BUCKET','S3_ACCESS_KEY_ID','S3_SECRET_ACCESS_KEY','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','SMTP_FROM']) console.log(key + '=' + (process.env[key] ? 'configured' : 'missing'))"
+          echo 'Google Workspace SMTP relay reachability from the worker Pod:'
+          worker_pod="$(kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name=worker -o json | jq -r '.items[] | select(.status.phase == "Running") | .metadata.name' | head -n 1)"
+          if [[ -z "$worker_pod" ]]; then
+            echo 'No running worker Pod was found; SMTP reachability cannot be tested.' >&2
+          elif kubectl -n "$NAMESPACE" exec "$worker_pod" -- node -e "
+            const net = require('node:net');
+            const host = process.env.SMTP_HOST || 'smtp-relay.gmail.com';
+            const port = Number(process.env.SMTP_PORT || 587);
+            const socket = net.createConnection({ host, port });
+            socket.setTimeout(10000);
+            socket.once('connect', () => {
+              console.log('smtp_tcp=reachable host=' + host + ' port=' + port);
+              socket.end();
+            });
+            socket.once('timeout', () => {
+              console.error('smtp_tcp=unreachable code=ETIMEDOUT host=' + host + ' port=' + port);
+              socket.destroy();
+              process.exitCode = 2;
+            });
+            socket.once('error', (error) => {
+              console.error('smtp_tcp=unreachable code=' + (error.code || 'UNKNOWN') + ' host=' + host + ' port=' + port);
+              process.exitCode = 2;
+            });
+          "; then
+            echo 'The worker can reach the configured Google Workspace SMTP relay.'
+          else
+            echo 'The worker cannot reach the SMTP relay at TCP level.' >&2
+            echo 'DigitalOcean blocks outbound SMTP ports 25, 465, and 587 by default; request an SMTP restriction review for the DOKS worker nodes:' >&2
+            echo 'https://docs.digitalocean.com/support/why-is-smtp-blocked/' >&2
+          fi
+
           echo 'Database readiness from the running API process:'
           kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
             "fetch('http://127.0.0.1:4000/health/ready').then(async r => { console.log(await r.text()); if (!r.ok) process.exit(1) })"
