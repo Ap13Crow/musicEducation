@@ -285,7 +285,10 @@ model TeacherApplication {
   // Deprecated (WP26): superseded by the structured fields below - kept as
   // an unused legacy column rather than dropped, matching this codebase's
   // convention for retired columns (see Course.moodleCourseId,
-  // EventBooking.pretixOrderCode). No resolver reads or writes it anymore.
+  // EventBooking.pretixOrderCode). No mutation writes to it anymore; the
+  // admin review UI reads it read-only, as a fallback display for
+  // applications submitted before this change (see the address field on
+  // the GraphQL TeacherApplication type).
   address         String?
   // Structured postal address, validated server-side in applyForTeacher
   // (see apps/api/src/resolvers/teacherApplications.ts) - street/houseNumber/
@@ -1178,7 +1181,7 @@ model AdminSetting {
   updatedAt DateTime @updatedAt
 }
 
-// ── External event discovery (read-only projections) ────────────────────────────────────────────
+// ── External event discovery (read-only projections) ──────────────────────────────────────────────────────────
 // Cached, normalized rows from external providers (Ticketmaster now, Classictic
 // later). Kept separate from Event: these are discovery inputs, never authored
 // content, and never enter the authored-event publishing flow.
