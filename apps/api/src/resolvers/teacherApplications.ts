@@ -1,6 +1,6 @@
 import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { isOwnedUploadUrl, type UploadPurpose } from '../lib/storage.js';
+import { isOwnedUploadUrl, requireInlineTeacherPhoto, type UploadPurpose } from '../lib/storage.js';
 import { isValidYouTubeUrl } from '../lib/youtube.js';
 import type { GraphQLContext } from '../types.js';
 
@@ -254,8 +254,21 @@ export const teacherApplicationResolvers = {
       const documentUrls: string[] | undefined = input.documentUrls !== undefined
         ? input.documentUrls.map((url: string) => requireOwnedUploadUrl(url, 'TEACHER_APPLICATION_DOCUMENT', user.id, 'Document'))
         : undefined;
+      // The photo is the one upload with a no-S3 fallback: a data: URL is
+      // accepted and validated/size-capped in place of the usual
+      // presigned-URL ownership check - see requireInlineTeacherPhoto for
+      // why only the photo gets this. CV/audio/documents still go through
+      // requireOwnedUploadUrl unconditionally, i.e. they stay S3-only.
       const imageUrl = input.imageUrl !== undefined
-        ? (input.imageUrl ? requireOwnedUploadUrl(input.imageUrl, 'TEACHER_PROFILE_IMAGE', user.id, 'Photo') : null)
+        ? (input.imageUrl
+            // Branch on "looks like a data: URL" rather than the stricter
+            // isInlineTeacherPhoto, so a malformed/wrong-type data URL still
+            // gets requireInlineTeacherPhoto's clear "must be PNG/JPEG/WebP"
+            // error instead of the misleading requestUploadUrl one below.
+            ? (input.imageUrl.startsWith('data:')
+                ? requireInlineTeacherPhoto(input.imageUrl)
+                : requireOwnedUploadUrl(input.imageUrl, 'TEACHER_PROFILE_IMAGE', user.id, 'Photo'))
+            : null)
         : undefined;
 
       // Upsert rather than create-only: a previously rejected applicant can
