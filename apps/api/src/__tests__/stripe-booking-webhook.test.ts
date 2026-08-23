@@ -99,9 +99,12 @@ describe('handleStripeWebhook - booking branch atomicity', () => {
     await handleStripeWebhook(prisma, rawBody, header);
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    // holdExpiresAt cleared here too - a payment-pending booking has one set
+    // (bookSession), stale/irrelevant once CONFIRMED (matches confirmBooking's
+    // manual-approval path, which also clears it).
     expect(bookingUpdate).toHaveBeenCalledWith({
       where: { id: 'booking-1' },
-      data: { paymentId: 'payment-1', status: 'CONFIRMED' },
+      data: { paymentId: 'payment-1', status: 'CONFIRMED', holdExpiresAt: null },
     });
     expect(paymentUpdateMany).toHaveBeenCalledWith({
       where: { id: 'payment-1', confirmationEmailAt: null },
@@ -121,7 +124,10 @@ describe('handleStripeWebhook - booking branch atomicity', () => {
     await handleStripeWebhook(prisma, rawBody, header);
 
     expect(bookingUpdate).toHaveBeenCalled();
-    expect(txBookingFindUnique).not.toHaveBeenCalled();
+    // Exactly once - the capacity-reservation lookup (this resolver's own,
+    // runs on every delivery regardless of the email claim) still fires;
+    // only notifyBookingConfirmed's separate lookup is skipped.
+    expect(txBookingFindUnique).toHaveBeenCalledTimes(1);
   });
 
   it('a redelivered webhook (Payment already exists, P2002 on create) still runs the transactional confirm path', async () => {
@@ -143,7 +149,7 @@ describe('handleStripeWebhook - booking branch atomicity', () => {
   // A paid booking is never created CONFIRMED (see bookSession's
   // requiresPayment in bookings.ts) - nothing has reserved a capacity seat
   // for it yet, so this webhook, the true confirmation moment, must do it.
-  it('reserves instrument capacity when the claim succeeds and the booking has an instrument', async () => {
+  it('reserves instrument capacity when the booking has an instrument', async () => {
     const bookingForCapacity = { teacherProfileId: 'teacher-1', instrument: 'Piano', userId: 'user-1' };
     const { prisma, queryRaw } = fakePrismaForBookingWebhook({ claimSucceeds: true, bookingForCapacity });
     const { rawBody, header } = buildWebhookRequest(
@@ -157,7 +163,32 @@ describe('handleStripeWebhook - booking branch atomicity', () => {
     expect(queryRaw).toHaveBeenCalled();
   });
 
-  it('never reserves capacity when the claim was already made (e.g. a Stripe retry)', async () => {
+  // Copilot review finding on PR #58: reserveInstrumentCapacity used to run
+  // AFTER the booking.update that sets status: 'CONFIRMED'. Its own "already
+  // active" check matches on {teacherProfileId, userId, instrument, status:
+  // CONFIRMED|COMPLETED} - with the update already applied, this booking
+  // matched itself and short-circuited the very capacity check it exists to
+  // enforce, silently admitting a student past a full cap.
+  it('reserves capacity before updating the booking to CONFIRMED, never after', async () => {
+    const bookingForCapacity = { teacherProfileId: 'teacher-1', instrument: 'Piano', userId: 'user-1' };
+    const { prisma, queryRaw, bookingUpdate } = fakePrismaForBookingWebhook({ claimSucceeds: true, bookingForCapacity });
+    const { rawBody, header } = buildWebhookRequest(
+      checkoutSessionCompletedEvent({ userId: 'user-1', type: 'booking', refId: 'booking-1' }),
+    );
+
+    await handleStripeWebhook(prisma, rawBody, header);
+
+    const capacityCallOrder = queryRaw.mock.invocationCallOrder[0];
+    const updateCallOrder = bookingUpdate.mock.invocationCallOrder[0];
+    expect(capacityCallOrder).toBeLessThan(updateCallOrder);
+  });
+
+  // A Stripe retry redelivering this event finds the booking already
+  // CONFIRMED from the first delivery - reserveInstrumentCapacity's own
+  // "already active" self-match makes a second call here a harmless no-op
+  // (it still runs; it just doesn't reserve a second seat), the same
+  // idempotency the email claim gives the notification side.
+  it('still calls the capacity lookup on a redelivery, even though the email claim was already made', async () => {
     const bookingForCapacity = { teacherProfileId: 'teacher-1', instrument: 'Piano', userId: 'user-1' };
     const { prisma, queryRaw } = fakePrismaForBookingWebhook({ claimSucceeds: false, bookingForCapacity });
     const { rawBody, header } = buildWebhookRequest(
@@ -166,6 +197,6 @@ describe('handleStripeWebhook - booking branch atomicity', () => {
 
     await handleStripeWebhook(prisma, rawBody, header);
 
-    expect(queryRaw).not.toHaveBeenCalled();
+    expect(queryRaw).toHaveBeenCalled();
   });
 });
