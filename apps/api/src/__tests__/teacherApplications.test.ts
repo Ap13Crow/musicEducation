@@ -94,6 +94,37 @@ describe('applyForTeacher: structured address validation', () => {
       teacherApplicationResolvers.Mutation.applyForTeacher(null, { input }, { prisma, user: studentUser } as any),
     ).rejects.toThrow("aren't valid");
   });
+
+  // Regression: the patterns used to be ASCII-only for apostrophes/dashes,
+  // which rejected real names using typographic punctuation or non-ASCII
+  // dashes (Copilot review finding on PR #50).
+  it('accepts typographic quote marks and non-ASCII dashes in street/city/country/state', async () => {
+    const prisma = fakePrisma();
+    const input = {
+      ...VALID_INPUT,
+      street: "St John’s Wood – North",
+      city: "Côte d’Ivoire’s Capital",
+      country: 'Côte d’Ivoire',
+      state: 'Île-de-France',
+    };
+    const result = await teacherApplicationResolvers.Mutation.applyForTeacher(
+      null,
+      { input },
+      { prisma, user: studentUser } as any,
+    );
+    expect(result.street).toBe("St John’s Wood – North");
+    expect(result.state).toBe('Île-de-France');
+  });
+
+  // Regression: age only had a lower bound (>= 18), so an implausible
+  // birthdate like 1900-01-01 (~126 years old) was accepted outright.
+  it('rejects an implausibly old birthdate', async () => {
+    const prisma = fakePrisma();
+    const input = { ...VALID_INPUT, birthdate: '1900-01-01' };
+    await expect(
+      teacherApplicationResolvers.Mutation.applyForTeacher(null, { input }, { prisma, user: studentUser } as any),
+    ).rejects.toThrow('Date of birth is invalid.');
+  });
 });
 
 describe('applyForTeacher permission checks', () => {

@@ -2,9 +2,9 @@
 -- structured fields (street, house number, postal code, city, state,
 -- country), validated server-side in applyForTeacher. The old "address"
 -- column is left in place as an unused legacy column (matches this
--- codebase's convention - see Course.moodleCourseId, EventBooking
--- .pretixOrderCode) rather than dropped, since it may still hold data from
--- applications submitted before this change.
+-- codebase's convention - see Course.moodleCourseId, EventBooking.pretixOrderCode)
+-- rather than dropped, since it may still hold data from applications
+-- submitted before this change.
 BEGIN;
 
 ALTER TABLE "TeacherApplication" ADD COLUMN IF NOT EXISTS "street" TEXT;
