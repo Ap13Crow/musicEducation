@@ -36,6 +36,20 @@ const APPLY = gql`
 `;
 
 const MIN_TEACHER_AGE_YEARS = 18;
+// Mirrors the resolver's MAX_TEACHER_AGE_YEARS - catches an obvious
+// data-entry mistake (e.g. "1900" instead of "2000") client-side; the
+// resolver is the actual authority and re-checks this.
+const MAX_TEACHER_AGE_YEARS = 100;
+
+// Native date-picker bounds (native browser UI, not validation) so the
+// picker doesn't even offer an obviously-wrong date - min/max still
+// duplicated in validateStep()/the resolver, since a picker's min/max is
+// only a UI hint and a typed-in date can bypass it.
+function isoDateYearsAgo(years: number): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - years);
+  return d.toISOString().slice(0, 10);
+}
 
 function calculateAge(birthdate: string): number | null {
   const dob = new Date(birthdate);
@@ -65,11 +79,15 @@ const COUNTRIES = [
 
 // Permissive mirrors of the server-side patterns in teacherApplications.ts -
 // client-side validation is a UX convenience (fail fast, explain why), the
-// resolver is the actual authority and re-checks everything.
-const STREET_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.,'-]{0,99}$/u;
-const HOUSE_NUMBER_PATTERN = /^[\p{L}0-9][\p{L}0-9\s./-]{0,14}$/u;
-const POSTAL_CODE_PATTERN = /^[\p{L}0-9][\p{L}0-9\s-]{0,11}$/u;
-const CITY_PATTERN = /^[\p{L}][\p{L}\s.'-]{0,99}$/u;
+// resolver is the actual authority and re-checks everything. \p{Pd} covers
+// every Unicode dash (not just ASCII hyphen-minus) and '‘’ cover both the
+// ASCII apostrophe and typographic quote marks, so real names like
+// "St John's"/"St John’s" or "Côte d’Ivoire" aren't rejected.
+const STREET_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.,'‘’\p{Pd}]{0,99}$/u;
+const HOUSE_NUMBER_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.\p{Pd}/]{0,14}$/u;
+const POSTAL_CODE_PATTERN = /^[\p{L}0-9][\p{L}0-9\s\p{Pd}]{0,11}$/u;
+const CITY_PATTERN = /^[\p{L}][\p{L}\s.'‘’\p{Pd}]{0,99}$/u;
+const STATE_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.'‘’\p{Pd}]{0,59}$/u;
 
 const STEPS = ['About you', 'Photo', 'Your teaching', 'Motivation', 'Proof & video', 'Review'] as const;
 
@@ -197,10 +215,12 @@ export default function BecomeTeacherPage() {
       if (!HOUSE_NUMBER_PATTERN.test(form.houseNumber.trim())) return 'Enter a valid house/street number.';
       if (!POSTAL_CODE_PATTERN.test(form.postalCode.trim())) return 'Enter a valid postal code.';
       if (!CITY_PATTERN.test(form.city.trim())) return 'Enter a valid town/city.';
+      if (form.state.trim() && !STATE_PATTERN.test(form.state.trim())) return 'Enter a valid state/region, or leave it blank.';
       if (!form.country) return 'Select your country.';
       const age = form.birthdate ? calculateAge(form.birthdate) : null;
       if (age === null) return 'Enter your date of birth.';
       if (age < MIN_TEACHER_AGE_YEARS) return `You must be at least ${MIN_TEACHER_AGE_YEARS} to apply as a teacher.`;
+      if (age > MAX_TEACHER_AGE_YEARS) return 'Enter a valid date of birth.';
       return null;
     }
     if (index === 1) {
@@ -452,6 +472,8 @@ export default function BecomeTeacherPage() {
                         type="date"
                         className="input mt-1 w-full min-w-0"
                         value={form.birthdate}
+                        min={isoDateYearsAgo(MAX_TEACHER_AGE_YEARS)}
+                        max={isoDateYearsAgo(MIN_TEACHER_AGE_YEARS)}
                         onChange={(e) => setForm({ ...form, birthdate: e.target.value })}
                       />
                       <span className="mt-1 block text-xs text-gray-400">Applicants must be 18 or older. Not shown publicly.</span>
