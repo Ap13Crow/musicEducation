@@ -681,10 +681,35 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
+// Each tab only mounts (and queries) once selected, so an admin landing on
+// "Overview" had no way to know a new application was waiting, or that
+// mail delivery had started dead-lettering, without clicking into every
+// tab to check ("I don't see any reminder or notification as an admin" -
+// direct user feedback). This runs once at the page level regardless of
+// which tab is active, and only needs id fields - cheap enough to poll.
+const GET_ADMIN_BADGES = gql`
+  query AdminNavBadges {
+    teacherApplications(status: PENDING) { id }
+    mailOutbox(status: DEAD_LETTER, limit: 100) { id }
+  }
+`;
+const BADGE_POLL_MS = 60_000;
+
 export default function AdminPage() {
   const { data: session, status } = useSession();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const isAdmin = hasRole(session?.roles, 'ADMIN');
+  const { data: badgeData } = useQuery(GET_ADMIN_BADGES, {
+    skip: !isAdmin,
+    pollInterval: BADGE_POLL_MS,
+    fetchPolicy: 'cache-and-network',
+  });
+  const pendingApplicationCount: number = badgeData?.teacherApplications?.length ?? 0;
+  const deadLetterMailCount: number = badgeData?.mailOutbox?.length ?? 0;
+  const tabBadgeCount: Partial<Record<Tab, number>> = {
+    applications: pendingApplicationCount,
+    mail: deadLetterMailCount,
+  };
 
   if (status === 'loading') {
     return (
@@ -728,20 +753,28 @@ export default function AdminPage() {
           {/* Sidebar navigation */}
           <nav className="lg:w-56 shrink-0">
             <div className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
-              {TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                    activeTab === tab.id
-                      ? 'bg-primary-50 text-primary-700'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  <tab.icon className="h-4 w-4" />
-                  {tab.label}
-                </button>
-              ))}
+              {TABS.map((tab) => {
+                const badgeCount = tabBadgeCount[tab.id] ?? 0;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                      activeTab === tab.id
+                        ? 'bg-primary-50 text-primary-700'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    <tab.icon className="h-4 w-4" />
+                    {tab.label}
+                    {badgeCount > 0 && (
+                      <span className="ml-auto flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1 text-xs font-semibold text-white">
+                        {badgeCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </nav>
 

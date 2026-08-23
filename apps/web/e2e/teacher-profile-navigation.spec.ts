@@ -68,4 +68,27 @@ test.describe('Teacher profile navigation', () => {
     await expect(backLink).toBeVisible();
     await expect(backLink).toHaveAttribute('href', '/dashboard/teacher');
   });
+
+  // /dashboard/profile (the general account page, distinct from
+  // /dashboard/teacher/profile above) previously always linked its own back
+  // arrow to /dashboard, even for a teacher/admin whose actual "home" is the
+  // teacher workspace. NEXT_PUBLIC_ENABLE_LIVE_API is 'false' in this test
+  // config (see playwright.config.ts), so the page's GetProfile query is
+  // skipped and `role` falls back to the signed-in session's own roles - no
+  // GraphQL mocking needed for either case.
+  test('/dashboard/profile back link goes to the teacher workspace for a TEACHER', async ({ page, context }) => {
+    await signInAs(context, { roles: ['TEACHER'] });
+    await page.goto('/dashboard/profile');
+    const backLink = page.getByRole('link', { name: /Teacher workspace/i });
+    await expect(backLink).toBeVisible();
+    await expect(backLink).toHaveAttribute('href', '/dashboard/teacher');
+  });
+
+  test('/dashboard/profile back link goes to the general dashboard for a STUDENT', async ({ page, context }) => {
+    await signInAs(context, { roles: ['STUDENT'] });
+    await page.goto('/dashboard/profile');
+    const backLink = page.getByRole('link', { name: /^.\s*Dashboard$/i });
+    await expect(backLink).toBeVisible();
+    await expect(backLink).toHaveAttribute('href', '/dashboard');
+  });
 });

@@ -102,6 +102,33 @@ export default function TeacherProfessionalProfilePage() {
     await updatePolicy({ variables: { leadDays: Number(policyDraft.leadDays), cancellationDays: Number(policyDraft.cancellationDays) } });
     await refetch();
   }
+
+  // Mirrors isValidPolicyPair in apps/api/src/lib/bookingPolicy.ts
+  // (cancellationDays >= leadDays + 1) - the resolver is the actual
+  // authority and re-checks this. Without this, the "Cancellation window"
+  // dropdown offered every value 2-7 regardless of the chosen lead time,
+  // so a teacher could pick an invalid pair (e.g. 3 days lead, 2 days
+  // cancellation) and only find out from a server error after clicking
+  // Save. Now the dropdown itself only ever offers valid options, and
+  // changing lead time bumps cancellation up to stay valid - directly per
+  // user feedback: "if the teacher accepts only new bookings with three
+  // days upfront, the system should set the cancellation period to not
+  // less than 4 days."
+  function cancellationOptionsFor(leadDays: number): number[] {
+    const min = Math.max(2, leadDays + 1);
+    return [2, 3, 4, 5, 6, 7].filter((d) => d >= min);
+  }
+  function changeLeadDays(value: string) {
+    const leadDays = Number(value);
+    const validCancellation = cancellationOptionsFor(leadDays);
+    const currentCancellation = Number(policyDraft.cancellationDays);
+    setPolicyDraft({
+      leadDays: value,
+      cancellationDays: validCancellation.includes(currentCancellation)
+        ? policyDraft.cancellationDays
+        : String(validCancellation[0]),
+    });
+  }
   async function toggleAutoApproveNew() {
     await updatePolicy({ variables: { autoApproveNewStudents: !profile.autoApproveNewStudents } });
     await refetch();
@@ -321,7 +348,7 @@ export default function TeacherProfessionalProfilePage() {
                   <form onSubmit={savePolicy} className="mt-3 grid gap-4 sm:grid-cols-2">
                     <label className="text-sm font-medium">
                       Advance booking (lead time)
-                      <select className="input mt-1 w-full" value={policyDraft.leadDays} onChange={(e) => setPolicyDraft({ ...policyDraft, leadDays: e.target.value })}>
+                      <select className="input mt-1 w-full" value={policyDraft.leadDays} onChange={(e) => changeLeadDays(e.target.value)}>
                         <option value="0">Until end of the day before the lesson</option>
                         {[1, 2, 3, 4, 5, 6, 7].map((d) => <option key={d} value={d}>{d} day{d === 1 ? '' : 's'} before</option>)}
                       </select>
@@ -329,12 +356,14 @@ export default function TeacherProfessionalProfilePage() {
                     <label className="text-sm font-medium">
                       Cancellation window
                       <select className="input mt-1 w-full" value={policyDraft.cancellationDays} onChange={(e) => setPolicyDraft({ ...policyDraft, cancellationDays: e.target.value })}>
-                        {[2, 3, 4, 5, 6, 7].map((d) => <option key={d} value={d}>{d} days before</option>)}
+                        {cancellationOptionsFor(Number(policyDraft.leadDays)).map((d) => <option key={d} value={d}>{d} days before</option>)}
                       </select>
                     </label>
                     <p className="sm:col-span-2 text-xs text-gray-500">
                       Cancelling inside this window (or a no-show) charges the full lesson price or consumes a prepaid credit -
-                      this leaves time for another student to book the released slot. Must be at least one day more than your lead time.
+                      this leaves time for another student to book the released slot. Must be at least one day more than your lead
+                      time, so the list above only offers valid options for your current lead time (e.g. 3 days&rsquo; lead requires
+                      at least 4 days&rsquo; cancellation notice).
                     </p>
                     {policyError && <p className="sm:col-span-2 text-sm text-red-600">{policyError.message}</p>}
                     <div className="sm:col-span-2">
