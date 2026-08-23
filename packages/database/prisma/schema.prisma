@@ -1,1 +1,1039 @@
-PLACEHOLDER
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  GUEST
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum SkillLevel {
+  BEGINNER
+  ELEMENTARY
+  INTERMEDIATE
+  ADVANCED
+  PROFESSIONAL
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum LessonContentType {
+  VIDEO
+  YOUTUBE
+  AUDIO
+  SLIDES
+}
+
+enum UploadPurpose {
+  TEACHER_APPLICATION_CV
+  TEACHER_APPLICATION_AUDIO
+  TEACHER_APPLICATION_DOCUMENT
+  COURSE_SLIDE
+  TEACHER_PROFILE_IMAGE
+}
+
+enum QuizQuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+}
+
+enum QuizFeedbackMode {
+  IMMEDIATE
+  AT_END
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum BookingFormat {
+  IN_PERSON
+  ONLINE
+  HYBRID
+}
+
+enum EventType {
+  MASTERCLASS
+  WORKSHOP
+  CONCERT
+  COMPETITION
+  OPEN_MIC
+  LECTURE
+  OTHER
+}
+
+enum EventFormat {
+  IN_PERSON
+  ONLINE
+  HYBRID
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  STRIPE
+  YAPEAL
+}
+
+enum EventBookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  REFUNDED
+  ATTENDED
+}
+
+enum TeacherApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  username  String   @unique
+  role      Role     @default(STUDENT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  externalIdentities UserExternalIdentity[]
+  profile            UserProfile?
+  teacherProfile     TeacherProfile?
+  teacherApplication TeacherApplication?
+  gamification       GamificationProfile?
+  enrollments        Enrollment[]
+  bookingsAsStudent  Booking[]              @relation("StudentBookings")
+  eventsPublished    Event[]                @relation("PublisherEvents")
+  eventBookings      EventBooking[]
+  payments           Payment[]
+  assessments        Assessment[]
+  feedPosts          FeedPost[]
+  feedLikes          FeedLike[]
+  feedComments       FeedComment[]
+  reviews            Review[]
+  followers          Follow[]               @relation("Following")
+  following          Follow[]               @relation("Followers")
+  xpAwards           XpAward[]
+  studentAvailability StudentAvailability[]
+  personalAppointments PersonalAppointment[]
+  externalEventEngagements ExternalEventEngagement[]
+  externalCalendarConnections ExternalCalendarConnection[]
+  calendarFeedToken String? @unique
+  packagePurchases LessonPackagePurchase[]
+  subscriptionPurchases SubscriptionPurchase[]
+}
+
+model UserExternalIdentity {
+  id       String @id @default(cuid())
+  userId   String
+  provider String
+  sub      String
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([provider, sub])
+  @@index([userId])
+}
+
+model UserProfile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  displayName    String?
+  bio            String?
+  avatarUrl      String?
+  // Optional second address for transactional email (booking confirmations,
+  // etc.), distinct from the account/login email (User.email). Outbox
+  // recipients are the unique set of both when both are present.
+  notificationEmail String?
+  city           String?
+  country        String?
+  timezone       String   @default("Europe/Zurich")
+  instruments    String[]
+  musicStyles    String[]
+  onboardingDone Boolean  @default(false)
+  onboardingStep Int      @default(0)
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model TeacherProfile {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  headline              String?
+  teachingBio           String?
+  hourlyRate            Float?
+  currency              String   @default("CHF")
+  instruments           String[]
+  specializations       String[]
+  teachingFormats       String[]
+  languages             String[]
+  isAvailable           Boolean  @default(true)
+  avgRating             Float    @default(0)
+  totalReviews          Int      @default(0)
+  yearsExperience       Int?
+  experienceYears       Int?
+  locationCity          String?
+  locationCountry       String?
+  calendlyUsername      String?
+  publicImageUrl        String?
+  introVideoUrl         String?
+  introVideoVisible     Boolean  @default(true)
+  stripeAccountId       String?
+  stripePayoutsEnabled  Boolean  @default(false)
+  leadDays              Int      @default(1)
+  cancellationDays      Int      @default(3)
+  autoApproveNewStudents Boolean?
+  autoApproveRecurringStudents Boolean?
+  createdAt             DateTime @default(now())
+
+  user                  User     @relation(fields: [userId], references: [id])
+  certifications        TeacherCertification[]
+  availability          TeacherAvailability[]
+  unavailability        TeacherUnavailability[]
+  instrumentCapacities  TeacherInstrumentCapacity[]
+  bookings              Booking[]
+  courses               Course[]
+  packageOffers         LessonPackageOffer[]
+  subscriptionOffers    SubscriptionOffer[]
+
+  @@index([userId, isAvailable], map: "TeacherProfile_discovery_idx")
+}
+
+model TeacherInstrumentCapacity {
+  id                String @id @default(cuid())
+  teacherProfileId  String
+  instrument        String
+  maxActiveStudents Int?
+
+  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+
+  @@unique([teacherProfileId, instrument])
+}
+
+model TeacherCertification {
+  id               String   @id @default(cuid())
+  teacherProfileId String
+  title            String
+  issuingBody      String?
+  issuedYear       Int?
+  documentUrl      String?
+  createdAt        DateTime @default(now())
+
+  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+
+  @@index([teacherProfileId], map: "TeacherCertification_teacherProfileId_idx")
+}
+
+// A student's self-service request to become a teacher. Approving one is the
+// only thing that promotes User.role to TEACHER via this path — admins can
+// still promote directly via adminSetRole, but the public "Become a teacher"
+// page always goes through this queue for review.
+model TeacherApplication {
+  id              String                    @id @default(cuid())
+  userId          String                    @unique
+  headline        String?
+  bio             String?
+  instruments     String[]
+  experienceYears Int?
+  // Deprecated (WP26): superseded by the structured fields below - kept as
+  // an unused legacy column rather than dropped, matching this codebase's
+  // convention for retired columns (see Course.moodleCourseId,
+  // EventBooking.pretixOrderCode). No resolver reads or writes it anymore.
+  address         String?
+  // Structured postal address, validated server-side in applyForTeacher
+  // (see apps/api/src/resolvers/teacherApplications.ts) - street/houseNumber/
+  // postalCode/city/country are required, state is optional (only
+  // meaningful for some countries). Splitting these out instead of one
+  // free-text line keeps the data usable (sortable/filterable, safe to hand
+  // to a shipping/verification API later) rather than an unparseable blob.
+  street          String?
+  houseNumber     String?
+  postalCode      String?
+  city            String?
+  state           String?
+  country         String?
+  // Verified server-side (applyForTeacher rejects under-18) - self-employed
+  // teachers on the platform must be adults; full identity verification is a
+  // later phase, this is the quality/legal floor for now.
+  birthdate       DateTime?                 @db.Date
+  // Private, admin-review-only - never copied onto the public TeacherProfile.
+  gender          String?
+  motivation      String?
+  // Object storage URLs (see apps/api/src/lib/storage.ts) - populated via
+  // requestUploadUrl(purpose: TEACHER_APPLICATION_*) then attached here on
+  // submit. Never inline file data.
+  cvUrl           String?
+  audioSampleUrl  String?
+  documentUrls    String[]                  @default([])
+  // Public teacher photo (TEACHER_PROFILE_IMAGE purpose) - copied to
+  // TeacherProfile.publicImageUrl on approval. Deliberately separate from
+  // UserProfile.avatarUrl (the private account avatar).
+  imageUrl        String?
+  // YouTube link, not an uploaded file - keeps the site light (see
+  // apps/web/src/lib/youtube.ts). Required to apply; copied to
+  // TeacherProfile.introVideoUrl on approval.
+  videoUrl        String?
+  status          TeacherApplicationStatus  @default(PENDING)
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model TeacherAvailability {
+  id               String   @id @default(cuid())
+  teacherProfileId String
+  dayOfWeek        Int?
+  startTime        String?
+  endTime          String?
+  isRecurring      Boolean  @default(true)
+  startDate        DateTime?
+  endDate          DateTime?
+  timezone         String   @default("Europe/Zurich")
+
+  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+
+  @@index([teacherProfileId, dayOfWeek], map: "TeacherAvailability_teacherProfileId_dayOfWeek_idx")
+}
+
+enum UnavailabilityLabel {
+  UNAVAILABLE
+  PRIVATE_APPOINTMENT
+  HOLIDAY
+  VACATION
+  OTHER_UNAVAILABLE
+}
+
+model TeacherUnavailability {
+  id               String   @id @default(cuid())
+  teacherProfileId String
+  startsAt         DateTime
+  endsAt           DateTime
+  label            UnavailabilityLabel
+  note             String?
+
+  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+
+  @@index([teacherProfileId, startsAt, endsAt], map: "TeacherUnavailability_teacherProfileId_startsAt_endsAt_idx")
+}
+
+model PersonalAppointment {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  startsAt  DateTime
+  endsAt    DateTime
+  notes     String?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, startsAt, endsAt], map: "PersonalAppointment_userId_startsAt_endsAt_idx")
+}
+
+enum ExternalCalendarProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+enum ExternalCalendarConnectionStatus {
+  CONNECTED
+  ERROR
+}
+
+model ExternalCalendarConnection {
+  id                  String   @id @default(cuid())
+  userId              String
+  provider            ExternalCalendarProvider
+  status              ExternalCalendarConnectionStatus
+  externalAccountEmail String?
+  lastSyncedAt        DateTime?
+  createdAt           DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  busyIntervals ExternalBusyInterval[]
+
+  @@unique([userId, provider])
+}
+
+model ExternalBusyInterval {
+  id           String   @id @default(cuid())
+  connectionId String
+  startsAt     DateTime
+  endsAt       DateTime
+
+  connection ExternalCalendarConnection @relation(fields: [connectionId], references: [id])
+
+  @@index([connectionId, startsAt], map: "ExternalBusyInterval_connectionId_startsAt_idx")
+}
+
+model StudentAvailability {
+  id        String @id @default(cuid())
+  userId    String
+  dayOfWeek Int
+  startTime String
+  endTime   String
+  timezone  String @default("Europe/Zurich")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, dayOfWeek], map: "StudentAvailability_userId_dayOfWeek_idx")
+}
+
+model GamificationProfile {
+  id             String     @id @default(cuid())
+  userId         String     @unique
+  skillLevel     SkillLevel @default(BEGINNER)
+  xp             Int        @default(0)
+  totalPoints    Int        @default(0)
+  level          Int        @default(1)
+  currentStreak  Int        @default(0)
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+enum XpAwardReason {
+  PROFILE_COMPLETED
+  TEACHER_FOUND
+  EVENT_ATTENDED
+  COURSE_BONUS
+}
+
+model XpAward {
+  id        String        @id @default(cuid())
+  userId    String
+  reason    XpAwardReason
+  refId     String
+  amount    Int
+  note      String?
+  createdAt DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, reason, refId], map: "XpAward_userId_reason_refId_key")
+  @@index([userId], map: "XpAward_userId_idx")
+}
+
+model Category {
+  id       String     @id @default(cuid())
+  name     String
+  parentId String?
+  courses  Course[]
+}
+
+model Course {
+  id               String       @id @default(cuid())
+  slug             String       @unique
+  title            String
+  description      String?
+  shortSummary     String?
+  level            SkillLevel
+  instruments      String[]
+  musicStyles      String[]
+  price            Float        @default(0)
+  currency         String       @default("CHF")
+  status           CourseStatus @default(DRAFT)
+  isFreeTier       Boolean      @default(false)
+  language         String       @default("en")
+  thumbnailUrl     String?
+  categoryId       String?
+  teacherProfileId String?
+  moodleCourseId   String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  category      Category?       @relation(fields: [categoryId], references: [id])
+  teacherProfile TeacherProfile? @relation(fields: [teacherProfileId], references: [id])
+  sections      CourseSection[]
+  enrollments   Enrollment[]
+  reviews       Review[]
+
+  @@index([status, createdAt], map: "Course_status_createdAt_idx")
+}
+
+model CourseSection {
+  id       String   @id @default(cuid())
+  courseId String
+  title    String
+  order    Int      @default(0)
+
+  course  Course   @relation(fields: [courseId], references: [id])
+  lessons Lesson[]
+}
+
+model Lesson {
+  id            String             @id @default(cuid())
+  sectionId     String
+  title         String
+  description   String?
+  videoUrl      String?
+  contentType   LessonContentType  @default(VIDEO)
+  durationMin   Int                @default(0)
+  isFreePreview Boolean            @default(false)
+  order         Int                @default(0)
+  xpReward      Int                @default(10)
+  feedbackMode  QuizFeedbackMode   @default(IMMEDIATE)
+
+  section        CourseSection    @relation(fields: [sectionId], references: [id])
+  lessonProgress LessonProgress[]
+  quizQuestions  QuizQuestion[]
+  slides         LessonSlide[]
+  quizAttempts   QuizAttempt[]
+  slideViews     LessonSlideView[]
+}
+
+model LessonSlide {
+  id        String   @id @default(cuid())
+  lessonId  String
+  order     Int      @default(0)
+  fileUrl   String
+  title     String?
+  createdAt DateTime @default(now())
+
+  lesson Lesson @relation(fields: [lessonId], references: [id])
+  views  LessonSlideView[]
+
+  @@index([lessonId, order], map: "LessonSlide_lessonId_order_idx")
+}
+
+model LessonSlideView {
+  id        String   @id @default(cuid())
+  userId    String
+  lessonId  String
+  slideId   String
+  viewedAt  DateTime @default(now())
+
+  lesson Lesson      @relation(fields: [lessonId], references: [id])
+  slide  LessonSlide @relation(fields: [slideId], references: [id])
+
+  @@unique([userId, slideId])
+}
+
+model QuizQuestion {
+  id       String            @id @default(cuid())
+  lessonId String
+  text     String
+  type     QuizQuestionType  @default(SINGLE_CHOICE)
+  points   Int               @default(1)
+  order    Int               @default(0)
+
+  lesson  Lesson       @relation(fields: [lessonId], references: [id])
+  options QuizOption[]
+  answers QuizAnswer[]
+
+  @@index([lessonId, order], map: "QuizQuestion_lessonId_order_idx")
+}
+
+model QuizOption {
+  id         String  @id @default(cuid())
+  questionId String
+  text       String
+  isCorrect  Boolean @default(false)
+  order      Int     @default(0)
+
+  question QuizQuestion @relation(fields: [questionId], references: [id])
+
+  @@index([questionId, order], map: "QuizOption_questionId_order_idx")
+}
+
+model QuizAttempt {
+  id          String    @id @default(cuid())
+  userId      String
+  lessonId    String
+  score       Int       @default(0)
+  maxScore    Int       @default(0)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  lesson  Lesson       @relation(fields: [lessonId], references: [id])
+  answers QuizAnswer[]
+}
+
+model QuizAnswer {
+  id                String   @id @default(cuid())
+  attemptId         String
+  questionId        String
+  selectedOptionIds String[]
+  isCorrect         Boolean?
+  pointsAwarded     Int?
+
+  attempt  QuizAttempt  @relation(fields: [attemptId], references: [id])
+  question QuizQuestion @relation(fields: [questionId], references: [id])
+}
+
+model Enrollment {
+  id          String    @id @default(cuid())
+  userId      String
+  courseId    String
+  progress    Float     @default(0)
+  paymentId   String?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  user           User             @relation(fields: [userId], references: [id])
+  course         Course           @relation(fields: [courseId], references: [id])
+  lessonProgress LessonProgress[]
+
+  @@index([userId], map: "Enrollment_userId_idx")
+}
+
+model LessonProgress {
+  id           String    @id @default(cuid())
+  enrollmentId String
+  lessonId     String
+  completedAt  DateTime?
+
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id])
+  lesson     Lesson     @relation(fields: [lessonId], references: [id])
+}
+
+model Assessment {
+  id          String      @id @default(cuid())
+  userId      String
+  startedAt   DateTime    @default(now())
+  completedAt DateTime?
+  skillLevel  SkillLevel?
+  durationSec Int?
+  xpAwarded   Int?
+  aiReport    String?
+
+  user    User               @relation(fields: [userId], references: [id])
+  answers AssessmentAnswer[]
+
+  @@index([userId], map: "Assessment_userId_idx")
+}
+
+model AssessmentQuestion {
+  id         String  @id @default(cuid())
+  category   String
+  difficulty String
+  instrument String?
+  question   String
+  options    Json?
+
+  answers AssessmentAnswer[]
+}
+
+model AssessmentAnswer {
+  id             String   @id @default(cuid())
+  assessmentId   String
+  questionId     String
+  selectedOption String?
+  openAnswer     String?
+  isCorrect      Boolean?
+
+  assessment Assessment         @relation(fields: [assessmentId], references: [id])
+  question   AssessmentQuestion @relation(fields: [questionId], references: [id])
+
+  @@unique([assessmentId, questionId])
+  @@index([assessmentId], map: "AssessmentAnswer_assessmentId_idx")
+  @@index([questionId], map: "AssessmentAnswer_questionId_idx")
+}
+
+model Booking {
+  id               String        @id @default(cuid())
+  studentId        String
+  teacherProfileId String
+  startsAt         DateTime
+  endsAt           DateTime
+  durationMin      Int
+  format           BookingFormat @default(ONLINE)
+  instrument       String?
+  notes            String?
+  status           BookingStatus @default(PENDING)
+  paymentId        String?
+  zoomMeetingId    String?
+  zoomJoinUrl      String?
+  zoomStartUrl     String?
+  holdExpiresAt    DateTime?
+  lateCancellation Boolean?
+  packagePurchaseId String?
+  icsSequence      Int           @default(0)
+
+  student        User           @relation("StudentBookings", fields: [studentId], references: [id])
+  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+  payment        Payment?       @relation(fields: [paymentId], references: [id])
+  review         Review?
+  mailOutbox     MailOutboxMessage[]
+
+  @@index([studentId, startsAt], map: "Booking_userId_startsAt_idx")
+  @@index([teacherProfileId, startsAt], map: "Booking_teacher_startsAt_idx")
+}
+
+model Event {
+  id               String       @id @default(cuid())
+  slug             String       @unique
+  title            String
+  description      String?
+  type             EventType
+  format           EventFormat
+  instruments      String[]
+  musicStyles      String[]
+  skillLevels      String[]
+  thumbnailUrl     String?
+  videoStreamUrl   String?
+  startsAt         DateTime
+  endsAt           DateTime?
+  timezone         String       @default("Europe/Zurich")
+  venueName        String?
+  venueAddress     String?
+  city             String?
+  country          String?
+  latitude         Float?
+  longitude        Float?
+  onlineMeetingUrl String?
+  price            Float        @default(0)
+  currency         String       @default("CHF")
+  maxCapacity      Int?
+  isPublished      Boolean      @default(false)
+  publisherId      String
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  publisher User           @relation("PublisherEvents", fields: [publisherId], references: [id])
+  bookings  EventBooking[]
+  reviews   Review[]
+
+  @@index([isPublished, startsAt], map: "Event_published_startsAt_idx")
+}
+
+model EventBooking {
+  id             String             @id @default(cuid())
+  userId         String
+  eventId        String
+  status         EventBookingStatus @default(PENDING)
+  paymentId      String?
+  pretixOrderCode String?
+  bookedAt       DateTime           @default(now())
+
+  user    User     @relation(fields: [userId], references: [id])
+  event   Event    @relation(fields: [eventId], references: [id])
+  payment Payment? @relation(fields: [paymentId], references: [id])
+
+  @@index([userId], map: "EventBooking_userId_idx")
+}
+
+enum ExternalEventProvider {
+  TICKETMASTER
+  CLASSICTIC
+}
+
+model ExternalEventProjection {
+  id              String                 @id @default(cuid())
+  provider        ExternalEventProvider
+  providerId      String
+  title           String
+  description     String?
+  url             String
+  imageUrl        String?
+  startsAt        DateTime
+  endsAt          DateTime?
+  timezone        String?
+  venueName       String?
+  city            String?
+  country         String?
+  latitude        Float?
+  longitude       Float?
+  minPrice        Float?
+  maxPrice        Float?
+  currency        String?
+  classifications String[]
+  attribution     String
+  instruments     String[]  @default([])
+  musicStyles     String[]  @default([])
+  skillLevels     String[]  @default([])
+  classifiedAt    DateTime?
+  expiresAt       DateTime?
+
+  engagements ExternalEventEngagement[]
+  reviews     Review[]
+
+  @@unique([provider, providerId])
+  @@index([startsAt], map: "ExternalEventProjection_startsAt_idx")
+  @@index([city], map: "ExternalEventProjection_city_idx")
+  @@index([classifiedAt], map: "ExternalEventProjection_classifiedAt_idx")
+}
+
+model UserCredential {
+  id           String @id @default(cuid())
+  userId       String @unique
+  passwordHash String
+}
+
+model Payment {
+  id                   String          @id @default(cuid())
+  userId               String
+  amount               Float
+  currency             String          @default("CHF")
+  status               PaymentStatus   @default(PENDING)
+  provider             PaymentProvider @default(STRIPE)
+  providerRef          String?         @unique
+  description          String?
+  confirmationEmailAt  DateTime?
+  createdAt            DateTime        @default(now())
+
+  user          User           @relation(fields: [userId], references: [id])
+  bookings      Booking[]
+  eventBookings EventBooking[]
+
+  @@index([userId], map: "Payment_userId_idx")
+}
+
+model FeedPost {
+  id         String   @id @default(cuid())
+  authorId   String
+  content    String
+  mediaUrls  String[]
+  likesCount Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  author   User          @relation(fields: [authorId], references: [id])
+  likes    FeedLike[]
+  comments FeedComment[]
+
+  @@index([authorId, createdAt], map: "FeedPost_authorId_createdAt_idx")
+}
+
+model FeedLike {
+  id     String @id @default(cuid())
+  postId String
+  userId String
+
+  post FeedPost @relation(fields: [postId], references: [id])
+  user User     @relation(fields: [userId], references: [id])
+
+  @@unique([postId, userId])
+  @@index([postId], map: "FeedLike_postId_idx")
+}
+
+model FeedComment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  post   FeedPost @relation(fields: [postId], references: [id])
+  author User     @relation(fields: [authorId], references: [id])
+
+  @@index([postId], map: "FeedComment_postId_idx")
+}
+
+model Follow {
+  id          String @id @default(cuid())
+  followerId  String
+  followingId String
+
+  follower  User @relation("Followers", fields: [followerId], references: [id])
+  following User @relation("Following", fields: [followingId], references: [id])
+
+  @@unique([followerId, followingId])
+  @@index([followingId], map: "Follow_followingId_idx")
+}
+
+model Review {
+  id                          String    @id @default(cuid())
+  authorId                    String
+  rating                      Int
+  comment                     String?
+  courseId                    String?
+  eventId                     String?
+  bookingId                   String?   @unique
+  externalEventProjectionId   String?
+  isPublic                    Boolean   @default(true)
+  createdAt                   DateTime  @default(now())
+
+  author                  User                       @relation(fields: [authorId], references: [id])
+  course                  Course?                    @relation(fields: [courseId], references: [id])
+  event                   Event?                     @relation(fields: [eventId], references: [id])
+  booking                 Booking?                   @relation(fields: [bookingId], references: [id])
+  externalEventProjection ExternalEventProjection?   @relation(fields: [externalEventProjectionId], references: [id])
+
+  @@index([courseId], map: "Review_courseId_idx")
+  @@index([eventId], map: "Review_eventId_idx")
+  @@index([externalEventProjectionId], map: "Review_externalEventProjectionId_idx")
+}
+
+// One row per (user, external event) - "recently visited," post-event
+// attendance confirmation, and the XP-award marker.
+model ExternalEventEngagement {
+  id                          String    @id @default(cuid())
+  userId                      String
+  externalEventProjectionId   String
+  firstViewedAt               DateTime  @default(now())
+  lastViewedAt                DateTime  @default(now())
+  attendanceConfirmedAt       DateTime?
+  xpAwardedAt                 DateTime?
+
+  user                    User                     @relation(fields: [userId], references: [id])
+  externalEventProjection ExternalEventProjection  @relation(fields: [externalEventProjectionId], references: [id])
+
+  @@unique([userId, externalEventProjectionId])
+  @@index([userId, lastViewedAt], map: "ExternalEventEngagement_userId_lastViewedAt_idx")
+}
+
+model AdminSetting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+}
+
+enum MailOutboxStatus {
+  PENDING
+  SENT
+  FAILED
+  DEAD_LETTER
+}
+
+enum MailOutboxKind {
+  BOOKING_CONFIRMATION
+  BOOKING_CANCELLED
+}
+
+model MailOutboxMessage {
+  id            String            @id @default(cuid())
+  kind          MailOutboxKind
+  bookingId     String?
+  recipients    String[]
+  subject       String
+  status        MailOutboxStatus  @default(PENDING)
+  attempts      Int               @default(0)
+  maxAttempts   Int               @default(6)
+  lastError     String?
+  nextAttemptAt DateTime          @default(now())
+  sentAt        DateTime?
+  createdAt     DateTime          @default(now())
+  icsContent    String?
+  icsMethod     String?
+
+  booking Booking? @relation(fields: [bookingId], references: [id])
+
+  @@index([status, nextAttemptAt], map: "MailOutboxMessage_status_nextAttemptAt_idx")
+  @@index([bookingId], map: "MailOutboxMessage_bookingId_idx")
+}
+
+model LessonPackageOffer {
+  id               String   @id @default(cuid())
+  teacherProfileId String
+  instrument       String?
+  lessonCount      Int
+  pricePerPackage  Float
+  currency         String   @default("CHF")
+  isPublished      Boolean  @default(false)
+
+  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+  purchases      LessonPackagePurchase[]
+
+  @@index([teacherProfileId], map: "LessonPackageOffer_teacherProfileId_idx")
+}
+
+model LessonPackagePurchase {
+  id                     String   @id @default(cuid())
+  userId                 String
+  teacherProfileId       String
+  offerId                String?
+  instrument             String?
+  lessonCount            Int
+  pricePaid              Float
+  currency               String   @default("CHF")
+  policyLeadDays         Int
+  policyCancellationDays Int
+  purchasedAt            DateTime @default(now())
+
+  user           User                    @relation(fields: [userId], references: [id])
+  teacherProfile TeacherProfile          @relation(fields: [teacherProfileId], references: [id])
+  offer          LessonPackageOffer?     @relation(fields: [offerId], references: [id])
+  ledgerEntries  LessonCreditLedgerEntry[]
+
+  @@index([userId], map: "LessonPackagePurchase_userId_idx")
+  @@index([teacherProfileId], map: "LessonPackagePurchase_teacherProfileId_idx")
+}
+
+model LessonCreditLedgerEntry {
+  id         String   @id @default(cuid())
+  purchaseId String
+  delta      Int
+  reason     String
+  bookingId  String?
+  createdAt  DateTime @default(now())
+
+  purchase LessonPackagePurchase @relation(fields: [purchaseId], references: [id])
+
+  @@index([purchaseId], map: "LessonCreditLedgerEntry_purchaseId_idx")
+}
+
+model SubscriptionOffer {
+  id                    String   @id @default(cuid())
+  teacherProfileId      String
+  includedHoursPerMonth Int
+  termMonths            Int
+  monthlyPrice          Float
+  currency              String   @default("CHF")
+  includedCourseIds     String[] @default([])
+  isPublished           Boolean  @default(false)
+  upfrontDiscountPct    Int      @default(20)
+
+  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+  purchases      SubscriptionPurchase[]
+
+  @@index([teacherProfileId], map: "SubscriptionOffer_teacherProfileId_idx")
+}
+
+enum SubscriptionPurchaseStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+}
+
+model SubscriptionPurchase {
+  id                     String                     @id @default(cuid())
+  userId                 String
+  teacherProfileId       String
+  offerId                String?
+  termMonths             Int
+  includedHoursPerMonth  Int
+  monthlyPrice           Float
+  discountPct            Int
+  totalPricePaid         Float
+  currency               String                     @default("CHF")
+  includedCourseIds      String[]                   @default([])
+  policyLeadDays         Int
+  policyCancellationDays Int
+  status                 SubscriptionPurchaseStatus @default(ACTIVE)
+  startsAt               DateTime                   @default(now())
+  endsAt                 DateTime
+  cancelledAt            DateTime?
+
+  user           User                @relation(fields: [userId], references: [id])
+  teacherProfile TeacherProfile      @relation(fields: [teacherProfileId], references: [id])
+  offer          SubscriptionOffer?  @relation(fields: [offerId], references: [id])
+
+  @@index([userId], map: "SubscriptionPurchase_userId_idx")
+  @@index([teacherProfileId], map: "SubscriptionPurchase_teacherProfileId_idx")
+}
