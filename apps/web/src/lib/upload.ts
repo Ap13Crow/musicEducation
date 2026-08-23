@@ -20,13 +20,13 @@ export async function uploadFileToStorage(
   return fileUrl;
 }
 
-// Fallback used only when storageConfigured is false (no S3_* secrets on
-// this deployment yet) and only for the public teacher photo - see
-// requireInlineTeacherPhoto in apps/api/src/lib/storage.ts for why. Resizes
-// and JPEG-compresses the image in-browser via <canvas> so the resulting
-// data: URL comfortably fits the server's inline-photo size cap, then
-// returns it directly - there's no separate PUT step, the caller submits
-// this string as imageUrl/publicImageUrl like any other value.
+// Used for every teacher-application/profile photo (become-teacher wizard,
+// teacher profile editor) - same mechanism as the personal account avatar
+// (see saveCroppedPhoto in apps/web/src/app/dashboard/profile/page.tsx and
+// POST /profile/avatar in apps/api/src/index.ts): resized/JPEG-compressed
+// in-browser via <canvas>, then POSTed straight to Postgres as a data: URL.
+// Not a fallback for when S3 isn't configured - this is the only path,
+// same as the account avatar never goes through S3 either.
 export async function resizeImageToDataUrl(file: File, maxDimension = 480, quality = 0.82): Promise<string> {
   const bitmap = await createImageBitmap(file);
   try {
@@ -40,9 +40,22 @@ export async function resizeImageToDataUrl(file: File, maxDimension = 480, quali
     if (!ctx) throw new Error('This browser cannot process images for upload.');
     ctx.drawImage(bitmap, 0, 0, width, height);
     // Always JPEG, regardless of source format - smallest encoding for a
-    // photo, and requireInlineTeacherPhoto accepts it.
+    // photo, and the server's TEACHER_PHOTO_PATTERN accepts it.
     return canvas.toDataURL('image/jpeg', quality);
   } finally {
     bitmap.close();
   }
+}
+
+// Used for CV/document/audio-sample uploads (become-teacher wizard step
+// 4/5) - these aren't images to resize, just read as-is and base64-encode
+// via FileReader, then POSTed to Postgres the same way as the photo. No
+// S3 involved, matching the rest of this file's approach.
+export function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Could not read the file.'));
+    reader.readAsDataURL(file);
+  });
 }
