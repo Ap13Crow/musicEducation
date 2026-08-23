@@ -6,7 +6,7 @@ import { gql, useMutation, useQuery } from '@apollo/client';
 import { Award, BookOpen, Calendar, MapPin, Star, UserRoundCheck, Users as UsersIcon, Video } from 'lucide-react';
 import RoleGate from '@/components/auth/RoleGate';
 import { toYouTubeEmbedUrl } from '@/lib/youtube';
-import { uploadFileToStorage } from '@/lib/upload';
+import { uploadFileToStorage, resizeImageToDataUrl } from '@/lib/upload';
 import { membershipLabel } from '@/lib/membership';
 
 const INSTRUMENTS = ['Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute', 'Clarinet', 'Oboe', 'Trumpet', 'Organ', 'Harp', 'Percussion', 'Composition', 'Theory'];
@@ -163,10 +163,15 @@ export default function TeacherProfessionalProfilePage() {
     setImageError(null);
     setImageUploading(true);
     try {
-      const fileUrl = await uploadFileToStorage(async (filename, contentType) => {
-        const { data } = await requestUploadUrl({ variables: { purpose: 'TEACHER_PROFILE_IMAGE', filename, contentType } });
-        return data.requestUploadUrl;
-      }, file);
+      // Real S3 upload when configured; otherwise fall back to a resized
+      // inline data: URL (see requireInlineTeacherPhoto in the API) so the
+      // photo still saves on a deployment without S3_* secrets.
+      const fileUrl = storageConfigured
+        ? await uploadFileToStorage(async (filename, contentType) => {
+            const { data } = await requestUploadUrl({ variables: { purpose: 'TEACHER_PROFILE_IMAGE', filename, contentType } });
+            return data.requestUploadUrl;
+          }, file)
+        : await resizeImageToDataUrl(file);
       await update({ variables: { publicImageUrl: fileUrl } });
       await refetch();
     } catch (err: any) {
@@ -222,29 +227,25 @@ export default function TeacherProfessionalProfilePage() {
                         <span className="text-xs text-gray-400">No photo</span>
                       )}
                     </div>
-                    {storageConfigured ? (
-                      <div className="space-y-2">
-                        <label className="btn-secondary inline-block w-fit cursor-pointer rounded-lg px-4 py-2 text-sm">
-                          {profile.publicImageUrl ? 'Change photo' : 'Add a photo'}
-                          <input
-                            type="file"
-                            accept="image/png,image/jpeg,image/webp"
-                            className="sr-only"
-                            disabled={imageUploading}
-                            onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadImage(f); e.target.value = ''; }}
-                          />
-                        </label>
-                        {profile.publicImageUrl && (
-                          <button type="button" onClick={() => void removeImage()} className="block text-xs text-red-600 underline">
-                            Remove photo
-                          </button>
-                        )}
-                        {imageUploading && <p className="text-xs text-gray-500">Uploading…</p>}
-                        {imageError && <p className="text-xs text-red-600">{imageError}</p>}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-gray-500">Photo uploads aren&rsquo;t enabled on this deployment yet.</p>
-                    )}
+                    <div className="space-y-2">
+                      <label className="btn-secondary inline-block w-fit cursor-pointer rounded-lg px-4 py-2 text-sm">
+                        {profile.publicImageUrl ? 'Change photo' : 'Add a photo'}
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className="sr-only"
+                          disabled={imageUploading}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadImage(f); e.target.value = ''; }}
+                        />
+                      </label>
+                      {profile.publicImageUrl && (
+                        <button type="button" onClick={() => void removeImage()} className="block text-xs text-red-600 underline">
+                          Remove photo
+                        </button>
+                      )}
+                      {imageUploading && <p className="text-xs text-gray-500">Uploading…</p>}
+                      {imageError && <p className="text-xs text-red-600">{imageError}</p>}
+                    </div>
                   </div>
                 </section>
 
