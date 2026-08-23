@@ -1012,7 +1012,12 @@ function ProfileSkeleton() {
       </div>
       <div className="mx-auto max-w-4xl px-6 py-8">
         <div className="grid gap-6 lg:grid-cols-3">
-          {[1, 2, 3].map(i => <div key={i} className="card h-48 animate-pulse bg-gray-100" />)}
+          <div className="lg:col-span-2 space-y-6">
+            {[1, 2, 3].map(i => <div key={i} className="card h-48 animate-pulse bg-gray-100" />)}
+          </div>
+          <div className="space-y-6">
+            {[1, 2].map(i => <div key={i} className="card h-48 animate-pulse bg-gray-100" />)}
+          </div>
         </div>
       </div>
     </div>
