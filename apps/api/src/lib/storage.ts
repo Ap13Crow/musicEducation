@@ -143,12 +143,21 @@ export function requireInlineTeacherPhoto(value: string): string {
   if (!match) {
     throw new GraphQLError('Photo must be a PNG, JPEG, or WebP image.', { extensions: { code: 'BAD_USER_INPUT' } });
   }
-  // Decoded byte length from the base64 payload length, without actually
-  // decoding it - 4 base64 chars encode 3 bytes, minus 1 byte per trailing
-  // '=' pad character.
   const base64 = match[2];
-  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
-  const approxBytes = Math.floor((base64.length * 3) / 4) - padding;
+  // A well-formed base64 payload is always a multiple of 4 characters long,
+  // with at most 2 trailing '=' pad characters (Copilot review finding on
+  // PR #52: a payload like the single character "A" matched the character
+  // class and passed the old size check below, but isn't valid/decodable
+  // base64 at all - a broken data: URL would have been persisted). Reject
+  // that here, before trusting the length to compute a decoded byte count.
+  const paddingLength = (/=*$/.exec(base64) as RegExpExecArray)[0].length;
+  if (base64.length % 4 !== 0 || paddingLength > 2) {
+    throw new GraphQLError('Photo must be a PNG, JPEG, or WebP image.', { extensions: { code: 'BAD_USER_INPUT' } });
+  }
+  // Decoded byte length from the (now known well-formed) base64 payload
+  // length, without actually decoding it - 4 base64 chars encode 3 bytes,
+  // minus 1 byte per trailing '=' pad character.
+  const approxBytes = Math.floor((base64.length * 3) / 4) - paddingLength;
   if (approxBytes > MAX_INLINE_IMAGE_BYTES) {
     throw new GraphQLError('Photo is too large - please use a smaller image (under 400KB).', {
       extensions: { code: 'BAD_USER_INPUT' },

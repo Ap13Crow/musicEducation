@@ -320,9 +320,12 @@ describe('applyForTeacher: inline teacher photo fallback (no S3 configured)', ()
     ).rejects.toThrow(/PNG, JPEG, or WebP/);
   });
 
-  it('rejects an oversized data URL even with an unusual base64 padding length', async () => {
+  it('rejects an oversized data URL that also has valid padding', async () => {
     const prisma = fakePrisma();
-    const oversized = 'data:image/jpeg;base64,' + 'A'.repeat(600 * 1024) + '=';
+    // 600 * 1024 is already a multiple of 4; 2 trailing '=' keeps it a
+    // multiple of 4 and well-formed, so this exercises the size check
+    // specifically, not the base64-structure check below.
+    const oversized = 'data:image/jpeg;base64,' + 'A'.repeat(600 * 1024 - 2) + '==';
     await expect(
       teacherApplicationResolvers.Mutation.applyForTeacher(
         null,
@@ -330,6 +333,21 @@ describe('applyForTeacher: inline teacher photo fallback (no S3 configured)', ()
         { prisma, user: studentUser } as any,
       ),
     ).rejects.toThrow(/too large/);
+  });
+
+  // Regression (Copilot review finding on PR #52): a base64 payload that
+  // isn't a multiple of 4 characters (or has malformed padding) isn't
+  // decodable at all - it must be rejected as an invalid photo, not
+  // silently accepted (or size-checked as if it were legitimate).
+  it('rejects a malformed (non-decodable) base64 photo payload', async () => {
+    const prisma = fakePrisma();
+    await expect(
+      teacherApplicationResolvers.Mutation.applyForTeacher(
+        null,
+        { input: { ...VALID_INPUT, imageUrl: 'data:image/png;base64,A' } },
+        { prisma, user: studentUser } as any,
+      ),
+    ).rejects.toThrow(/PNG, JPEG, or WebP/);
   });
 
   it('still rejects a plain https URL for the photo when S3 is not configured', async () => {

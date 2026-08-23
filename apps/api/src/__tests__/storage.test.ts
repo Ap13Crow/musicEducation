@@ -162,8 +162,12 @@ describe('storage', () => {
 
     it('requireInlineTeacherPhoto rejects a payload over the size cap', async () => {
       const { requireInlineTeacherPhoto, MAX_INLINE_IMAGE_BYTES } = await import('../lib/storage.js');
-      // Comfortably over the cap once base64-decoded (base64 ~4/3 the size).
-      const oversized = 'data:image/png;base64,' + 'A'.repeat(Math.ceil((MAX_INLINE_IMAGE_BYTES + 1024) * 4 / 3));
+      // Comfortably over the cap once base64-decoded (base64 ~4/3 the
+      // size); rounded up to a multiple of 4 so this exercises the size
+      // check specifically, not the base64-structure check below it.
+      const rawLength = Math.ceil((MAX_INLINE_IMAGE_BYTES + 1024) * 4 / 3);
+      const length = rawLength + ((4 - (rawLength % 4)) % 4);
+      const oversized = 'data:image/png;base64,' + 'A'.repeat(length);
       expect(() => requireInlineTeacherPhoto(oversized)).toThrow(/too large/);
     });
 
@@ -171,6 +175,29 @@ describe('storage', () => {
       const { requireInlineTeacherPhoto, MAX_INLINE_IMAGE_BYTES } = await import('../lib/storage.js');
       const atCap = 'data:image/jpeg;base64,' + 'A'.repeat(Math.floor(MAX_INLINE_IMAGE_BYTES * 4 / 3 / 4) * 4);
       expect(() => requireInlineTeacherPhoto(atCap)).not.toThrow();
+    });
+
+    // Regression (Copilot review finding on PR #52): a base64 payload whose
+    // length isn't a multiple of 4, or that has more than 2 trailing '='
+    // pad characters, isn't valid/decodable base64 at all - the old check
+    // only looked at size, so a string like the single character "A" passed
+    // straight through and would have been persisted as a broken data: URL.
+    it('requireInlineTeacherPhoto rejects a payload whose length is not a multiple of 4', async () => {
+      const { requireInlineTeacherPhoto } = await import('../lib/storage.js');
+      expect(() => requireInlineTeacherPhoto('data:image/png;base64,A')).toThrow(/PNG, JPEG, or WebP/);
+      expect(() => requireInlineTeacherPhoto('data:image/png;base64,AAAAA')).toThrow(/PNG, JPEG, or WebP/);
+    });
+
+    it('requireInlineTeacherPhoto rejects a payload with more than 2 trailing pad characters', async () => {
+      const { requireInlineTeacherPhoto } = await import('../lib/storage.js');
+      expect(() => requireInlineTeacherPhoto('data:image/png;base64,A===')).toThrow(/PNG, JPEG, or WebP/);
+    });
+
+    it('requireInlineTeacherPhoto accepts well-formed base64 with 0, 1, or 2 trailing pad characters', async () => {
+      const { requireInlineTeacherPhoto } = await import('../lib/storage.js');
+      expect(() => requireInlineTeacherPhoto('data:image/png;base64,AAAA')).not.toThrow();
+      expect(() => requireInlineTeacherPhoto('data:image/png;base64,AAA=')).not.toThrow();
+      expect(() => requireInlineTeacherPhoto('data:image/png;base64,AA==')).not.toThrow();
     });
   });
 });
