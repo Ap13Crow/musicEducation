@@ -5,7 +5,7 @@ import { gql, useMutation, useQuery } from '@apollo/client';
 import Link from 'next/link';
 import { signIn, useSession } from 'next-auth/react';
 import { hasRole } from '@/lib/roles';
-import { uploadFileToStorage, resizeImageToDataUrl } from '@/lib/upload';
+import { resizeImageToDataUrl, fileToDataUrl } from '@/lib/upload';
 import { toYouTubeEmbedUrl } from '@/lib/youtube';
 
 const GET = gql`
@@ -15,16 +15,6 @@ const GET = gql`
       id status headline bio instruments experienceYears birthdate gender motivation videoUrl
       street houseNumber postalCode city state country
       cvUrl audioSampleUrl documentUrls imageUrl
-    }
-    storageConfigured
-  }
-`;
-
-const REQUEST_UPLOAD_URL = gql`
-  mutation RequestUploadUrl($purpose: UploadPurpose!, $filename: String!, $contentType: String!) {
-    requestUploadUrl(purpose: $purpose, filename: $filename, contentType: $contentType) {
-      uploadUrl
-      fileUrl
     }
   }
 `;
@@ -234,41 +224,99 @@ export default function BecomeTeacherPage() {
 
   const { data, loading, refetch } = useQuery(GET, { skip: status !== 'authenticated' || alreadyTeacher, fetchPolicy: 'cache-and-network' });
   const [apply, { loading: applying, error }] = useMutation(APPLY);
-  const [requestUploadUrl] = useMutation(REQUEST_UPLOAD_URL);
 
   const application = data?.myTeacherApplication;
   const me = data?.me;
-  const storageConfigured = data?.storageConfigured ?? false;
 
   const [stepIndex, setStepIndex] = useState(0);
   const [stepError, setStepError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
-
-  // Revoke the previous local preview URL whenever a new file is chosen or
-  // the component unmounts - object URLs otherwise leak for the page's
-  // lifetime. Also clears imagePreviewUrl when imageFile is reset to null
-  // (e.g. after a successful submit) - without this, the state kept
-  // pointing at a URL this same effect had just revoked, and the render
-  // below prefers imagePreviewUrl over application?.imageUrl, so the
-  // freshly-saved photo appeared broken until the next reload.
-  useEffect(() => {
-    if (!imageFile) {
-      setImagePreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(imageFile);
-    setImagePreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [imageFile]);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [uploadingCv, setUploadingCv] = useState(false);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
 
   const [form, setForm] = useState(INITIAL_FORM);
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>([]);
-  const [cvFile, setCvFile] = useState<File | null>(null);
-  const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
+
+  // Every file field below (photo/CV/audio recording/documents) saves
+  // immediately on selection - straight to Postgres as a data: URL via its
+  // own small REST endpoint (apps/api/src/index.ts), the same mechanism as
+  // the personal account avatar - never S3. Nothing here waits for the
+  // final "Submit application" step, so there's no pending File state to
+  // hold; application?.* (refetched after each upload) is the source of
+  // truth for what's already saved.
+  async function postJson(path: string, body: Record<string, unknown>) {
+    const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.error ?? 'Upload failed.');
+    return payload;
+  }
+
+  async function handlePhotoChange(file?: File) {
+    if (!file) return;
+    setFileError(null);
+    setUploadingPhoto(true);
+    try {
+      const imageUrl = await resizeImageToDataUrl(file);
+      await postJson('/api/teacher-application/photo', { imageUrl });
+      await refetch();
+    } catch (err: any) {
+      setFileError(err.message ?? 'Photo upload failed.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
+
+  async function handleCvChange(file?: File) {
+    if (!file) return;
+    setFileError(null);
+    setUploadingCv(true);
+    try {
+      const cvUrl = await fileToDataUrl(file);
+      await postJson('/api/teacher-application/cv', { cvUrl });
+      await refetch();
+    } catch (err: any) {
+      setFileError(err.message ?? 'CV upload failed.');
+    } finally {
+      setUploadingCv(false);
+    }
+  }
+
+  async function handleAudioChange(file?: File) {
+    if (!file) return;
+    setFileError(null);
+    setUploadingAudio(true);
+    try {
+      const audioSampleUrl = await fileToDataUrl(file);
+      await postJson('/api/teacher-application/audio', { audioSampleUrl });
+      await refetch();
+    } catch (err: any) {
+      setFileError(err.message ?? 'Recording upload failed.');
+    } finally {
+      setUploadingAudio(false);
+    }
+  }
+
+  async function handleDocumentChange(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setFileError(null);
+    setUploadingDocument(true);
+    try {
+      // Uploaded one at a time (not Promise.all) - the endpoint appends to
+      // documentUrls by reading-then-writing the row, so concurrent
+      // requests could race and drop one another's addition.
+      for (const file of Array.from(files)) {
+        const documentUrl = await fileToDataUrl(file);
+        await postJson('/api/teacher-application/document', { documentUrl });
+      }
+      await refetch();
+    } catch (err: any) {
+      setFileError(err.message ?? 'Document upload failed.');
+    } finally {
+      setUploadingDocument(false);
+    }
+  }
 
   // Guards the save effect below against writing a blank draft over a real
   // one - both the prefill effect and the save effect fire on every mount,
@@ -326,13 +374,6 @@ export default function BecomeTeacherPage() {
     setSelectedInstruments((prev) => (prev.includes(inst) ? prev.filter((i) => i !== inst) : [...prev, inst]));
   }
 
-  function requestUrlFor(purpose: string) {
-    return async (filename: string, contentType: string) => {
-      const { data } = await requestUploadUrl({ variables: { purpose, filename, contentType } });
-      return data.requestUploadUrl;
-    };
-  }
-
   const videoEmbedUrl = useMemo(() => toYouTubeEmbedUrl(form.videoUrl), [form.videoUrl]);
 
   function validateStep(index: number): string | null {
@@ -352,11 +393,7 @@ export default function BecomeTeacherPage() {
       return null;
     }
     if (index === 1) {
-      // Photo upload works either way now - via S3 when storageConfigured,
-      // via an inline data: URL otherwise (see resizeImageToDataUrl /
-      // requireInlineTeacherPhoto) - so this is a hard requirement
-      // regardless of storage configuration.
-      if (!application?.imageUrl && !imageFile) {
+      if (!application?.imageUrl) {
         return 'Add a profile photo before continuing — students see this on your teacher profile.';
       }
       return null;
@@ -372,11 +409,7 @@ export default function BecomeTeacherPage() {
       return null;
     }
     if (index === 4) {
-      // Uploads aren't possible at all when storage isn't configured (the
-      // file inputs are hidden in that case - see the storageConfigured
-      // branch below) - requiring a CV then would make every application
-      // un-submittable on a deployment without S3_* set.
-      if (storageConfigured && !application?.cvUrl && !cvFile) return 'Upload your CV.';
+      if (!application?.cvUrl) return 'Upload your CV.';
       if (!videoEmbedUrl) return 'Add a link to a YouTube presentation or performance video.';
       return null;
     }
@@ -396,7 +429,6 @@ export default function BecomeTeacherPage() {
 
   async function submit() {
     setStepError(null);
-    setUploadError(null);
     for (let i = 0; i < STEPS.length - 1; i++) {
       const err = validateStep(i);
       if (err) {
@@ -406,44 +438,11 @@ export default function BecomeTeacherPage() {
       }
     }
 
-    // When storage isn't configured, these fields are omitted from the
-    // mutation entirely (undefined) rather than resent as their current
-    // value - applyForTeacher rejects any non-null upload URL while storage
-    // is unconfigured (there's no way to prove ownership), so resending an
-    // untouched, previously-uploaded URL from before storage was disabled
-    // would make an otherwise-unrelated resubmission (e.g. just editing the
-    // headline) fail outright. The resolver treats an omitted field as "no
-    // change," which is exactly what an untouched file should mean here.
-    let cvUrl: string | null | undefined = storageConfigured ? (application?.cvUrl ?? null) : undefined;
-    let audioSampleUrl: string | null | undefined = storageConfigured ? (application?.audioSampleUrl ?? null) : undefined;
-    let documentUrls: string[] | undefined = storageConfigured ? (application?.documentUrls ?? []) : undefined;
-    // Same "send undefined unless touched" default as the fields above: an
-    // untouched photo shouldn't be re-validated on every resubmission (e.g.
-    // an old S3 imageUrl from before storage got disabled would otherwise
-    // fail requireOwnedUploadUrl now that storageConfigured() is false).
-    // imageFile below always overrides this when the applicant actually
-    // picks a new photo, on either upload path.
-    let imageUrl: string | null | undefined = storageConfigured ? (application?.imageUrl ?? null) : undefined;
-    try {
-      setUploading(true);
-      if (imageFile) {
-        imageUrl = storageConfigured
-          ? await uploadFileToStorage(requestUrlFor('TEACHER_PROFILE_IMAGE'), imageFile)
-          : await resizeImageToDataUrl(imageFile);
-      }
-      if (cvFile) cvUrl = await uploadFileToStorage(requestUrlFor('TEACHER_APPLICATION_CV'), cvFile);
-      if (audioFile) audioSampleUrl = await uploadFileToStorage(requestUrlFor('TEACHER_APPLICATION_AUDIO'), audioFile);
-      if (documentFiles.length > 0) {
-        const uploaded = await Promise.all(documentFiles.map((f) => uploadFileToStorage(requestUrlFor('TEACHER_APPLICATION_DOCUMENT'), f)));
-        documentUrls = [...(documentUrls ?? []), ...uploaded];
-      }
-    } catch (err: any) {
-      setUploadError(err.message ?? 'File upload failed.');
-      setUploading(false);
-      return;
-    }
-    setUploading(false);
-
+    // Photo/CV/audio recording/documents are already saved (see
+    // handlePhotoChange etc. above - each POSTs immediately on selection),
+    // so this mutation doesn't send them at all: applyForTeacher treats an
+    // omitted field as "no change," which is exactly right for a file that
+    // was uploaded in an earlier visit and is simply being left as-is here.
     await apply({
       variables: {
         input: {
@@ -461,18 +460,10 @@ export default function BecomeTeacherPage() {
           birthdate: form.birthdate,
           gender: form.gender || null,
           motivation: form.motivation.trim() || null,
-          cvUrl,
-          audioSampleUrl,
-          documentUrls,
-          imageUrl,
           videoUrl: form.videoUrl.trim(),
         },
       },
     });
-    setCvFile(null);
-    setAudioFile(null);
-    setDocumentFiles([]);
-    setImageFile(null);
     // Only reached if apply() above didn't throw - the application is now
     // safely persisted server-side, so the local draft's job is done. Left
     // in place on a failed submit, so the applicant doesn't lose their
@@ -529,7 +520,7 @@ export default function BecomeTeacherPage() {
               <Stepper current={stepIndex} />
               {error && <p className="mb-3 text-sm text-red-600">{error.message}</p>}
               {stepError && <p className="mb-3 text-sm text-red-600">{stepError}</p>}
-              {uploadError && <p className="mb-3 text-sm text-red-600">{uploadError}</p>}
+              {fileError && <p className="mb-3 text-sm text-red-600">{fileError}</p>}
 
               {stepIndex === 0 && (
                 <div className="space-y-4">
@@ -637,8 +628,8 @@ export default function BecomeTeacherPage() {
               {stepIndex === 1 && (
                 <div className="space-y-4 text-center">
                   <div className="mx-auto flex h-28 w-28 items-center justify-center overflow-hidden rounded-full bg-gray-100">
-                    {imagePreviewUrl || application?.imageUrl ? (
-                      <img src={imagePreviewUrl ?? application?.imageUrl} alt="" className="h-full w-full object-cover" />
+                    {application?.imageUrl ? (
+                      <img src={application.imageUrl} alt="" className="h-full w-full object-cover" />
                     ) : (
                       <span className="text-xs text-gray-400">No photo yet</span>
                     )}
@@ -648,17 +639,15 @@ export default function BecomeTeacherPage() {
                     name and self-presentation on your public teacher profile and directory card once approved.
                   </p>
                   <label className="btn-secondary mx-auto block w-fit cursor-pointer rounded-lg px-4 py-2 text-sm">
-                    {application?.imageUrl || imageFile ? 'Change photo' : 'Add a photo'}
+                    {uploadingPhoto ? 'Saving…' : application?.imageUrl ? 'Change photo' : 'Add a photo'}
                     <input
                       type="file"
                       accept="image/png,image/jpeg,image/webp"
                       className="sr-only"
-                      onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
+                      disabled={uploadingPhoto}
+                      onChange={(e) => { void handlePhotoChange(e.target.files?.[0]); e.target.value = ''; }}
                     />
                   </label>
-                  {!storageConfigured && (
-                    <p className="text-xs text-gray-400">Your photo is resized and saved automatically.</p>
-                  )}
                 </div>
               )}
 
@@ -734,32 +723,44 @@ export default function BecomeTeacherPage() {
 
               {stepIndex === 4 && (
                 <div className="space-y-4">
-                  {storageConfigured ? (
-                    <div className="space-y-4 rounded-lg border border-gray-200 p-4">
-                      <label className="block text-sm">
-                        CV / resume (PDF)
-                        <input type="file" accept="application/pdf" className="input mt-1 w-full" onChange={(e) => setCvFile(e.target.files?.[0] ?? null)} />
-                        {application?.cvUrl && !cvFile && <span className="mt-1 block text-xs text-green-700">A CV is already on file — choose a new one to replace it.</span>}
-                      </label>
-                      <label className="block text-sm">
-                        Qualifications / certificates / references (PDF or image, multiple allowed)
-                        <input type="file" accept="application/pdf,image/png,image/jpeg" multiple className="input mt-1 w-full" onChange={(e) => setDocumentFiles(Array.from(e.target.files ?? []))} />
-                        {application?.documentUrls?.length > 0 && (
-                          <span className="mt-1 block text-xs text-green-700">{application.documentUrls.length} document(s) already on file — new ones are added, not replaced.</span>
-                        )}
-                      </label>
-                      <label className="block text-sm">
-                        Recording of a previous performance/competition (optional, audio)
-                        <input type="file" accept="audio/mpeg,audio/mp4,audio/wav,audio/ogg" className="input mt-1 w-full" onChange={(e) => setAudioFile(e.target.files?.[0] ?? null)} />
-                        {application?.audioSampleUrl && !audioFile && <span className="mt-1 block text-xs text-green-700">A recording is already on file — choose a new one to replace it.</span>}
-                      </label>
-                    </div>
-                  ) : (
-                    <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
-                      Uploading a CV and supporting documents isn&rsquo;t enabled on this deployment yet — our team follows up
-                      by email if we need anything beyond what&rsquo;s here.
-                    </p>
-                  )}
+                  <div className="space-y-4 rounded-lg border border-gray-200 p-4">
+                    <label className="block text-sm">
+                      CV / resume (PDF)
+                      <input
+                        type="file" accept="application/pdf" className="input mt-1 w-full" disabled={uploadingCv}
+                        onChange={(e) => { void handleCvChange(e.target.files?.[0]); e.target.value = ''; }}
+                      />
+                      {uploadingCv ? (
+                        <span className="mt-1 block text-xs text-gray-500">Saving…</span>
+                      ) : application?.cvUrl ? (
+                        <span className="mt-1 block text-xs text-green-700">A CV is already on file — choose a new one to replace it.</span>
+                      ) : null}
+                    </label>
+                    <label className="block text-sm">
+                      Qualifications / certificates / references (PDF or image, multiple allowed)
+                      <input
+                        type="file" accept="application/pdf,image/png,image/jpeg" multiple className="input mt-1 w-full" disabled={uploadingDocument}
+                        onChange={(e) => { void handleDocumentChange(e.target.files); e.target.value = ''; }}
+                      />
+                      {uploadingDocument ? (
+                        <span className="mt-1 block text-xs text-gray-500">Saving…</span>
+                      ) : application?.documentUrls?.length > 0 ? (
+                        <span className="mt-1 block text-xs text-green-700">{application.documentUrls.length} document(s) already on file — new ones are added, not replaced.</span>
+                      ) : null}
+                    </label>
+                    <label className="block text-sm">
+                      Recording of a previous performance/competition (optional, audio)
+                      <input
+                        type="file" accept="audio/mpeg,audio/mp4,audio/wav,audio/ogg" className="input mt-1 w-full" disabled={uploadingAudio}
+                        onChange={(e) => { void handleAudioChange(e.target.files?.[0]); e.target.value = ''; }}
+                      />
+                      {uploadingAudio ? (
+                        <span className="mt-1 block text-xs text-gray-500">Saving…</span>
+                      ) : application?.audioSampleUrl ? (
+                        <span className="mt-1 block text-xs text-green-700">A recording is already on file — choose a new one to replace it.</span>
+                      ) : null}
+                    </label>
+                  </div>
                   <label className="block text-sm font-medium">
                     Presentation or performance video (YouTube link)
                     <input
@@ -788,7 +789,7 @@ export default function BecomeTeacherPage() {
                     <div><dt className="font-medium">Instruments</dt><dd className="text-gray-600">{selectedInstruments.join(', ') || '—'}</dd></div>
                     <div><dt className="font-medium">Headline</dt><dd className="text-gray-600">{form.headline || '—'}</dd></div>
                     <div><dt className="font-medium">Experience</dt><dd className="text-gray-600">{form.experienceYears ? `${form.experienceYears} years` : '—'}</dd></div>
-                    <div><dt className="font-medium">CV</dt><dd className="text-gray-600">{cvFile?.name || (application?.cvUrl ? 'On file' : 'Not provided')}</dd></div>
+                    <div><dt className="font-medium">CV</dt><dd className="text-gray-600">{application?.cvUrl ? 'On file' : 'Not provided'}</dd></div>
                     <div><dt className="font-medium">Video</dt><dd className="text-gray-600">{form.videoUrl || '—'}</dd></div>
                   </dl>
                   <p className="text-xs text-gray-400">
@@ -808,8 +809,8 @@ export default function BecomeTeacherPage() {
                     Next
                   </button>
                 ) : (
-                  <button type="button" onClick={submit} disabled={applying || uploading} className="btn-primary rounded-lg px-6 py-2.5 text-sm">
-                    {uploading ? 'Uploading files…' : applying ? 'Submitting…' : 'Submit application'}
+                  <button type="button" onClick={submit} disabled={applying} className="btn-primary rounded-lg px-6 py-2.5 text-sm">
+                    {applying ? 'Submitting…' : 'Submit application'}
                   </button>
                 )}
               </div>
