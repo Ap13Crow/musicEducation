@@ -276,6 +276,102 @@ describe('reviewTeacherApplication permission checks', () => {
   });
 });
 
+// Regression coverage: the public teacher photo used to be S3-only, so
+// "Photo uploads aren't enabled on this deployment yet" made step 1 of the
+// wizard un-fulfillable whenever S3_* secrets weren't set (this test file
+// never sets them). The resolver now also accepts a small inline data: URL
+// for imageUrl specifically - see requireInlineTeacherPhoto in
+// apps/api/src/lib/storage.ts. CV/audio/documents intentionally have no such
+// fallback and are covered by the plain "storage not configured" behavior.
+describe('applyForTeacher: inline teacher photo fallback (no S3 configured)', () => {
+  const TINY_PNG =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFklEQVR42mNk+M9QDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+  it('accepts a small inline photo even though S3 is not configured', async () => {
+    const prisma = fakePrisma();
+    const result = await teacherApplicationResolvers.Mutation.applyForTeacher(
+      null,
+      { input: { ...VALID_INPUT, imageUrl: TINY_PNG } },
+      { prisma, user: studentUser } as any,
+    );
+    expect(result.imageUrl).toBe(TINY_PNG);
+  });
+
+  it('rejects an oversized inline photo', async () => {
+    const prisma = fakePrisma();
+    const oversized = 'data:image/png;base64,' + 'A'.repeat(600 * 1024);
+    await expect(
+      teacherApplicationResolvers.Mutation.applyForTeacher(
+        null,
+        { input: { ...VALID_INPUT, imageUrl: oversized } },
+        { prisma, user: studentUser } as any,
+      ),
+    ).rejects.toThrow(/too large/);
+  });
+
+  it('rejects a non-image data URL disguised as a photo', async () => {
+    const prisma = fakePrisma();
+    await expect(
+      teacherApplicationResolvers.Mutation.applyForTeacher(
+        null,
+        { input: { ...VALID_INPUT, imageUrl: 'data:application/pdf;base64,AAAA' } },
+        { prisma, user: studentUser } as any,
+      ),
+    ).rejects.toThrow(/PNG, JPEG, or WebP/);
+  });
+
+  it('rejects an oversized data URL that also has valid padding', async () => {
+    const prisma = fakePrisma();
+    // 600 * 1024 is already a multiple of 4; 2 trailing '=' keeps it a
+    // multiple of 4 and well-formed, so this exercises the size check
+    // specifically, not the base64-structure check below.
+    const oversized = 'data:image/jpeg;base64,' + 'A'.repeat(600 * 1024 - 2) + '==';
+    await expect(
+      teacherApplicationResolvers.Mutation.applyForTeacher(
+        null,
+        { input: { ...VALID_INPUT, imageUrl: oversized } },
+        { prisma, user: studentUser } as any,
+      ),
+    ).rejects.toThrow(/too large/);
+  });
+
+  // Regression (Copilot review finding on PR #52): a base64 payload that
+  // isn't a multiple of 4 characters (or has malformed padding) isn't
+  // decodable at all - it must be rejected as an invalid photo, not
+  // silently accepted (or size-checked as if it were legitimate).
+  it('rejects a malformed (non-decodable) base64 photo payload', async () => {
+    const prisma = fakePrisma();
+    await expect(
+      teacherApplicationResolvers.Mutation.applyForTeacher(
+        null,
+        { input: { ...VALID_INPUT, imageUrl: 'data:image/png;base64,A' } },
+        { prisma, user: studentUser } as any,
+      ),
+    ).rejects.toThrow(/PNG, JPEG, or WebP/);
+  });
+
+  it('still rejects a plain https URL for the photo when S3 is not configured', async () => {
+    const prisma = fakePrisma();
+    await expect(
+      teacherApplicationResolvers.Mutation.applyForTeacher(
+        null,
+        { input: { ...VALID_INPUT, imageUrl: 'https://fra1.digitaloceanspaces.com/bucket/teacher-profile-images/student-1/x.png' } },
+        { prisma, user: studentUser } as any,
+      ),
+    ).rejects.toThrow('Photo must come from requestUploadUrl');
+  });
+
+  it('leaves imageUrl untouched when omitted from the input', async () => {
+    const prisma = fakePrisma();
+    const result = await teacherApplicationResolvers.Mutation.applyForTeacher(
+      null,
+      { input: VALID_INPUT },
+      { prisma, user: studentUser } as any,
+    );
+    expect(result.imageUrl).toBeUndefined();
+  });
+});
+
 describe('applyForTeacher: already-a-teacher guard logic', () => {
   it('flags TEACHER and ADMIN as already having teacher access', () => {
     const alreadyHasAccess = (role: string) => role === 'TEACHER' || role === 'ADMIN';

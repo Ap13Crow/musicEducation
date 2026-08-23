@@ -1,7 +1,7 @@
 import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
-import { isOwnedUploadUrl } from '../lib/storage.js';
+import { isOwnedUploadUrl, requireInlineTeacherPhoto } from '../lib/storage.js';
 import { isValidEmail } from '../lib/mailOutbox.js';
 import {
   isValidLeadDays, isValidCancellationDays, isValidPolicyPair,
@@ -252,10 +252,17 @@ export const userResolvers = {
       // TEACHER_PROFILE_IMAGE) - otherwise a caller could point the public
       // directory/profile at an arbitrary external URL.
       if (publicImageUrl !== undefined) {
-        if (publicImageUrl !== null && !isOwnedUploadUrl(publicImageUrl, 'TEACHER_PROFILE_IMAGE', user!.id)) {
-          throw new GraphQLError('publicImageUrl must come from requestUploadUrl(purpose: TEACHER_PROFILE_IMAGE).', {
-            extensions: { code: 'BAD_USER_INPUT' },
-          });
+        // Same no-S3 fallback as applyForTeacher's imageUrl: a data: URL is
+        // validated/size-capped in place of the ownership check instead of
+        // being rejected outright.
+        if (publicImageUrl !== null) {
+          if (publicImageUrl.startsWith('data:')) {
+            requireInlineTeacherPhoto(publicImageUrl);
+          } else if (!isOwnedUploadUrl(publicImageUrl, 'TEACHER_PROFILE_IMAGE', user!.id)) {
+            throw new GraphQLError('publicImageUrl must come from requestUploadUrl(purpose: TEACHER_PROFILE_IMAGE).', {
+              extensions: { code: 'BAD_USER_INPUT' },
+            });
+          }
         }
         data.publicImageUrl = publicImageUrl;
       }

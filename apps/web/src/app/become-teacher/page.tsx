@@ -5,7 +5,7 @@ import { gql, useMutation, useQuery } from '@apollo/client';
 import Link from 'next/link';
 import { signIn, useSession } from 'next-auth/react';
 import { hasRole } from '@/lib/roles';
-import { uploadFileToStorage } from '@/lib/upload';
+import { uploadFileToStorage, resizeImageToDataUrl } from '@/lib/upload';
 import { toYouTubeEmbedUrl } from '@/lib/youtube';
 
 const GET = gql`
@@ -352,10 +352,11 @@ export default function BecomeTeacherPage() {
       return null;
     }
     if (index === 1) {
-      // Same escape hatch as the CV requirement below - when storage isn't
-      // configured no upload is possible at all, so this can't be a hard
-      // requirement in that case.
-      if (storageConfigured && !application?.imageUrl && !imageFile) {
+      // Photo upload works either way now - via S3 when storageConfigured,
+      // via an inline data: URL otherwise (see resizeImageToDataUrl /
+      // requireInlineTeacherPhoto) - so this is a hard requirement
+      // regardless of storage configuration.
+      if (!application?.imageUrl && !imageFile) {
         return 'Add a profile photo before continuing — students see this on your teacher profile.';
       }
       return null;
@@ -416,10 +417,20 @@ export default function BecomeTeacherPage() {
     let cvUrl: string | null | undefined = storageConfigured ? (application?.cvUrl ?? null) : undefined;
     let audioSampleUrl: string | null | undefined = storageConfigured ? (application?.audioSampleUrl ?? null) : undefined;
     let documentUrls: string[] | undefined = storageConfigured ? (application?.documentUrls ?? []) : undefined;
+    // Same "send undefined unless touched" default as the fields above: an
+    // untouched photo shouldn't be re-validated on every resubmission (e.g.
+    // an old S3 imageUrl from before storage got disabled would otherwise
+    // fail requireOwnedUploadUrl now that storageConfigured() is false).
+    // imageFile below always overrides this when the applicant actually
+    // picks a new photo, on either upload path.
     let imageUrl: string | null | undefined = storageConfigured ? (application?.imageUrl ?? null) : undefined;
     try {
       setUploading(true);
-      if (imageFile) imageUrl = await uploadFileToStorage(requestUrlFor('TEACHER_PROFILE_IMAGE'), imageFile);
+      if (imageFile) {
+        imageUrl = storageConfigured
+          ? await uploadFileToStorage(requestUrlFor('TEACHER_PROFILE_IMAGE'), imageFile)
+          : await resizeImageToDataUrl(imageFile);
+      }
       if (cvFile) cvUrl = await uploadFileToStorage(requestUrlFor('TEACHER_APPLICATION_CV'), cvFile);
       if (audioFile) audioSampleUrl = await uploadFileToStorage(requestUrlFor('TEACHER_APPLICATION_AUDIO'), audioFile);
       if (documentFiles.length > 0) {
@@ -636,18 +647,17 @@ export default function BecomeTeacherPage() {
                     This is your public teacher photo — separate from your account picture — shown alongside your
                     name and self-presentation on your public teacher profile and directory card once approved.
                   </p>
-                  {storageConfigured ? (
-                    <label className="btn-secondary mx-auto block w-fit cursor-pointer rounded-lg px-4 py-2 text-sm">
-                      {application?.imageUrl || imageFile ? 'Change photo' : 'Add a photo'}
-                      <input
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        className="sr-only"
-                        onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
-                      />
-                    </label>
-                  ) : (
-                    <p className="text-xs text-gray-500">Photo uploads aren&rsquo;t enabled on this deployment yet — you can continue without one.</p>
+                  <label className="btn-secondary mx-auto block w-fit cursor-pointer rounded-lg px-4 py-2 text-sm">
+                    {application?.imageUrl || imageFile ? 'Change photo' : 'Add a photo'}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="sr-only"
+                      onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                  {!storageConfigured && (
+                    <p className="text-xs text-gray-400">Your photo is resized and saved automatically.</p>
                   )}
                 </div>
               )}
