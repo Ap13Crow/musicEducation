@@ -226,71 +226,71 @@ export default function ProfilePage() {
       {/* Header */}
       <div className="border-b border-gray-200 bg-white px-6 py-8">
         <div className="mx-auto max-w-4xl">
-        {/* A teacher/admin's actual "home" is the teacher workspace, not
-            the general student dashboard - landing back on /dashboard from
-            here (as it did before) undid the "Go to teacher profile →"
-            link just below and made this page feel like the only profile
-            that exists, rather than one of two (see the teacher-profile
-            link at role==='TEACHER' below). */}
-        <Link href={role === 'TEACHER' || role === 'ADMIN' ? '/dashboard/teacher' : '/dashboard'} className="text-sm text-primary-700">
-          ← {role === 'TEACHER' || role === 'ADMIN' ? 'Teacher workspace' : 'Dashboard'}
-        </Link>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-primary-100 text-primary-700">
-                {me?.avatarUrl ? (
-                  <img src={me.avatarUrl} alt={displayName} className="h-16 w-16 object-cover" />
-                ) : (
-                  <User className="h-8 w-8" />
-                )}
+          {/* A teacher/admin's actual "home" is the teacher workspace, not
+              the general student dashboard - landing back on /dashboard from
+              here (as it did before) undid the "Go to teacher profile →"
+              link just below and made this page feel like the only profile
+              that exists, rather than one of two (see the teacher-profile
+              link at role==='TEACHER' below). */}
+          <Link href={role === 'TEACHER' || role === 'ADMIN' ? '/dashboard/teacher' : '/dashboard'} className="text-sm text-primary-700">
+            ← {role === 'TEACHER' || role === 'ADMIN' ? 'Teacher workspace' : 'Dashboard'}
+          </Link>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-primary-100 text-primary-700">
+                  {me?.avatarUrl ? (
+                    <img src={me.avatarUrl} alt={displayName} className="h-16 w-16 object-cover" />
+                  ) : (
+                    <User className="h-8 w-8" />
+                  )}
+                </div>
+                <label className="absolute -bottom-1 -right-1 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-primary-600 text-white shadow" title="Upload profile photo">
+                  <ImagePlus className="h-4 w-4" />
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={uploadingPhoto}
+                    onChange={event => void choosePhoto(event.target.files?.[0])} />
+                </label>
               </div>
-              <label className="absolute -bottom-1 -right-1 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-primary-600 text-white shadow" title="Upload profile photo">
-                <ImagePlus className="h-4 w-4" />
-                <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={uploadingPhoto}
-                  onChange={event => void choosePhoto(event.target.files?.[0])} />
-              </label>
-            </div>
-            <div>
-              <h1 className="font-serif text-2xl font-bold text-gray-900">{displayName}</h1>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700">
-                  {ROLE_LABELS[role] ?? role}
-                </span>
-                {(role === 'TEACHER' || role === 'ADMIN') && (
-                  <Link href="/dashboard/teacher/profile" className="text-xs font-medium text-primary-700 underline">
-                    Go to teacher profile →
-                  </Link>
-                )}
-                {me?.profile?.instruments?.slice(0, 3).map((i: string) => (
-                  <span key={i} className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{i}</span>
-                ))}
+              <div>
+                <h1 className="font-serif text-2xl font-bold text-gray-900">{displayName}</h1>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700">
+                    {ROLE_LABELS[role] ?? role}
+                  </span>
+                  {(role === 'TEACHER' || role === 'ADMIN') && (
+                    <Link href="/dashboard/teacher/profile" className="text-xs font-medium text-primary-700 underline">
+                      Go to teacher profile →
+                    </Link>
+                  )}
+                  {me?.profile?.instruments?.slice(0, 3).map((i: string) => (
+                    <span key={i} className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{i}</span>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="flex gap-2">
-            {saved && (
-              <span className="flex items-center gap-1 text-sm text-green-600">
-                <CheckCircle className="h-4 w-4" /> Saved
-              </span>
-            )}
-            {!editing ? (
-              <button onClick={startEdit} className="btn-primary flex items-center gap-2 rounded-lg px-4 py-2 text-sm">
-                <Edit3 className="h-4 w-4" /> Edit profile
-              </button>
-            ) : (
-              <div className="flex gap-2">
-                <button onClick={() => setEditing(false)} className="flex items-center gap-1 rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
-                  <X className="h-4 w-4" /> Cancel
+            <div className="flex gap-2">
+              {saved && (
+                <span className="flex items-center gap-1 text-sm text-green-600">
+                  <CheckCircle className="h-4 w-4" /> Saved
+                </span>
+              )}
+              {!editing ? (
+                <button onClick={startEdit} className="btn-primary flex items-center gap-2 rounded-lg px-4 py-2 text-sm">
+                  <Edit3 className="h-4 w-4" /> Edit profile
                 </button>
-                <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2 rounded-lg px-4 py-2 text-sm disabled:opacity-60">
-                  <Save className="h-4 w-4" /> {saving ? 'Saving…' : 'Save'}
-                </button>
-              </div>
-            )}
+              ) : (
+                <div className="flex gap-2">
+                  <button onClick={() => setEditing(false)} className="flex items-center gap-1 rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                    <X className="h-4 w-4" /> Cancel
+                  </button>
+                  <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2 rounded-lg px-4 py-2 text-sm disabled:opacity-60">
+                    <Save className="h-4 w-4" /> {saving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
         </div>
       </div>
 
