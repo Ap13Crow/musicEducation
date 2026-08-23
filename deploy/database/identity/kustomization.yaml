@@ -32,3 +32,4 @@ configMapGenerator:
       - 025-lesson-packages-subscriptions.sql
       - 026-external-event-engagement.sql
       - 027-external-calendar-sync-and-feed-token.sql
+      - 028-teacher-application-structured-address.sql
