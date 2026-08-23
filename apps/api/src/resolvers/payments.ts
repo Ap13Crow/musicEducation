@@ -186,22 +186,35 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
       // claimConfirmationEmail above is specific to the course/event
       // branches' real SMTP call, not this one).
       await prisma.$transaction(async (tx) => {
-        await tx.booking.update({ where: { id: refId }, data: { paymentId: payment.id, status: 'CONFIRMED' } });
+        // This is the true confirmation moment for a paid booking (see
+        // bookSession's requiresPayment comment in bookings.ts - a paid
+        // booking is never created CONFIRMED, so nothing has reserved a
+        // capacity seat for it yet). MUST run before the booking.update
+        // below flips status to CONFIRMED, not after: reserveInstrumentCapacity's
+        // own "already active" check matches on {teacherProfileId, userId,
+        // instrument, status: CONFIRMED|COMPLETED} - if this booking were
+        // CONFIRMED already, it would match itself and short-circuit the
+        // capacity check it exists to enforce, silently admitting a student
+        // past a full cap (Copilot review finding on PR #58). Run
+        // unconditionally on every delivery, not gated on the email claim
+        // below - a Stripe retry redelivering this event finds the booking
+        // already CONFIRMED from the first delivery, which is exactly what
+        // makes that same "already active" check a no-op the second time
+        // (never double-reserves), the same idempotency the claim below
+        // gives the email/notification side.
+        const booking = await tx.booking.findUnique({ where: { id: refId } });
+        if (booking) {
+          await reserveInstrumentCapacity(tx, booking.teacherProfileId, booking.instrument, booking.userId);
+        }
+        // holdExpiresAt cleared here too - a payment-pending booking has one
+        // set (see bookSession), and it's now stale/irrelevant once CONFIRMED
+        // (matches confirmBooking's manual-approval path, which also clears it).
+        await tx.booking.update({ where: { id: refId }, data: { paymentId: payment.id, status: 'CONFIRMED', holdExpiresAt: null } });
         const claimed = await tx.payment.updateMany({
           where: { id: payment.id, confirmationEmailAt: null },
           data: { confirmationEmailAt: new Date() },
         });
         if (claimed.count > 0) {
-          // This is the true confirmation moment for a paid booking (see
-          // bookSession's requiresPayment comment in bookings.ts - a paid
-          // booking is never created CONFIRMED, so nothing has reserved a
-          // capacity seat for it yet). Gated on the same claim that guards
-          // the confirmation email, so a Stripe retry redelivering this
-          // event never reserves a second seat for the same booking.
-          const booking = await tx.booking.findUnique({ where: { id: refId } });
-          if (booking) {
-            await reserveInstrumentCapacity(tx, booking.teacherProfileId, booking.instrument, booking.userId);
-          }
           await notifyBookingConfirmed(tx, refId!);
         }
       });
