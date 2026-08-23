@@ -1,7 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { gql, useQuery } from '@apollo/client';
+import { gql, useMutation, useQuery } from '@apollo/client';
 import { BookOpen, Calendar, CalendarClock, CalendarPlus, CreditCard, Star, User, UserRoundCheck, Users } from 'lucide-react';
 import RoleGate from '@/components/auth/RoleGate';
 
@@ -14,9 +15,21 @@ const GET_TEACHER_BOOKINGS = gql`
     }
   }
 `;
+// Backend has supported this since Phase 4 (apps/api/src/resolvers/
+// bookings.ts) - either party can cancel - but nothing in the UI ever
+// called it ("the cancellation of bookings ... even from the teacher's side
+// is also untouched", direct user feedback).
+const CANCEL_BOOKING = gql`
+  mutation TeacherCancelBooking($bookingId: ID!) {
+    cancelBooking(bookingId: $bookingId) { id status }
+  }
+`;
 
 function UpcomingSessions() {
-  const { data, loading, error } = useQuery(GET_TEACHER_BOOKINGS, { fetchPolicy: 'cache-and-network' });
+  const { data, loading, error, refetch } = useQuery(GET_TEACHER_BOOKINGS, { fetchPolicy: 'cache-and-network' });
+  const [cancelBooking, { loading: cancelling }] = useMutation(CANCEL_BOOKING);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState('');
   const meId = data?.me?.id;
   // myBookings returns rows where the caller is either the student or the
   // teacher; a booked-with-me session is one where the student isn't me.
@@ -24,12 +37,27 @@ function UpcomingSessions() {
     .filter((b: any) => b.student?.id && b.student.id !== meId && b.status !== 'CANCELLED')
     .sort((a: any, b: any) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
 
+  async function handleCancel(bookingId: string) {
+    if (!confirm('Cancel this lesson? The student will be notified.')) return;
+    setCancelError('');
+    setCancellingId(bookingId);
+    try {
+      await cancelBooking({ variables: { bookingId } });
+      await refetch();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : 'Could not cancel this lesson.');
+    } finally {
+      setCancellingId(null);
+    }
+  }
+
   return (
     <section className="card p-6">
       <h2 className="flex items-center gap-2 font-semibold text-gray-900">
         <Calendar className="h-4 w-4 text-primary-600" /> Booked sessions
       </h2>
       {error && <p className="mt-3 text-sm text-red-600">Failed to load sessions: {error.message}</p>}
+      {cancelError && <p className="mt-3 text-sm text-red-600">{cancelError}</p>}
       {!error && !loading && sessions.length === 0 && (
         <p className="mt-3 text-sm text-gray-500">No students have booked a session with you yet.</p>
       )}
@@ -57,6 +85,16 @@ function UpcomingSessions() {
               }`}>
                 {b.status}
               </span>
+              {(b.status === 'CONFIRMED' || b.status === 'PENDING') && (
+                <button
+                  type="button"
+                  disabled={cancelling && cancellingId === b.id}
+                  onClick={() => handleCancel(b.id)}
+                  className="shrink-0 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:border-red-300 hover:text-red-600 disabled:opacity-50"
+                >
+                  {cancelling && cancellingId === b.id ? 'Cancelling…' : 'Cancel'}
+                </button>
+              )}
             </li>
           ))}
         </ul>

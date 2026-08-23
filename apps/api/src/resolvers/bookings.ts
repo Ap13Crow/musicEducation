@@ -295,8 +295,22 @@ export const bookingResolvers = {
       });
       if (unavailable) throw new GraphQLError('Time slot not available.', { extensions: { code: 'BAD_USER_INPUT' } });
 
+      // A booking needs its own Stripe payment only when it isn't already
+      // covered by a prepaid package credit and the teacher actually
+      // charges for lessons (hourlyRate 0/null - a free/trial lesson -
+      // skips payment entirely, same as before this check existed).
+      // "Payment state is a state machine; the signed webhook - never the
+      // browser redirect - confirms payment" (see CLAUDE.md), so a booking
+      // that requires payment is NEVER created CONFIRMED here, regardless
+      // of the teacher's auto-approve setting - payment itself is the
+      // confirmation for this kind of booking. Only handleStripeWebhook's
+      // 'booking' branch (payments.ts) performs that transition, once
+      // Stripe actually reports the charge succeeded. Before this check,
+      // every paid booking with auto-approve on was created CONFIRMED with
+      // no payment ever collected - a free-lesson loophole.
+      const requiresPayment = !packagePurchase && Number(teacherProfile.hourlyRate ?? 0) > 0;
       const recurring = await isRecurringStudent(prisma, teacherProfileId, user.id);
-      const autoApprove = recurring ? teacherProfile.autoApproveRecurringStudents : teacherProfile.autoApproveNewStudents;
+      const autoApprove = !requiresPayment && (recurring ? teacherProfile.autoApproveRecurringStudents : teacherProfile.autoApproveNewStudents);
 
       // Booking creation, the capacity check for an immediately-CONFIRMED
       // booking, and (when CONFIRMED) the mail-outbox insert all commit
@@ -317,6 +331,10 @@ export const bookingResolvers = {
             instrument,
             notes,
             status: autoApprove ? 'CONFIRMED' : 'PENDING',
+            // Same hold window covers both "awaiting teacher approval" and
+            // "awaiting payment" - either way, an unresolved request
+            // shouldn't lock the slot forever (the conflict check above
+            // already ignores an expired hold either way).
             holdExpiresAt: autoApprove ? null : new Date(Date.now() + APPROVAL_HOLD_HOURS * 60 * 60 * 1000),
             packagePurchaseId: packagePurchase?.id ?? null,
           },
