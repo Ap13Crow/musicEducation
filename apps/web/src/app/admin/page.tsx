@@ -323,11 +323,18 @@ function ApplicationsTab() {
 // so. Blank sections used to just disappear, which reads as "the admin view
 // is missing data" rather than "the applicant hasn't provided it" - this
 // makes that distinction explicit instead of making the reviewer guess.
+// Plain div/p, not dl/dt/dd - every current caller passes a pre-formatted
+// string or null, but dt/dd require a dl as their direct parent and this
+// isn't used inside one everywhere it's called; plain text avoids that
+// entirely rather than restructuring around it (Copilot review, PR #57).
+// Explicit null/undefined/'' check, not truthiness - a falsy-but-real value
+// like the string "0" would otherwise render as "Not provided".
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
+  const isEmpty = value === null || value === undefined || value === '';
   return (
     <div>
-      <dt className="text-[11px] font-medium uppercase tracking-wide text-gray-400">{label}</dt>
-      <dd className={`mt-0.5 text-sm ${value ? 'text-gray-700' : 'italic text-gray-400'}`}>{value || 'Not provided'}</dd>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">{label}</p>
+      <p className={`mt-0.5 text-sm ${isEmpty ? 'italic text-gray-400' : 'text-gray-700'}`}>{isEmpty ? 'Not provided' : value}</p>
     </div>
   );
 }
@@ -347,7 +354,7 @@ function ApplicationCard({ app, reviewing, onReview }: { app: any; reviewing: bo
   return (
     <div className="card p-4">
       <div className="flex items-start justify-between gap-4">
-        <button type="button" onClick={() => setExpanded((e) => !e)} className="flex flex-1 items-start gap-3 text-left">
+        <button type="button" onClick={() => setExpanded((e) => !e)} aria-expanded={expanded} className="flex flex-1 items-start gap-3 text-left">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-purple-100 text-purple-600">
             {app.imageUrl ? <img src={app.imageUrl} alt="" className="h-full w-full object-cover" /> : <UserCheck className="h-5 w-5" />}
           </div>
@@ -381,29 +388,29 @@ function ApplicationCard({ app, reviewing, onReview }: { app: any; reviewing: bo
 
       {expanded && (
         <div className="mt-4 space-y-4 border-t border-gray-100 pt-4">
-          <dl className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Headline" value={app.headline} />
             <Field label="Instruments" value={app.instruments?.length ? app.instruments.join(', ') : null} />
             <Field label="Experience" value={app.experienceYears != null ? `${app.experienceYears} year${app.experienceYears === 1 ? '' : 's'}` : null} />
             <Field label="Age" value={app.birthdate ? `${ageFromBirthdate(app.birthdate)}` : null} />
             <Field label="Gender" value={app.gender} />
             <Field label="Address" value={address} />
-          </dl>
+          </div>
           <Field label="Bio" value={app.bio} />
           <Field label="Motivation" value={app.motivation} />
           <div>
-            <dt className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Attachments</dt>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Attachments</p>
             {attachmentCount === 0 ? (
-              <dd className="mt-0.5 text-sm italic text-gray-400">No CV, video, audio sample or documents on file.</dd>
+              <p className="mt-0.5 text-sm italic text-gray-400">No CV, video, audio sample or documents on file.</p>
             ) : (
-              <dd className="mt-1 flex flex-wrap gap-3 text-xs">
+              <p className="mt-1 flex flex-wrap gap-3 text-xs">
                 {app.cvUrl && <a href={app.cvUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">CV</a>}
                 {app.videoUrl && <a href={app.videoUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Presentation video</a>}
                 {app.audioSampleUrl && <a href={app.audioSampleUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Audio sample</a>}
                 {app.documentUrls?.map((url: string, i: number) => (
                   <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Document {i + 1}</a>
                 ))}
-              </dd>
+              </p>
             )}
           </div>
         </div>
