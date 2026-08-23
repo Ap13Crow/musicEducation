@@ -309,76 +309,112 @@ function ApplicationsTab() {
 
       <div className="space-y-3">
         {applications.map((app) => (
-          <div key={app.id} className="card p-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-3">
-                {app.imageUrl && (
-                  <img src={app.imageUrl} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover" />
-                )}
-                <div>
-                <p className="font-medium">{app.user?.displayName} <span className="text-gray-400 font-normal">· {app.user?.email}</span></p>
-                {app.headline && <p className="mt-1 text-sm text-gray-700">{app.headline}</p>}
-                {app.bio && <p className="mt-1 text-sm text-gray-500">{app.bio}</p>}
-                <p className="mt-2 text-xs text-gray-400">
-                  {app.instruments?.join(', ') || 'No instruments listed'}
-                  {app.experienceYears != null ? ` · ${app.experienceYears} yr experience` : ''}
-                  {app.birthdate ? ` · age ${ageFromBirthdate(app.birthdate)}` : ' · no date of birth on file'}
-                  {app.gender ? ` · ${app.gender}` : ''}
-                  {' · applied '}{new Date(app.createdAt).toLocaleDateString()}
-                </p>
-                {app.street || app.city ? (
-                  <p className="mt-1 text-xs text-gray-400">
-                    {[
-                      [app.street, app.houseNumber].filter(Boolean).join(' '),
-                      [app.postalCode, app.city].filter(Boolean).join(' '),
-                      app.state,
-                      app.country,
-                    ].filter(Boolean).join(', ')}
-                  </p>
-                ) : app.address ? (
-                  // Legacy free-text address (WP26) - applications submitted
-                  // before the structured-address change have no street/city
-                  // etc., only this. Shown as-is so the reviewer isn't left
-                  // with no address at all for older applications.
-                  <p className="mt-1 text-xs text-gray-400">{app.address}</p>
-                ) : null}
-                {app.motivation && (
-                  <p className="mt-2 text-xs text-gray-500"><span className="font-medium text-gray-600">Motivation: </span>{app.motivation}</p>
-                )}
-                {(app.cvUrl || app.audioSampleUrl || app.documentUrls?.length > 0 || app.videoUrl) && (
-                  <p className="mt-2 flex flex-wrap gap-3 text-xs">
-                    {app.cvUrl && <a href={app.cvUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">CV</a>}
-                    {app.videoUrl && <a href={app.videoUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Presentation video</a>}
-                    {app.audioSampleUrl && <a href={app.audioSampleUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Audio sample</a>}
-                    {app.documentUrls?.map((url: string, i: number) => (
-                      <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Document {i + 1}</a>
-                    ))}
-                  </p>
-                )}
-                </div>
-              </div>
-              {app.status === 'PENDING' && (
-                <div className="flex shrink-0 gap-2">
-                  <button
-                    disabled={reviewing}
-                    onClick={() => handleReview(app.id, true)}
-                    className="rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    disabled={reviewing}
-                    onClick={() => handleReview(app.id, false)}
-                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    Reject
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
+          <ApplicationCard key={app.id} app={app} reviewing={reviewing} onReview={handleReview} />
         ))}
       </div>
+    </div>
+  );
+}
+
+// Always renders a label, even when the applicant left the field blank -
+// "can't I access the application information for review ... which is a
+// poor outline" turned out to be a sparse-looking card for an applicant who
+// genuinely hadn't filled most fields in yet, with nothing on screen saying
+// so. Blank sections used to just disappear, which reads as "the admin view
+// is missing data" rather than "the applicant hasn't provided it" - this
+// makes that distinction explicit instead of making the reviewer guess.
+// Plain div/p, not dl/dt/dd - every current caller passes a pre-formatted
+// string or null, but dt/dd require a dl as their direct parent and this
+// isn't used inside one everywhere it's called; plain text avoids that
+// entirely rather than restructuring around it (Copilot review, PR #57).
+// Explicit null/undefined/'' check, not truthiness - a falsy-but-real value
+// like the string "0" would otherwise render as "Not provided".
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
+  const isEmpty = value === null || value === undefined || value === '';
+  return (
+    <div>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">{label}</p>
+      <p className={`mt-0.5 text-sm ${isEmpty ? 'italic text-gray-400' : 'text-gray-700'}`}>{isEmpty ? 'Not provided' : value}</p>
+    </div>
+  );
+}
+
+function ApplicationCard({ app, reviewing, onReview }: { app: any; reviewing: boolean; onReview: (id: string, approve: boolean) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const address = app.street || app.city
+    ? [
+        [app.street, app.houseNumber].filter(Boolean).join(' '),
+        [app.postalCode, app.city].filter(Boolean).join(' '),
+        app.state,
+        app.country,
+      ].filter(Boolean).join(', ')
+    : app.address; // legacy free-text address (WP26), pre-structured-fields applications
+  const attachmentCount = [app.cvUrl, app.videoUrl, app.audioSampleUrl].filter(Boolean).length + (app.documentUrls?.length ?? 0);
+
+  return (
+    <div className="card p-4">
+      <div className="flex items-start justify-between gap-4">
+        <button type="button" onClick={() => setExpanded((e) => !e)} aria-expanded={expanded} className="flex flex-1 items-start gap-3 text-left">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-purple-100 text-purple-600">
+            {app.imageUrl ? <img src={app.imageUrl} alt="" className="h-full w-full object-cover" /> : <UserCheck className="h-5 w-5" />}
+          </div>
+          <div className="min-w-0">
+            <p className="font-medium">{app.user?.displayName} <span className="text-gray-400 font-normal">· {app.user?.email}</span></p>
+            <p className="mt-0.5 text-xs text-gray-400">
+              Applied {new Date(app.createdAt).toLocaleDateString()} · {attachmentCount} attachment{attachmentCount === 1 ? '' : 's'} on file
+              {' · '}{expanded ? 'Hide full application' : 'View full application'}
+            </p>
+          </div>
+        </button>
+        {app.status === 'PENDING' && (
+          <div className="flex shrink-0 gap-2">
+            <button
+              disabled={reviewing}
+              onClick={() => onReview(app.id, true)}
+              className="rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"
+            >
+              Approve
+            </button>
+            <button
+              disabled={reviewing}
+              onClick={() => onReview(app.id, false)}
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Reject
+            </button>
+          </div>
+        )}
+      </div>
+
+      {expanded && (
+        <div className="mt-4 space-y-4 border-t border-gray-100 pt-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Headline" value={app.headline} />
+            <Field label="Instruments" value={app.instruments?.length ? app.instruments.join(', ') : null} />
+            <Field label="Experience" value={app.experienceYears != null ? `${app.experienceYears} year${app.experienceYears === 1 ? '' : 's'}` : null} />
+            <Field label="Age" value={app.birthdate ? `${ageFromBirthdate(app.birthdate)}` : null} />
+            <Field label="Gender" value={app.gender} />
+            <Field label="Address" value={address} />
+          </div>
+          <Field label="Bio" value={app.bio} />
+          <Field label="Motivation" value={app.motivation} />
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Attachments</p>
+            {attachmentCount === 0 ? (
+              <p className="mt-0.5 text-sm italic text-gray-400">No CV, video, audio sample or documents on file.</p>
+            ) : (
+              <p className="mt-1 flex flex-wrap gap-3 text-xs">
+                {app.cvUrl && <a href={app.cvUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">CV</a>}
+                {app.videoUrl && <a href={app.videoUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Presentation video</a>}
+                {app.audioSampleUrl && <a href={app.audioSampleUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Audio sample</a>}
+                {app.documentUrls?.map((url: string, i: number) => (
+                  <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Document {i + 1}</a>
+                ))}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
