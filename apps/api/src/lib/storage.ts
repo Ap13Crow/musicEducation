@@ -115,6 +115,48 @@ export async function createUploadTarget(
 // rendered URL and eventually 403 once the signature expires. Rejecting any
 // query string or fragment, and matching origin/pathname separately, closes
 // that off.
+// ── Inline (no-S3) fallback for the public teacher photo ──────────────────
+//
+// storageConfigured() being false blocks every real upload (CV, audio,
+// documents, photo alike) because none of them can be proven to belong to
+// the uploading user without a presigned URL. The photo is the one exception
+// worth a fallback: it's small, optional, and its absence is the single most
+// visible defect on a deployment without S3_* secrets (an applicant sees
+// "add a photo" on step 1, then a wall of dead ends). So when storage isn't
+// configured, the *photo only* (never CV/audio/documents - those stay
+// S3-only, both because they're larger and because they're never rendered
+// back at students the way the photo is) can be submitted as a small
+// data: URL instead, stored directly in the same String column S3 uploads
+// use. The web client resizes/compresses the image before encoding (see
+// resizeImageToDataUrl in apps/web/src/lib/upload.ts) so a real photo fits
+// well under the cap below.
+export const MAX_INLINE_IMAGE_BYTES = 400 * 1024; // 400 KB decoded
+
+const INLINE_IMAGE_DATA_URL_PATTERN = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+=*)$/;
+
+export function isInlineTeacherPhoto(value: string): boolean {
+  return INLINE_IMAGE_DATA_URL_PATTERN.test(value);
+}
+
+export function requireInlineTeacherPhoto(value: string): string {
+  const match = INLINE_IMAGE_DATA_URL_PATTERN.exec(value);
+  if (!match) {
+    throw new GraphQLError('Photo must be a PNG, JPEG, or WebP image.', { extensions: { code: 'BAD_USER_INPUT' } });
+  }
+  // Decoded byte length from the base64 payload length, without actually
+  // decoding it - 4 base64 chars encode 3 bytes, minus 1 byte per trailing
+  // '=' pad character.
+  const base64 = match[2];
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+  const approxBytes = Math.floor((base64.length * 3) / 4) - padding;
+  if (approxBytes > MAX_INLINE_IMAGE_BYTES) {
+    throw new GraphQLError('Photo is too large - please use a smaller image (under 400KB).', {
+      extensions: { code: 'BAD_USER_INPUT' },
+    });
+  }
+  return value;
+}
+
 export function isOwnedUploadUrl(fileUrl: string, purpose: UploadPurpose, ownerId: string): boolean {
   if (!storageConfigured()) return false;
   const config = PURPOSES[purpose];
