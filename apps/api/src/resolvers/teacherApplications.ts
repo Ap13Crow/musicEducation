@@ -1,6 +1,6 @@
 import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { isOwnedUploadUrl, requireInlineTeacherPhoto, type UploadPurpose } from '../lib/storage.js';
+import { isOwnedUploadUrl, type UploadPurpose } from '../lib/storage.js';
 import { isValidYouTubeUrl } from '../lib/youtube.js';
 import type { GraphQLContext } from '../types.js';
 
@@ -254,21 +254,16 @@ export const teacherApplicationResolvers = {
       const documentUrls: string[] | undefined = input.documentUrls !== undefined
         ? input.documentUrls.map((url: string) => requireOwnedUploadUrl(url, 'TEACHER_APPLICATION_DOCUMENT', user.id, 'Document'))
         : undefined;
-      // The photo is the one upload with a no-S3 fallback: a data: URL is
-      // accepted and validated/size-capped in place of the usual
-      // presigned-URL ownership check - see requireInlineTeacherPhoto for
-      // why only the photo gets this. CV/audio/documents still go through
-      // requireOwnedUploadUrl unconditionally, i.e. they stay S3-only.
+      // The photo (and cvUrl/audioSampleUrl/documentUrls) are normally set
+      // by the dedicated /teacher-application/photo (and /cv, /audio,
+      // /document) REST endpoints in index.ts, not through this mutation -
+      // those endpoints save straight to Postgres as a data: URL, mirroring
+      // /profile/avatar, so an applicant doesn't need S3_* secrets
+      // configured on this deployment at all. This still accepts a real S3
+      // fileUrl here too, for a deployment that does have S3_* configured
+      // and chooses to route through requestUploadUrl instead.
       const imageUrl = input.imageUrl !== undefined
-        ? (input.imageUrl
-            // Branch on "looks like a data: URL" rather than the stricter
-            // isInlineTeacherPhoto, so a malformed/wrong-type data URL still
-            // gets requireInlineTeacherPhoto's clear "must be PNG/JPEG/WebP"
-            // error instead of the misleading requestUploadUrl one below.
-            ? (input.imageUrl.startsWith('data:')
-                ? requireInlineTeacherPhoto(input.imageUrl)
-                : requireOwnedUploadUrl(input.imageUrl, 'TEACHER_PROFILE_IMAGE', user.id, 'Photo'))
-            : null)
+        ? (input.imageUrl ? requireOwnedUploadUrl(input.imageUrl, 'TEACHER_PROFILE_IMAGE', user.id, 'Photo') : null)
         : undefined;
 
       // Upsert rather than create-only: a previously rejected applicant can
@@ -389,6 +384,18 @@ export const teacherApplicationResolvers = {
     async user(application: any, _: unknown, { prisma }: GraphQLContext) {
       if (application.user) return application.user;
       return prisma.user.findUnique({ where: { id: application.userId }, include: { profile: true } });
+    },
+    // Lightweight companions to cvUrl/audioSampleUrl/documentUrls - see the
+    // schema comment on those fields for why a caller that only needs
+    // existence/count should use these instead.
+    hasCv(application: any) {
+      return Boolean(application.cvUrl);
+    },
+    hasAudioSample(application: any) {
+      return Boolean(application.audioSampleUrl);
+    },
+    documentCount(application: any) {
+      return application.documentUrls?.length ?? 0;
     },
   },
 };
