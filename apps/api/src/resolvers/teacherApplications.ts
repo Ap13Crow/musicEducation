@@ -5,6 +5,56 @@ import { isValidYouTubeUrl } from '../lib/youtube.js';
 import type { GraphQLContext } from '../types.js';
 
 const MIN_TEACHER_AGE_YEARS = 18;
+// Generous enough that no real applicant is ever wrongly rejected, but
+// catches data-entry mistakes ("1900" instead of "2000", a typo'd decade)
+// that a lower-bound-only check (>= 18) doesn't - age alone can't tell 126
+// from a keying error, but nobody genuinely applying to teach is 126.
+const MAX_TEACHER_AGE_YEARS = 100;
+
+// A structured postal address, not one free-text line - avoids an
+// unparseable blob in the database (can't sort/filter by city or country,
+// can't validate a postal code format, can't hand it to a shipping/
+// verification API later). street/houseNumber/postalCode/city/country are
+// required; state is optional (only meaningful for some countries, e.g. US/
+// CA/AU, and there's no single format that fits every country that has one).
+// Patterns are deliberately permissive (international formats vary widely:
+// "SW1A 1AA", "8001", "12345-6789", "12 bis", "221B") - this rejects garbage
+// (empty, way too long, or characters no real address uses) without
+// pretending to fully validate a global address format server-side.
+// \p{Pd} (Unicode "dash punctuation") covers every dash a real address might
+// use, not just ASCII hyphen-minus (en dash, em dash, etc.); ' and ‘/
+// ’ cover both the ASCII apostrophe and the typographic quote marks
+// real names use ("St John's" vs "St John’s", "Cote d'Ivoire" vs "Côte
+// d’Ivoire") - an ASCII-only class would otherwise reject valid input.
+const STREET_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.,'‘’\p{Pd}]{0,99}$/u;
+const HOUSE_NUMBER_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.\p{Pd}/]{0,14}$/u;
+const POSTAL_CODE_PATTERN = /^[\p{L}0-9][\p{L}0-9\s\p{Pd}]{0,11}$/u;
+const CITY_PATTERN = /^[\p{L}][\p{L}\s.'‘’\p{Pd}]{0,99}$/u;
+const COUNTRY_PATTERN = /^[\p{L}][\p{L}\s.'‘’\p{Pd}]{0,59}$/u;
+
+function requireAddressField(value: unknown, label: string, pattern: RegExp): string {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (!trimmed) {
+    throw new GraphQLError(`${label} is required.`, { extensions: { code: 'BAD_USER_INPUT' } });
+  }
+  if (!pattern.test(trimmed)) {
+    throw new GraphQLError(`${label} contains characters or a format that isn't valid.`, { extensions: { code: 'BAD_USER_INPUT' } });
+  }
+  return trimmed;
+}
+
+// state is optional - validated only when actually provided, and only for
+// safe characters (not required to match any real-world region format).
+// Same Unicode dash/quote allowance as the required-field patterns above.
+const STATE_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.'‘’\p{Pd}]{0,59}$/u;
+function optionalAddressField(value: unknown, label: string): string | null {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (!trimmed) return null;
+  if (!STATE_PATTERN.test(trimmed)) {
+    throw new GraphQLError(`${label} contains characters that aren't valid.`, { extensions: { code: 'BAD_USER_INPUT' } });
+  }
+  return trimmed;
+}
 
 // Rejects a URL the client didn't actually get from requestUploadUrl for
 // this purpose and this user - without it, a client could submit an
@@ -73,8 +123,12 @@ export const teacherApplicationResolvers = {
       if (Number.isNaN(birthdate.getTime())) {
         throw new GraphQLError('Date of birth is invalid.', { extensions: { code: 'BAD_USER_INPUT' } });
       }
-      if (calculateAge(birthdate) < MIN_TEACHER_AGE_YEARS) {
+      const age = calculateAge(birthdate);
+      if (age < MIN_TEACHER_AGE_YEARS) {
         throw new GraphQLError(`You must be at least ${MIN_TEACHER_AGE_YEARS} years old to apply as a teacher.`, { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      if (age > MAX_TEACHER_AGE_YEARS) {
+        throw new GraphQLError('Date of birth is invalid.', { extensions: { code: 'BAD_USER_INPUT' } });
       }
 
       // Required - this becomes the public profile's presentation video once
@@ -82,6 +136,16 @@ export const teacherApplicationResolvers = {
       if (!input.videoUrl || !isValidYouTubeUrl(input.videoUrl)) {
         throw new GraphQLError('A YouTube link to a presentation or performance video is required to apply.', { extensions: { code: 'BAD_USER_INPUT' } });
       }
+
+      // Structured address, validated field-by-field - see the pattern
+      // constants above for why these are permissive rather than
+      // country-specific.
+      const street = requireAddressField(input.street, 'Street', STREET_PATTERN);
+      const houseNumber = requireAddressField(input.houseNumber, 'House number', HOUSE_NUMBER_PATTERN);
+      const postalCode = requireAddressField(input.postalCode, 'Postal code', POSTAL_CODE_PATTERN);
+      const city = requireAddressField(input.city, 'City', CITY_PATTERN);
+      const country = requireAddressField(input.country, 'Country', COUNTRY_PATTERN);
+      const state = optionalAddressField(input.state, 'State/region');
 
       // The name that will show on the public teacher profile once approved -
       // update it now rather than waiting for approval, so the applicant sees
@@ -128,7 +192,12 @@ export const teacherApplicationResolvers = {
           bio: input.bio ?? null,
           instruments: input.instruments ?? [],
           experienceYears: input.experienceYears ?? null,
-          address: input.address ?? null,
+          street,
+          houseNumber,
+          postalCode,
+          city,
+          state,
+          country,
           birthdate,
           gender: input.gender?.trim() || null,
           motivation: input.motivation?.trim() || null,
@@ -143,7 +212,12 @@ export const teacherApplicationResolvers = {
           bio: input.bio ?? null,
           instruments: input.instruments ?? [],
           experienceYears: input.experienceYears ?? null,
-          address: input.address ?? null,
+          street,
+          houseNumber,
+          postalCode,
+          city,
+          state,
+          country,
           birthdate,
           gender: input.gender?.trim() || null,
           motivation: input.motivation?.trim() || null,

@@ -392,7 +392,20 @@ type TeacherApplication {
   bio: String
   instruments: [String!]!
   experienceYears: Int
+  # Deprecated (WP26): the single free-text line the structured fields below
+  # replaced. Read-only - no mutation writes to it anymore, and it's null for
+  # every application submitted after the change. Kept queryable only so the
+  # admin review UI can still show the original text for applications
+  # submitted before this change, which have no structured fields.
   address: String
+  # Structured postal address (street/houseNumber/postalCode/city/country
+  # required, state optional - see applyForTeacher's server-side validation).
+  street: String
+  houseNumber: String
+  postalCode: String
+  city: String
+  state: String
+  country: String
   birthdate: DateTime
   # Private - admin review only, never copied onto the public TeacherProfile.
   gender: String
@@ -423,7 +436,15 @@ input TeacherApplicationInput {
   bio: String
   instruments: [String!]
   experienceYears: Int
-  address: String
+  # Structured postal address - street/houseNumber/postalCode/city/country
+  # are required, state is optional (only meaningful for some countries).
+  # Validated server-side in applyForTeacher (format + non-empty checks).
+  street: String
+  houseNumber: String
+  postalCode: String
+  city: String
+  state: String
+  country: String
   # Required - applyForTeacher rejects an application without one, or from
   # someone under 18.
   birthdate: DateTime

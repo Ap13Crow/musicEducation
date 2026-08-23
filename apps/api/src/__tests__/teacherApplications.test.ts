@@ -3,7 +3,129 @@
 process.env.JWT_SECRET = 'test-secret-key-for-unit-tests';
 
 import { requireAuth, requireRole } from '../middleware/auth';
-import { calculateAge } from '../resolvers/teacherApplications';
+import { calculateAge, teacherApplicationResolvers } from '../resolvers/teacherApplications';
+
+const studentUser = { id: 'student-1', role: 'STUDENT' } as const;
+const VALID_INPUT = {
+  birthdate: '2000-01-01',
+  videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  street: 'Bahnhofstrasse',
+  houseNumber: '12b',
+  postalCode: '8001',
+  city: 'Zürich',
+  country: 'Switzerland',
+};
+
+function fakePrisma(overrides: Record<string, any> = {}) {
+  return {
+    teacherApplication: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      upsert: jest.fn(({ create }: any) => Promise.resolve({ id: 'app-1', ...create })),
+      ...(overrides.teacherApplication ?? {}),
+    },
+    userProfile: { upsert: jest.fn() },
+    ...overrides,
+  } as any;
+}
+
+// Regression coverage: the "Become a teacher" address field used to be a
+// single free-text line with no validation at all - this replaces it with
+// structured street/houseNumber/postalCode/city/country (required) + state
+// (optional), each validated server-side (see requireAddressField /
+// optionalAddressField in teacherApplications.ts). Client-side validation
+// mirrors this but the resolver is the actual authority.
+describe('applyForTeacher: structured address validation', () => {
+  it('accepts a valid structured address', async () => {
+    const prisma = fakePrisma();
+    const result = await teacherApplicationResolvers.Mutation.applyForTeacher(
+      null,
+      { input: VALID_INPUT },
+      { prisma, user: studentUser } as any,
+    );
+    expect(result.street).toBe('Bahnhofstrasse');
+    expect(result.houseNumber).toBe('12b');
+    expect(result.postalCode).toBe('8001');
+    expect(result.city).toBe('Zürich');
+    expect(result.country).toBe('Switzerland');
+    expect(result.state).toBeNull();
+  });
+
+  it('accepts an optional state/region when provided', async () => {
+    const prisma = fakePrisma();
+    const result = await teacherApplicationResolvers.Mutation.applyForTeacher(
+      null,
+      { input: { ...VALID_INPUT, state: 'California' } },
+      { prisma, user: studentUser } as any,
+    );
+    expect(result.state).toBe('California');
+  });
+
+  it.each(['street', 'houseNumber', 'postalCode', 'city', 'country'])(
+    'rejects a missing %s',
+    async (field) => {
+      const prisma = fakePrisma();
+      const input = { ...VALID_INPUT, [field]: '' };
+      await expect(
+        teacherApplicationResolvers.Mutation.applyForTeacher(null, { input }, { prisma, user: studentUser } as any),
+      ).rejects.toThrow('is required');
+    },
+  );
+
+  it('rejects a postal code with disallowed characters', async () => {
+    const prisma = fakePrisma();
+    const input = { ...VALID_INPUT, postalCode: '<script>' };
+    await expect(
+      teacherApplicationResolvers.Mutation.applyForTeacher(null, { input }, { prisma, user: studentUser } as any),
+    ).rejects.toThrow("isn't valid");
+  });
+
+  it('rejects a city name with disallowed characters', async () => {
+    const prisma = fakePrisma();
+    const input = { ...VALID_INPUT, city: '123456' };
+    await expect(
+      teacherApplicationResolvers.Mutation.applyForTeacher(null, { input }, { prisma, user: studentUser } as any),
+    ).rejects.toThrow("isn't valid");
+  });
+
+  it('rejects an invalid state/region when provided', async () => {
+    const prisma = fakePrisma();
+    const input = { ...VALID_INPUT, state: '<script>' };
+    await expect(
+      teacherApplicationResolvers.Mutation.applyForTeacher(null, { input }, { prisma, user: studentUser } as any),
+    ).rejects.toThrow("aren't valid");
+  });
+
+  // Regression: the patterns used to be ASCII-only for apostrophes/dashes,
+  // which rejected real names using typographic punctuation or non-ASCII
+  // dashes (Copilot review finding on PR #50).
+  it('accepts typographic quote marks and non-ASCII dashes in street/city/country/state', async () => {
+    const prisma = fakePrisma();
+    const input = {
+      ...VALID_INPUT,
+      street: "St John’s Wood – North",
+      city: "Côte d’Ivoire’s Capital",
+      country: 'Côte d’Ivoire',
+      state: 'Île-de-France',
+    };
+    const result = await teacherApplicationResolvers.Mutation.applyForTeacher(
+      null,
+      { input },
+      { prisma, user: studentUser } as any,
+    );
+    expect(result.street).toBe("St John’s Wood – North");
+    expect(result.state).toBe('Île-de-France');
+  });
+
+  // Regression: age only had a lower bound (>= 18), so an implausible
+  // birthdate like 1900-01-01 (~126 years old) was accepted outright.
+  it('rejects an implausibly old birthdate', async () => {
+    const prisma = fakePrisma();
+    const input = { ...VALID_INPUT, birthdate: '1900-01-01' };
+    await expect(
+      teacherApplicationResolvers.Mutation.applyForTeacher(null, { input }, { prisma, user: studentUser } as any),
+    ).rejects.toThrow('Date of birth is invalid.');
+  });
+});
 
 describe('applyForTeacher permission checks', () => {
   it('allows an authenticated STUDENT to apply', () => {

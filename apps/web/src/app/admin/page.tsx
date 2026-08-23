@@ -241,7 +241,7 @@ function UsersTab() {
 const GET_TEACHER_APPLICATIONS = gql`
   query TeacherApplicationsQueue($status: TeacherApplicationStatus) {
     teacherApplications(status: $status) {
-      id headline bio instruments experienceYears status createdAt address birthdate gender motivation
+      id headline bio instruments experienceYears status createdAt address street houseNumber postalCode city state country birthdate gender motivation
       cvUrl audioSampleUrl documentUrls videoUrl imageUrl
       user { id displayName email }
     }
@@ -326,7 +326,22 @@ function ApplicationsTab() {
                   {app.gender ? ` · ${app.gender}` : ''}
                   {' · applied '}{new Date(app.createdAt).toLocaleDateString()}
                 </p>
-                {app.address && <p className="mt-1 text-xs text-gray-400">{app.address}</p>}
+                {app.street || app.city ? (
+                  <p className="mt-1 text-xs text-gray-400">
+                    {[
+                      [app.street, app.houseNumber].filter(Boolean).join(' '),
+                      [app.postalCode, app.city].filter(Boolean).join(' '),
+                      app.state,
+                      app.country,
+                    ].filter(Boolean).join(', ')}
+                  </p>
+                ) : app.address ? (
+                  // Legacy free-text address (WP26) - applications submitted
+                  // before the structured-address change have no street/city
+                  // etc., only this. Shown as-is so the reviewer isn't left
+                  // with no address at all for older applications.
+                  <p className="mt-1 text-xs text-gray-400">{app.address}</p>
+                ) : null}
                 {app.motivation && (
                   <p className="mt-2 text-xs text-gray-500"><span className="font-medium text-gray-600">Motivation: </span>{app.motivation}</p>
                 )}

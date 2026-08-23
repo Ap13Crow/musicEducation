@@ -12,7 +12,8 @@ const GET = gql`
   query MyTeacherApplicationStatus {
     me { id displayName }
     myTeacherApplication {
-      id status headline bio instruments experienceYears address birthdate gender motivation videoUrl
+      id status headline bio instruments experienceYears birthdate gender motivation videoUrl
+      street houseNumber postalCode city state country
       cvUrl audioSampleUrl documentUrls imageUrl
     }
     storageConfigured
@@ -35,6 +36,20 @@ const APPLY = gql`
 `;
 
 const MIN_TEACHER_AGE_YEARS = 18;
+// Mirrors the resolver's MAX_TEACHER_AGE_YEARS - catches an obvious
+// data-entry mistake (e.g. "1900" instead of "2000") client-side; the
+// resolver is the actual authority and re-checks this.
+const MAX_TEACHER_AGE_YEARS = 100;
+
+// Native date-picker bounds (native browser UI, not validation) so the
+// picker doesn't even offer an obviously-wrong date - min/max still
+// duplicated in validateStep()/the resolver, since a picker's min/max is
+// only a UI hint and a typed-in date can bypass it.
+function isoDateYearsAgo(years: number): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - years);
+  return d.toISOString().slice(0, 10);
+}
 
 function calculateAge(birthdate: string): number | null {
   const dob = new Date(birthdate);
@@ -48,6 +63,31 @@ function calculateAge(birthdate: string): number | null {
 
 const INSTRUMENTS = ['Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute', 'Clarinet', 'Oboe', 'Trumpet', 'Organ', 'Harp', 'Percussion', 'Composition', 'Theory'];
 const GENDER_OPTIONS = ['Female', 'Male', 'Non-binary', 'Prefer not to say'];
+
+// Not an exhaustive ISO-3166 list, but broad enough to cover this
+// platform's actual applicant base without an external dependency -
+// alphabetical, matches the resolver's permissive server-side pattern
+// rather than a closed enum, so a country missing here doesn't hard-block
+// an applicant (see "Other" below).
+const COUNTRIES = [
+  'Austria', 'Belgium', 'Bulgaria', 'Canada', 'Croatia', 'Cyprus', 'Czechia', 'Denmark',
+  'Estonia', 'Finland', 'France', 'Germany', 'Greece', 'Hungary', 'Iceland', 'Ireland',
+  'Italy', 'Latvia', 'Liechtenstein', 'Lithuania', 'Luxembourg', 'Malta', 'Netherlands',
+  'Norway', 'Poland', 'Portugal', 'Romania', 'Slovakia', 'Slovenia', 'Spain', 'Sweden',
+  'Switzerland', 'United Kingdom', 'United States', 'Other',
+];
+
+// Permissive mirrors of the server-side patterns in teacherApplications.ts -
+// client-side validation is a UX convenience (fail fast, explain why), the
+// resolver is the actual authority and re-checks everything. \p{Pd} covers
+// every Unicode dash (not just ASCII hyphen-minus) and '‘’ cover both the
+// ASCII apostrophe and typographic quote marks, so real names like
+// "St John's"/"St John’s" or "Côte d’Ivoire" aren't rejected.
+const STREET_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.,'‘’\p{Pd}]{0,99}$/u;
+const HOUSE_NUMBER_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.\p{Pd}/]{0,14}$/u;
+const POSTAL_CODE_PATTERN = /^[\p{L}0-9][\p{L}0-9\s\p{Pd}]{0,11}$/u;
+const CITY_PATTERN = /^[\p{L}][\p{L}\s.'‘’\p{Pd}]{0,99}$/u;
+const STATE_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.'‘’\p{Pd}]{0,59}$/u;
 
 const STEPS = ['About you', 'Photo', 'Your teaching', 'Motivation', 'Proof & video', 'Review'] as const;
 
@@ -119,7 +159,8 @@ export default function BecomeTeacherPage() {
   }, [imageFile]);
 
   const [form, setForm] = useState({
-    fullName: '', address: '', birthdate: '', gender: '',
+    fullName: '', birthdate: '', gender: '',
+    street: '', houseNumber: '', postalCode: '', city: '', state: '', country: '',
     headline: '', bio: '', experienceYears: '', motivation: '', videoUrl: '',
   });
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>([]);
@@ -134,7 +175,12 @@ export default function BecomeTeacherPage() {
     setForm((f) => ({
       ...f,
       fullName: f.fullName || me?.displayName || '',
-      address: f.address || application?.address || '',
+      street: f.street || application?.street || '',
+      houseNumber: f.houseNumber || application?.houseNumber || '',
+      postalCode: f.postalCode || application?.postalCode || '',
+      city: f.city || application?.city || '',
+      state: f.state || application?.state || '',
+      country: f.country || application?.country || '',
       birthdate: f.birthdate || (application?.birthdate ? application.birthdate.slice(0, 10) : ''),
       gender: f.gender || application?.gender || '',
       headline: f.headline || application?.headline || '',
@@ -165,10 +211,16 @@ export default function BecomeTeacherPage() {
   function validateStep(index: number): string | null {
     if (index === 0) {
       if (!form.fullName.trim()) return 'Enter your full name.';
-      if (!form.address.trim()) return 'Enter your address.';
+      if (!STREET_PATTERN.test(form.street.trim())) return 'Enter a valid street name.';
+      if (!HOUSE_NUMBER_PATTERN.test(form.houseNumber.trim())) return 'Enter a valid house/street number.';
+      if (!POSTAL_CODE_PATTERN.test(form.postalCode.trim())) return 'Enter a valid postal code.';
+      if (!CITY_PATTERN.test(form.city.trim())) return 'Enter a valid town/city.';
+      if (form.state.trim() && !STATE_PATTERN.test(form.state.trim())) return 'Enter a valid state/region, or leave it blank.';
+      if (!form.country) return 'Select your country.';
       const age = form.birthdate ? calculateAge(form.birthdate) : null;
       if (age === null) return 'Enter your date of birth.';
       if (age < MIN_TEACHER_AGE_YEARS) return `You must be at least ${MIN_TEACHER_AGE_YEARS} to apply as a teacher.`;
+      if (age > MAX_TEACHER_AGE_YEARS) return 'Enter a valid date of birth.';
       return null;
     }
     if (index === 1) {
@@ -261,7 +313,12 @@ export default function BecomeTeacherPage() {
           bio: form.bio.trim() || null,
           instruments: selectedInstruments,
           experienceYears: form.experienceYears ? Math.trunc(Number(form.experienceYears)) : null,
-          address: form.address.trim() || null,
+          street: form.street.trim(),
+          houseNumber: form.houseNumber.trim(),
+          postalCode: form.postalCode.trim(),
+          city: form.city.trim(),
+          state: form.state.trim() || null,
+          country: form.country,
           birthdate: form.birthdate,
           gender: form.gender || null,
           motivation: form.motivation.trim() || null,
@@ -341,16 +398,68 @@ export default function BecomeTeacherPage() {
                     />
                     <span className="mt-1 block text-xs text-gray-400">This is what students will see on your public profile.</span>
                   </label>
-                  <label className="block text-sm font-medium">
-                    Address
-                    <input
-                      className="input mt-1 w-full"
-                      placeholder="Street, city, country"
-                      value={form.address}
-                      onChange={(e) => setForm({ ...form, address: e.target.value })}
-                    />
-                    <span className="mt-1 block text-xs text-gray-400">Not shown publicly — for our records only.</span>
-                  </label>
+                  {/* Structured address (street/number/postal code/city/
+                      state/country) instead of one free-text line - keeps
+                      the data usable and validated rather than an
+                      unparseable blob. Not shown publicly - for our records
+                      only. */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr,1fr]">
+                    <label className="block min-w-0 text-sm font-medium">
+                      Street
+                      <input
+                        className="input mt-1 w-full"
+                        placeholder="e.g. Bahnhofstrasse"
+                        value={form.street}
+                        onChange={(e) => setForm({ ...form, street: e.target.value })}
+                      />
+                    </label>
+                    <label className="block min-w-0 text-sm font-medium">
+                      House / street number
+                      <input
+                        className="input mt-1 w-full"
+                        placeholder="e.g. 12b"
+                        value={form.houseNumber}
+                        onChange={(e) => setForm({ ...form, houseNumber: e.target.value })}
+                      />
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr,2fr]">
+                    <label className="block min-w-0 text-sm font-medium">
+                      Postal code
+                      <input
+                        className="input mt-1 w-full"
+                        placeholder="e.g. 8001"
+                        value={form.postalCode}
+                        onChange={(e) => setForm({ ...form, postalCode: e.target.value })}
+                      />
+                    </label>
+                    <label className="block min-w-0 text-sm font-medium">
+                      Town / city
+                      <input
+                        className="input mt-1 w-full"
+                        value={form.city}
+                        onChange={(e) => setForm({ ...form, city: e.target.value })}
+                      />
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <label className="block min-w-0 text-sm font-medium">
+                      State / region <span className="font-normal text-gray-400">(optional)</span>
+                      <input
+                        className="input mt-1 w-full"
+                        value={form.state}
+                        onChange={(e) => setForm({ ...form, state: e.target.value })}
+                      />
+                    </label>
+                    <label className="block min-w-0 text-sm font-medium">
+                      Country
+                      <select className="input mt-1 w-full" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })}>
+                        <option value="">Select…</option>
+                        {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  <span className="block text-xs text-gray-400">Address is not shown publicly — for our records only.</span>
                   {/* min-w-0 on both grid items: a native <input type="date">
                       has an intrinsic minimum content width that CSS Grid
                       otherwise respects over the column's actual width,
@@ -363,6 +472,8 @@ export default function BecomeTeacherPage() {
                         type="date"
                         className="input mt-1 w-full min-w-0"
                         value={form.birthdate}
+                        min={isoDateYearsAgo(MAX_TEACHER_AGE_YEARS)}
+                        max={isoDateYearsAgo(MIN_TEACHER_AGE_YEARS)}
                         onChange={(e) => setForm({ ...form, birthdate: e.target.value })}
                       />
                       <span className="mt-1 block text-xs text-gray-400">Applicants must be 18 or older. Not shown publicly.</span>
