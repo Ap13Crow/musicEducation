@@ -14,7 +14,7 @@ const GET = gql`
     myTeacherApplication {
       id status headline bio instruments experienceYears birthdate gender motivation videoUrl
       street houseNumber postalCode city state country
-      cvUrl audioSampleUrl documentUrls imageUrl
+      hasCv hasAudioSample documentCount imageUrl
     }
   }
 `;
@@ -235,6 +235,10 @@ export default function BecomeTeacherPage() {
   const [uploadingCv, setUploadingCv] = useState(false);
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [uploadingDocument, setUploadingDocument] = useState(false);
+  // Guards Next/Submit while a file save is in flight, so the applicant can't
+  // advance past (or resubmit over) a step before the upload it started has
+  // actually landed in the database.
+  const anyUploadInProgress = uploadingPhoto || uploadingCv || uploadingAudio || uploadingDocument;
 
   const [form, setForm] = useState(INITIAL_FORM);
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>([]);
@@ -252,6 +256,15 @@ export default function BecomeTeacherPage() {
     if (!res.ok) throw new Error(payload.error ?? 'Upload failed.');
     return payload;
   }
+
+  // Mirror the server's decoded-byte caps (apps/api/src/index.ts) so an
+  // oversized file is rejected before it's even read into memory and
+  // base64-encoded, rather than after - base64-encoding a large PDF/audio
+  // file client-side just to have the server reject it wastes real memory
+  // for no benefit (Copilot review finding on PR #53). The server remains
+  // the actual authority and re-checks the decoded size itself.
+  const MAX_CV_DOCUMENT_BYTES = 4 * 1024 * 1024;
+  const MAX_AUDIO_BYTES = 6 * 1024 * 1024;
 
   async function handlePhotoChange(file?: File) {
     if (!file) return;
@@ -271,6 +284,10 @@ export default function BecomeTeacherPage() {
   async function handleCvChange(file?: File) {
     if (!file) return;
     setFileError(null);
+    if (file.size > MAX_CV_DOCUMENT_BYTES) {
+      setFileError('Use a PDF smaller than 4 MB.');
+      return;
+    }
     setUploadingCv(true);
     try {
       const cvUrl = await fileToDataUrl(file);
@@ -286,6 +303,10 @@ export default function BecomeTeacherPage() {
   async function handleAudioChange(file?: File) {
     if (!file) return;
     setFileError(null);
+    if (file.size > MAX_AUDIO_BYTES) {
+      setFileError('Use an audio file smaller than 6 MB.');
+      return;
+    }
     setUploadingAudio(true);
     try {
       const audioSampleUrl = await fileToDataUrl(file);
@@ -301,11 +322,18 @@ export default function BecomeTeacherPage() {
   async function handleDocumentChange(files: FileList | null) {
     if (!files || files.length === 0) return;
     setFileError(null);
+    const oversized = Array.from(files).find((f) => f.size > MAX_CV_DOCUMENT_BYTES);
+    if (oversized) {
+      setFileError(`"${oversized.name}" is larger than 4 MB - use a PDF, JPEG, or PNG smaller than that.`);
+      return;
+    }
     setUploadingDocument(true);
     try {
-      // Uploaded one at a time (not Promise.all) - the endpoint appends to
-      // documentUrls by reading-then-writing the row, so concurrent
-      // requests could race and drop one another's addition.
+      // Uploaded one at a time rather than in parallel - not for
+      // correctness (the endpoint appends via an atomic DB-side push, so
+      // concurrent requests can't drop each other's addition), just so a
+      // failure on one file is reported against that specific file instead
+      // of an ambiguous batch error.
       for (const file of Array.from(files)) {
         const documentUrl = await fileToDataUrl(file);
         await postJson('/api/teacher-application/document', { documentUrl });
@@ -409,7 +437,7 @@ export default function BecomeTeacherPage() {
       return null;
     }
     if (index === 4) {
-      if (!application?.cvUrl) return 'Upload your CV.';
+      if (!application?.hasCv) return 'Upload your CV.';
       if (!videoEmbedUrl) return 'Add a link to a YouTube presentation or performance video.';
       return null;
     }
@@ -457,7 +485,16 @@ export default function BecomeTeacherPage() {
           city: form.city.trim(),
           state: form.state.trim() || null,
           country: form.country,
-          birthdate: form.birthdate,
+          // The DateTime scalar (graphql-scalars' DateTimeResolver) requires
+          // a full RFC 3339 date-time, not a bare date - <input
+          // type="date"> only ever produces "YYYY-MM-DD" (form.birthdate),
+          // which Apollo's variable coercion was rejecting outright before
+          // this mutation's own resolver ever ran ("DateTime cannot
+          // represent an invalid date-time-string 1988-11-02"). Midnight
+          // UTC of the same calendar date keeps the date the applicant
+          // actually picked, rather than letting an implicit local-
+          // timezone interpretation shift it by a day.
+          birthdate: form.birthdate ? `${form.birthdate}T00:00:00.000Z` : null,
           gender: form.gender || null,
           motivation: form.motivation.trim() || null,
           videoUrl: form.videoUrl.trim(),
@@ -732,7 +769,7 @@ export default function BecomeTeacherPage() {
                       />
                       {uploadingCv ? (
                         <span className="mt-1 block text-xs text-gray-500">Saving…</span>
-                      ) : application?.cvUrl ? (
+                      ) : application?.hasCv ? (
                         <span className="mt-1 block text-xs text-green-700">A CV is already on file — choose a new one to replace it.</span>
                       ) : null}
                     </label>
@@ -744,8 +781,8 @@ export default function BecomeTeacherPage() {
                       />
                       {uploadingDocument ? (
                         <span className="mt-1 block text-xs text-gray-500">Saving…</span>
-                      ) : application?.documentUrls?.length > 0 ? (
-                        <span className="mt-1 block text-xs text-green-700">{application.documentUrls.length} document(s) already on file — new ones are added, not replaced.</span>
+                      ) : application?.documentCount > 0 ? (
+                        <span className="mt-1 block text-xs text-green-700">{application.documentCount} document(s) already on file — new ones are added, not replaced.</span>
                       ) : null}
                     </label>
                     <label className="block text-sm">
@@ -756,7 +793,7 @@ export default function BecomeTeacherPage() {
                       />
                       {uploadingAudio ? (
                         <span className="mt-1 block text-xs text-gray-500">Saving…</span>
-                      ) : application?.audioSampleUrl ? (
+                      ) : application?.hasAudioSample ? (
                         <span className="mt-1 block text-xs text-green-700">A recording is already on file — choose a new one to replace it.</span>
                       ) : null}
                     </label>
@@ -789,7 +826,7 @@ export default function BecomeTeacherPage() {
                     <div><dt className="font-medium">Instruments</dt><dd className="text-gray-600">{selectedInstruments.join(', ') || '—'}</dd></div>
                     <div><dt className="font-medium">Headline</dt><dd className="text-gray-600">{form.headline || '—'}</dd></div>
                     <div><dt className="font-medium">Experience</dt><dd className="text-gray-600">{form.experienceYears ? `${form.experienceYears} years` : '—'}</dd></div>
-                    <div><dt className="font-medium">CV</dt><dd className="text-gray-600">{application?.cvUrl ? 'On file' : 'Not provided'}</dd></div>
+                    <div><dt className="font-medium">CV</dt><dd className="text-gray-600">{application?.hasCv ? 'On file' : 'Not provided'}</dd></div>
                     <div><dt className="font-medium">Video</dt><dd className="text-gray-600">{form.videoUrl || '—'}</dd></div>
                   </dl>
                   <p className="text-xs text-gray-400">
@@ -805,11 +842,21 @@ export default function BecomeTeacherPage() {
                   Back
                 </button>
                 {stepIndex < STEPS.length - 1 ? (
-                  <button type="button" onClick={goNext} className="btn-primary rounded-lg px-6 py-2.5 text-sm">
+                  <button
+                    type="button"
+                    onClick={goNext}
+                    disabled={anyUploadInProgress}
+                    className="btn-primary rounded-lg px-6 py-2.5 text-sm disabled:opacity-40"
+                  >
                     Next
                   </button>
                 ) : (
-                  <button type="button" onClick={submit} disabled={applying} className="btn-primary rounded-lg px-6 py-2.5 text-sm">
+                  <button
+                    type="button"
+                    onClick={submit}
+                    disabled={applying || anyUploadInProgress}
+                    className="btn-primary rounded-lg px-6 py-2.5 text-sm disabled:opacity-40"
+                  >
                     {applying ? 'Submitting…' : 'Submit application'}
                   </button>
                 )}
