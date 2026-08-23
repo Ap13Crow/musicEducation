@@ -572,7 +572,11 @@ function MailOutboxTab() {
                 <p className="mt-1 text-xs text-gray-500">To: {m.recipients.join(', ')}</p>
                 <p className="mt-1 text-xs text-gray-400">
                   {m.kind} · attempt {m.attempts}/{m.maxAttempts} · queued {new Date(m.createdAt).toLocaleString()}
-                  {m.sentAt ? ` · sent ${new Date(m.sentAt).toLocaleString()}` : ` · next attempt ${new Date(m.nextAttemptAt).toLocaleString()}`}
+                  {m.sentAt
+                    ? ` · sent ${new Date(m.sentAt).toLocaleString()}`
+                    : m.status === 'DEAD_LETTER'
+                      ? ' · no further automatic attempts'
+                      : ` · next attempt ${new Date(m.nextAttemptAt).toLocaleString()}`}
                 </p>
                 {m.lastError && <p className="mt-1 text-xs text-red-600">Last error: {m.lastError}</p>}
               </div>

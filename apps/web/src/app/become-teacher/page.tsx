@@ -103,9 +103,16 @@ export default function BecomeTeacherPage() {
 
   // Revoke the previous local preview URL whenever a new file is chosen or
   // the component unmounts - object URLs otherwise leak for the page's
-  // lifetime.
+  // lifetime. Also clears imagePreviewUrl when imageFile is reset to null
+  // (e.g. after a successful submit) - without this, the state kept
+  // pointing at a URL this same effect had just revoked, and the render
+  // below prefers imagePreviewUrl over application?.imageUrl, so the
+  // freshly-saved photo appeared broken until the next reload.
   useEffect(() => {
-    if (!imageFile) return;
+    if (!imageFile) {
+      setImagePreviewUrl(null);
+      return;
+    }
     const url = URL.createObjectURL(imageFile);
     setImagePreviewUrl(url);
     return () => URL.revokeObjectURL(url);

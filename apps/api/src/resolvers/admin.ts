@@ -45,12 +45,30 @@ export const adminResolvers = {
 
     async adminStats(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
       requireRole(user, 'ADMIN');
-      const [totalUsers, totalTeachers, totalCourses, totalEvents, totalBookings, revenueAgg] =
+      // totalTeachers is scoped the same way platformStats (above) is, and
+      // for the same reason: a TeacherProfile row is never deleted on
+      // demotion, so a raw prisma.teacherProfile.count() also counts every
+      // stale profile left behind by a user who no longer holds the
+      // TEACHER/ADMIN role - this admin tile was written independently of
+      // platformStats and never got that fix, so it silently drifted out
+      // of sync with the (correct) public homepage number.
+      //
+      // totalUsers/totalCourses/totalEvents/totalBookings/totalRevenue stay
+      // (or, for totalEvents, become) raw, unfiltered totals - deliberately
+      // *broader* than platformStats' "what's currently live" homepage
+      // figure. Unlike a stale TeacherProfile, a DRAFT/ARCHIVED course or a
+      // past/unpublished native event is real content an admin legitimately
+      // wants the true count of, not a data-integrity artifact to filter
+      // out. totalEvents does still gain the external-event count it was
+      // missing entirely before (see externalEvents below) - that omission
+      // was a real gap, not an intentional narrower scope.
+      const [totalUsers, totalTeachers, totalCourses, nativeEvents, externalEvents, totalBookings, revenueAgg] =
         await Promise.all([
           prisma.user.count(),
-          prisma.teacherProfile.count(),
+          prisma.teacherProfile.count({ where: { user: { role: { in: ['TEACHER', 'ADMIN'] } } } }),
           prisma.course.count(),
           prisma.event.count(),
+          prisma.externalEventProjection.count(),
           prisma.booking.count(),
           prisma.payment.aggregate({ _sum: { amount: true }, where: { status: 'SUCCEEDED' } }),
         ]);
@@ -58,7 +76,7 @@ export const adminResolvers = {
         totalUsers,
         totalTeachers,
         totalCourses,
-        totalEvents,
+        totalEvents: nativeEvents + externalEvents,
         totalBookings,
         totalRevenue: revenueAgg._sum.amount ?? 0,
       };
@@ -94,14 +112,24 @@ export const adminResolvers = {
       });
     },
 
+    // "Retry" only ever means requeuing a message that actually failed
+    // (FAILED or DEAD_LETTER) - an unconditional update() here would also
+    // happily reset an already-SENT message back to PENDING, and the
+    // worker's mail-dispatch job would then send a real duplicate delivery
+    // (e.g. a second booking-confirmation email) the next time it polls.
+    // The updateMany WHERE guard makes that combination a no-op instead.
     async retryMailOutboxMessage(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'ADMIN');
       const message = await prisma.mailOutboxMessage.findUnique({ where: { id } });
       if (!message) throw new GraphQLError('Mail message not found.', { extensions: { code: 'NOT_FOUND' } });
-      return prisma.mailOutboxMessage.update({
-        where: { id },
+      const requeued = await prisma.mailOutboxMessage.updateMany({
+        where: { id, status: { in: ['FAILED', 'DEAD_LETTER'] } },
         data: { status: 'PENDING', attempts: 0, lastError: null, nextAttemptAt: new Date() },
       });
+      if (requeued.count === 0) {
+        throw new GraphQLError('Only a FAILED or DEAD_LETTER message can be retried.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      return prisma.mailOutboxMessage.findUniqueOrThrow({ where: { id } });
     },
 
     // Schema name: adminSetRole
