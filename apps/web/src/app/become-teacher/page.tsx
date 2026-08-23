@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { gql, useMutation, useQuery } from '@apollo/client';
 import Link from 'next/link';
 import { signIn, useSession } from 'next-auth/react';
@@ -84,10 +84,64 @@ const COUNTRIES = [
 // ASCII apostrophe and typographic quote marks, so real names like
 // "St John's"/"St John’s" or "Côte d’Ivoire" aren't rejected.
 const STREET_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.,'‘’\p{Pd}]{0,99}$/u;
-const HOUSE_NUMBER_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.\p{Pd}/]{0,14}$/u;
-const POSTAL_CODE_PATTERN = /^[\p{L}0-9][\p{L}0-9\s\p{Pd}]{0,11}$/u;
+// Requires at least one digit - "b" alone isn't a real house number, but
+// "12b"/"221B"/"12-14"/"12 bis" are all fine. Mirrors the resolver.
+const HOUSE_NUMBER_PATTERN = /^(?=.*\d)[\p{L}0-9][\p{L}0-9\s.\p{Pd}/]{0,14}$/u;
 const CITY_PATTERN = /^[\p{L}][\p{L}\s.'‘’\p{Pd}]{0,99}$/u;
 const STATE_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.'‘’\p{Pd}]{0,59}$/u;
+
+// Mirrors POSTAL_CODE_PATTERNS_BY_COUNTRY in teacherApplications.ts - a
+// generic pattern would accept "12" as a valid Swiss postal code just
+// because the characters were plausible. Keyed by the exact strings in
+// COUNTRIES above; the resolver is the authority and re-checks this. A Map,
+// not a plain object - a plain object's lookup falls through to inherited
+// Object.prototype properties for a country value like "constructor" (a
+// function, not undefined), crashing on pattern.test(...) instead of
+// hitting the fallback below.
+const POSTAL_CODE_PATTERNS_BY_COUNTRY = new Map<string, RegExp>([
+  ['Austria', /^\d{4}$/],
+  ['Belgium', /^\d{4}$/],
+  ['Bulgaria', /^\d{4}$/],
+  ['Canada', /^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$/],
+  ['Croatia', /^\d{5}$/],
+  ['Cyprus', /^\d{4}$/],
+  ['Czechia', /^\d{3} ?\d{2}$/],
+  ['Denmark', /^\d{4}$/],
+  ['Estonia', /^\d{5}$/],
+  ['Finland', /^\d{5}$/],
+  ['France', /^\d{5}$/],
+  ['Germany', /^\d{5}$/],
+  ['Greece', /^\d{3} ?\d{2}$/],
+  ['Hungary', /^\d{4}$/],
+  ['Iceland', /^\d{3}$/],
+  ['Ireland', /^[A-Za-z]\d[A-Za-z0-9] ?[A-Za-z0-9]{4}$/],
+  ['Italy', /^\d{5}$/],
+  ['Latvia', /^(LV-)?\d{4}$/],
+  ['Liechtenstein', /^\d{4}$/],
+  ['Lithuania', /^(LT-)?\d{5}$/],
+  ['Luxembourg', /^\d{4}$/],
+  ['Malta', /^[A-Za-z]{3} ?\d{4}$/],
+  ['Netherlands', /^\d{4} ?[A-Za-z]{2}$/],
+  ['Norway', /^\d{4}$/],
+  ['Poland', /^\d{2}-\d{3}$/],
+  ['Portugal', /^\d{4}-\d{3}$/],
+  ['Romania', /^\d{6}$/],
+  ['Slovakia', /^\d{3} ?\d{2}$/],
+  ['Slovenia', /^(SI-)?\d{4}$/],
+  ['Spain', /^\d{5}$/],
+  ['Sweden', /^\d{3} ?\d{2}$/],
+  ['Switzerland', /^\d{4}$/],
+  // GIR 0AA is a real, still-valid special postcode that doesn't fit the
+  // standard outward-code shape (3 letters, not 1-2) - mirrors the resolver.
+  ['United Kingdom', /^(GIR ?0AA|[A-Za-z]{1,2}\d[A-Za-z\d]? ?\d[A-Za-z]{2})$/i],
+  ['United States', /^\d{5}(-\d{4})?$/],
+]);
+const POSTAL_CODE_FALLBACK_PATTERN = /^[\p{L}0-9][\p{L}0-9\s\p{Pd}]{0,11}$/u;
+
+function isValidPostalCode(postalCode: string, country: string): boolean {
+  const pattern = POSTAL_CODE_PATTERNS_BY_COUNTRY.get(country) ?? POSTAL_CODE_FALLBACK_PATTERN;
+  return pattern.test(postalCode);
+}
 
 const STEPS = ['About you', 'Photo', 'Your teaching', 'Motivation', 'Proof & video', 'Review'] as const;
 
@@ -120,6 +174,58 @@ function Stepper({ current }: { current: number }) {
       ))}
     </ol>
   );
+}
+
+// Everything typed in this multi-step wizard used to live only in React
+// state - a reload (accidental, or the browser reclaiming the tab) threw
+// away every field the applicant had already filled in, with no way back
+// short of retyping it all. Persisted per-account (userId, not a fixed key -
+// a shared/kiosk browser must not show one account's draft to another) so
+// it survives a reload and a later visit alike. File selections (CV, photo,
+// etc.) can't go in here - browsers don't allow restoring a <input
+// type="file">'s value programmatically, and File objects aren't
+// JSON-serializable - those still have to be re-picked after a reload, same
+// as every other web upload form.
+interface WizardDraft {
+  form: typeof INITIAL_FORM;
+  selectedInstruments: string[];
+  stepIndex: number;
+}
+const INITIAL_FORM = {
+  fullName: '', birthdate: '', gender: '',
+  street: '', houseNumber: '', postalCode: '', city: '', state: '', country: '',
+  headline: '', bio: '', experienceYears: '', motivation: '', videoUrl: '',
+};
+const DRAFT_KEY_PREFIX = 'become-teacher-draft:';
+
+function loadDraft(userId: string): WizardDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY_PREFIX + userId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed as WizardDraft;
+  } catch {
+    // Private browsing, disabled storage, corrupted JSON - a lost draft
+    // isn't worth failing the page over, so just start blank.
+    return null;
+  }
+}
+
+function saveDraft(userId: string, draft: WizardDraft) {
+  try {
+    localStorage.setItem(DRAFT_KEY_PREFIX + userId, JSON.stringify(draft));
+  } catch {
+    // Storage full/unavailable - silently skip, same reasoning as above.
+  }
+}
+
+function clearDraft(userId: string) {
+  try {
+    localStorage.removeItem(DRAFT_KEY_PREFIX + userId);
+  } catch {
+    // Nothing meaningful to do if this fails.
+  }
 }
 
 export default function BecomeTeacherPage() {
@@ -158,42 +264,63 @@ export default function BecomeTeacherPage() {
     return () => URL.revokeObjectURL(url);
   }, [imageFile]);
 
-  const [form, setForm] = useState({
-    fullName: '', birthdate: '', gender: '',
-    street: '', houseNumber: '', postalCode: '', city: '', state: '', country: '',
-    headline: '', bio: '', experienceYears: '', motivation: '', videoUrl: '',
-  });
+  const [form, setForm] = useState(INITIAL_FORM);
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>([]);
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
 
-  // Prefill from account/application state once loaded - a resubmission
-  // after rejection starts from what was submitted before, not blank.
+  // Guards the save effect below against writing a blank draft over a real
+  // one - both the prefill effect and the save effect fire on every mount,
+  // but the prefill (draft/server restore) effect must run and finish
+  // first. Doesn't itself trigger a re-render (it's a ref, not state) -
+  // it's read by the save effect's next invocation, which the prefill
+  // effect's own setForm/setSelectedInstruments calls schedule.
+  const hydratedRef = useRef(false);
+
+  // Prefill on load, in priority order: an unsaved local draft (the
+  // applicant's own most recent edits, possibly newer than what's on the
+  // server) beats the last-submitted application (a resubmission after
+  // rejection starts from what was submitted before, not blank) beats
+  // blank. me.id isn't known until this query resolves, so the draft can
+  // only be looked up here, not in a useState lazy initializer.
   useEffect(() => {
     if (!data) return;
+    const draft = me?.id ? loadDraft(me.id) : null;
     setForm((f) => ({
       ...f,
-      fullName: f.fullName || me?.displayName || '',
-      street: f.street || application?.street || '',
-      houseNumber: f.houseNumber || application?.houseNumber || '',
-      postalCode: f.postalCode || application?.postalCode || '',
-      city: f.city || application?.city || '',
-      state: f.state || application?.state || '',
-      country: f.country || application?.country || '',
-      birthdate: f.birthdate || (application?.birthdate ? application.birthdate.slice(0, 10) : ''),
-      gender: f.gender || application?.gender || '',
-      headline: f.headline || application?.headline || '',
-      bio: f.bio || application?.bio || '',
-      experienceYears: f.experienceYears || (application?.experienceYears != null ? String(application.experienceYears) : ''),
-      motivation: f.motivation || application?.motivation || '',
-      videoUrl: f.videoUrl || application?.videoUrl || '',
+      fullName: f.fullName || draft?.form.fullName || me?.displayName || '',
+      street: f.street || draft?.form.street || application?.street || '',
+      houseNumber: f.houseNumber || draft?.form.houseNumber || application?.houseNumber || '',
+      postalCode: f.postalCode || draft?.form.postalCode || application?.postalCode || '',
+      city: f.city || draft?.form.city || application?.city || '',
+      state: f.state || draft?.form.state || application?.state || '',
+      country: f.country || draft?.form.country || application?.country || '',
+      birthdate: f.birthdate || draft?.form.birthdate || (application?.birthdate ? application.birthdate.slice(0, 10) : ''),
+      gender: f.gender || draft?.form.gender || application?.gender || '',
+      headline: f.headline || draft?.form.headline || application?.headline || '',
+      bio: f.bio || draft?.form.bio || application?.bio || '',
+      experienceYears: f.experienceYears || draft?.form.experienceYears || (application?.experienceYears != null ? String(application.experienceYears) : ''),
+      motivation: f.motivation || draft?.form.motivation || application?.motivation || '',
+      videoUrl: f.videoUrl || draft?.form.videoUrl || application?.videoUrl || '',
     }));
-    if (selectedInstruments.length === 0 && application?.instruments?.length) {
-      setSelectedInstruments(application.instruments);
+    if (selectedInstruments.length === 0) {
+      const restoredInstruments = draft?.selectedInstruments?.length ? draft.selectedInstruments : application?.instruments;
+      if (restoredInstruments?.length) setSelectedInstruments(restoredInstruments);
     }
+    if (draft?.stepIndex) setStepIndex((i) => (i === 0 ? draft.stepIndex : i));
+    hydratedRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
+
+  // Saves on every change once the prefill effect above has actually run
+  // (hydratedRef guards against overwriting a real draft with the blank
+  // initial state on mount, before that effect has had a chance to restore
+  // it). File selections aren't included - see the WizardDraft comment.
+  useEffect(() => {
+    if (!hydratedRef.current || !me?.id) return;
+    saveDraft(me.id, { form, selectedInstruments, stepIndex });
+  }, [form, selectedInstruments, stepIndex, me?.id]);
 
   function toggleInstrument(inst: string) {
     setSelectedInstruments((prev) => (prev.includes(inst) ? prev.filter((i) => i !== inst) : [...prev, inst]));
@@ -212,11 +339,12 @@ export default function BecomeTeacherPage() {
     if (index === 0) {
       if (!form.fullName.trim()) return 'Enter your full name.';
       if (!STREET_PATTERN.test(form.street.trim())) return 'Enter a valid street name.';
-      if (!HOUSE_NUMBER_PATTERN.test(form.houseNumber.trim())) return 'Enter a valid house/street number.';
-      if (!POSTAL_CODE_PATTERN.test(form.postalCode.trim())) return 'Enter a valid postal code.';
+      if (!HOUSE_NUMBER_PATTERN.test(form.houseNumber.trim())) return 'Enter a valid house/street number (must include a number).';
       if (!CITY_PATTERN.test(form.city.trim())) return 'Enter a valid town/city.';
       if (form.state.trim() && !STATE_PATTERN.test(form.state.trim())) return 'Enter a valid state/region, or leave it blank.';
       if (!form.country) return 'Select your country.';
+      // Country-dependent, so this must run after the country check above.
+      if (!isValidPostalCode(form.postalCode.trim(), form.country)) return `Enter a valid postal code for ${form.country}.`;
       const age = form.birthdate ? calculateAge(form.birthdate) : null;
       if (age === null) return 'Enter your date of birth.';
       if (age < MIN_TEACHER_AGE_YEARS) return `You must be at least ${MIN_TEACHER_AGE_YEARS} to apply as a teacher.`;
@@ -334,6 +462,11 @@ export default function BecomeTeacherPage() {
     setAudioFile(null);
     setDocumentFiles([]);
     setImageFile(null);
+    // Only reached if apply() above didn't throw - the application is now
+    // safely persisted server-side, so the local draft's job is done. Left
+    // in place on a failed submit, so the applicant doesn't lose their
+    // input to a validation error.
+    if (me?.id) clearDraft(me.id);
     await refetch();
   }
 

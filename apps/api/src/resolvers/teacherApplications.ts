@@ -27,10 +27,67 @@ const MAX_TEACHER_AGE_YEARS = 100;
 // real names use ("St John's" vs "St John’s", "Cote d'Ivoire" vs "Côte
 // d’Ivoire") - an ASCII-only class would otherwise reject valid input.
 const STREET_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.,'‘’\p{Pd}]{0,99}$/u;
-const HOUSE_NUMBER_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.\p{Pd}/]{0,14}$/u;
-const POSTAL_CODE_PATTERN = /^[\p{L}0-9][\p{L}0-9\s\p{Pd}]{0,11}$/u;
+// Requires at least one digit somewhere ((?=.*\d) lookahead) - a house/
+// street number that's purely letters ("b" alone) isn't a real house
+// number. Still allows "12b", "221B", "12-14", "12 bis", "12/3" etc.
+const HOUSE_NUMBER_PATTERN = /^(?=.*\d)[\p{L}0-9][\p{L}0-9\s.\p{Pd}/]{0,14}$/u;
 const CITY_PATTERN = /^[\p{L}][\p{L}\s.'‘’\p{Pd}]{0,99}$/u;
 const COUNTRY_PATTERN = /^[\p{L}][\p{L}\s.'‘’\p{Pd}]{0,59}$/u;
+
+// Postal-code format genuinely varies by country in ways one generic
+// pattern can't catch (Switzerland is exactly 4 digits; the Netherlands is
+// 4 digits + 2 letters; Poland is NN-NNN) - without this, "12" would pass
+// for a Swiss address as happily as "8001" does. Keyed by the exact country
+// strings this form and COUNTRIES (apps/web/become-teacher) both use.
+// Sources: national postal authorities' documented formats. A Map, not a
+// plain object - a plain object's lookup falls through to inherited
+// Object.prototype properties for a country value like "constructor" or
+// "toString" (returning a function, not undefined), which then crashes on
+// pattern.test(...) instead of hitting the documented fallback below. A Map
+// has no prototype-chain key collisions to worry about.
+const POSTAL_CODE_PATTERNS_BY_COUNTRY = new Map<string, RegExp>([
+  ['Austria', /^\d{4}$/],
+  ['Belgium', /^\d{4}$/],
+  ['Bulgaria', /^\d{4}$/],
+  ['Canada', /^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$/],
+  ['Croatia', /^\d{5}$/],
+  ['Cyprus', /^\d{4}$/],
+  ['Czechia', /^\d{3} ?\d{2}$/],
+  ['Denmark', /^\d{4}$/],
+  ['Estonia', /^\d{5}$/],
+  ['Finland', /^\d{5}$/],
+  ['France', /^\d{5}$/],
+  ['Germany', /^\d{5}$/],
+  ['Greece', /^\d{3} ?\d{2}$/],
+  ['Hungary', /^\d{4}$/],
+  ['Iceland', /^\d{3}$/],
+  ['Ireland', /^[A-Za-z]\d[A-Za-z0-9] ?[A-Za-z0-9]{4}$/], // Eircode
+  ['Italy', /^\d{5}$/],
+  ['Latvia', /^(LV-)?\d{4}$/],
+  ['Liechtenstein', /^\d{4}$/],
+  ['Lithuania', /^(LT-)?\d{5}$/],
+  ['Luxembourg', /^\d{4}$/],
+  ['Malta', /^[A-Za-z]{3} ?\d{4}$/],
+  ['Netherlands', /^\d{4} ?[A-Za-z]{2}$/],
+  ['Norway', /^\d{4}$/],
+  ['Poland', /^\d{2}-\d{3}$/],
+  ['Portugal', /^\d{4}-\d{3}$/],
+  ['Romania', /^\d{6}$/],
+  ['Slovakia', /^\d{3} ?\d{2}$/],
+  ['Slovenia', /^(SI-)?\d{4}$/],
+  ['Spain', /^\d{5}$/],
+  ['Sweden', /^\d{3} ?\d{2}$/],
+  ['Switzerland', /^\d{4}$/],
+  // GIR 0AA is a real, still-valid special postcode (historically
+  // Girobank's) that doesn't fit the standard outward-code shape (3
+  // letters, not 1-2) - excluding it would reject a genuine UK address.
+  ['United Kingdom', /^(GIR ?0AA|[A-Za-z]{1,2}\d[A-Za-z\d]? ?\d[A-Za-z]{2})$/i],
+  ['United States', /^\d{5}(-\d{4})?$/],
+]);
+// Fallback for "Other" (COUNTRIES' catch-all - see apps/web/become-teacher)
+// and any country name not in the map above - permissive rather than
+// hard-rejecting an applicant from a country this list doesn't cover yet.
+const POSTAL_CODE_FALLBACK_PATTERN = /^[\p{L}0-9][\p{L}0-9\s\p{Pd}]{0,11}$/u;
 
 function requireAddressField(value: unknown, label: string, pattern: RegExp): string {
   const trimmed = typeof value === 'string' ? value.trim() : '';
@@ -39,6 +96,24 @@ function requireAddressField(value: unknown, label: string, pattern: RegExp): st
   }
   if (!pattern.test(trimmed)) {
     throw new GraphQLError(`${label} contains characters or a format that isn't valid.`, { extensions: { code: 'BAD_USER_INPUT' } });
+  }
+  return trimmed;
+}
+
+// Country-aware, unlike requireAddressField's single-pattern check - picks
+// the right national format when this country has one, otherwise falls
+// back to the generic pattern. Must run after country is resolved (see
+// call site), since the pattern choice depends on it.
+function requirePostalCode(value: unknown, country: string): string {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (!trimmed) {
+    throw new GraphQLError('Postal code is required.', { extensions: { code: 'BAD_USER_INPUT' } });
+  }
+  const countryPattern = POSTAL_CODE_PATTERNS_BY_COUNTRY.get(country);
+  const pattern = countryPattern ?? POSTAL_CODE_FALLBACK_PATTERN;
+  if (!pattern.test(trimmed)) {
+    const forCountry = countryPattern ? ` for ${country}` : '';
+    throw new GraphQLError(`Postal code isn't a valid format${forCountry}.`, { extensions: { code: 'BAD_USER_INPUT' } });
   }
   return trimmed;
 }
@@ -138,13 +213,14 @@ export const teacherApplicationResolvers = {
       }
 
       // Structured address, validated field-by-field - see the pattern
-      // constants above for why these are permissive rather than
-      // country-specific.
+      // constants above for why most of these are permissive rather than
+      // country-specific. Country resolves first: postal code's format
+      // depends on it (see requirePostalCode).
       const street = requireAddressField(input.street, 'Street', STREET_PATTERN);
       const houseNumber = requireAddressField(input.houseNumber, 'House number', HOUSE_NUMBER_PATTERN);
-      const postalCode = requireAddressField(input.postalCode, 'Postal code', POSTAL_CODE_PATTERN);
       const city = requireAddressField(input.city, 'City', CITY_PATTERN);
       const country = requireAddressField(input.country, 'Country', COUNTRY_PATTERN);
+      const postalCode = requirePostalCode(input.postalCode, country);
       const state = optionalAddressField(input.state, 'State/region');
 
       // The name that will show on the public teacher profile once approved -
