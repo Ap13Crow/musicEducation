@@ -8,8 +8,20 @@ const MAX_SIZE = 200;
 const MAX_PAGE_TIMES_SIZE = 1000;
 // Throttle to comfortably under the documented 5 req/s ceiling.
 const MIN_REQUEST_INTERVAL_MS = 250;
-// Ticketmaster's caching guidance: treat a cached row as stale after this long.
-const PROJECTION_TTL_MS = 6 * 60 * 60 * 1000;
+// Ticketmaster's caching guidance says to treat a cached row as stale after
+// 6h, which is also ticketmaster-ingest's own run cadence - but a TTL
+// exactly equal to the ingest interval gives zero tolerance for a single
+// missed refresh. ticketmaster-ingest slices the query into 5 countries x 3
+// date windows per run and isolates failures per slice (one bad request
+// doesn't drop the rest), so a transient rate-limit/timeout/5xx on just one
+// slice was enough to silently expire (and disappear from the public
+// listing) every real, still-on-sale event in that slice before the next
+// run had a chance to re-fetch it - observed as the visible event count
+// swinging by hundreds between runs with no actual change in Ticketmaster's
+// catalog. 4x the 6h ingest cadence gives three full missed-cycle retries
+// before a row is treated as stale, while still expiring a projection
+// within a day of Ticketmaster genuinely dropping it.
+const PROJECTION_TTL_MS = 24 * 60 * 60 * 1000;
 
 const ATTRIBUTION =
   'Event data provided by Ticketmaster. Tickets are sold by Ticketmaster — this listing links out to their site to complete purchase.';
