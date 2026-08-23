@@ -1,7 +1,7 @@
 import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
-import { isOwnedUploadUrl, requireInlineTeacherPhoto } from '../lib/storage.js';
+import { isOwnedUploadUrl } from '../lib/storage.js';
 import { isValidEmail } from '../lib/mailOutbox.js';
 import {
   isValidLeadDays, isValidCancellationDays, isValidPolicyPair,
@@ -251,18 +251,16 @@ export const userResolvers = {
       // teacher actually got from requestUploadUrl(purpose:
       // TEACHER_PROFILE_IMAGE) - otherwise a caller could point the public
       // directory/profile at an arbitrary external URL.
+      // Normally set by the dedicated /teacher/photo REST endpoint in
+      // index.ts instead (saves straight to Postgres as a data: URL,
+      // mirroring /profile/avatar - no S3_* secrets needed). Still accepts
+      // a real S3 fileUrl here too, for a deployment that does have S3_*
+      // configured.
       if (publicImageUrl !== undefined) {
-        // Same no-S3 fallback as applyForTeacher's imageUrl: a data: URL is
-        // validated/size-capped in place of the ownership check instead of
-        // being rejected outright.
-        if (publicImageUrl !== null) {
-          if (publicImageUrl.startsWith('data:')) {
-            requireInlineTeacherPhoto(publicImageUrl);
-          } else if (!isOwnedUploadUrl(publicImageUrl, 'TEACHER_PROFILE_IMAGE', user!.id)) {
-            throw new GraphQLError('publicImageUrl must come from requestUploadUrl(purpose: TEACHER_PROFILE_IMAGE).', {
-              extensions: { code: 'BAD_USER_INPUT' },
-            });
-          }
+        if (publicImageUrl !== null && !isOwnedUploadUrl(publicImageUrl, 'TEACHER_PROFILE_IMAGE', user!.id)) {
+          throw new GraphQLError('publicImageUrl must come from requestUploadUrl(purpose: TEACHER_PROFILE_IMAGE).', {
+            extensions: { code: 'BAD_USER_INPUT' },
+          });
         }
         data.publicImageUrl = publicImageUrl;
       }
