@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { gql, useMutation, useQuery } from '@apollo/client';
 import Link from 'next/link';
 import { signIn, useSession } from 'next-auth/react';
@@ -170,6 +170,58 @@ function Stepper({ current }: { current: number }) {
   );
 }
 
+// Everything typed in this multi-step wizard used to live only in React
+// state - a reload (accidental, or the browser reclaiming the tab) threw
+// away every field the applicant had already filled in, with no way back
+// short of retyping it all. Persisted per-account (userId, not a fixed key -
+// a shared/kiosk browser must not show one account's draft to another) so
+// it survives a reload and a later visit alike. File selections (CV, photo,
+// etc.) can't go in here - browsers don't allow restoring a <input
+// type="file">'s value programmatically, and File objects aren't
+// JSON-serializable - those still have to be re-picked after a reload, same
+// as every other web upload form.
+interface WizardDraft {
+  form: typeof INITIAL_FORM;
+  selectedInstruments: string[];
+  stepIndex: number;
+}
+const INITIAL_FORM = {
+  fullName: '', birthdate: '', gender: '',
+  street: '', houseNumber: '', postalCode: '', city: '', state: '', country: '',
+  headline: '', bio: '', experienceYears: '', motivation: '', videoUrl: '',
+};
+const DRAFT_KEY_PREFIX = 'become-teacher-draft:';
+
+function loadDraft(userId: string): WizardDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY_PREFIX + userId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed as WizardDraft;
+  } catch {
+    // Private browsing, disabled storage, corrupted JSON - a lost draft
+    // isn't worth failing the page over, so just start blank.
+    return null;
+  }
+}
+
+function saveDraft(userId: string, draft: WizardDraft) {
+  try {
+    localStorage.setItem(DRAFT_KEY_PREFIX + userId, JSON.stringify(draft));
+  } catch {
+    // Storage full/unavailable - silently skip, same reasoning as above.
+  }
+}
+
+function clearDraft(userId: string) {
+  try {
+    localStorage.removeItem(DRAFT_KEY_PREFIX + userId);
+  } catch {
+    // Nothing meaningful to do if this fails.
+  }
+}
+
 export default function BecomeTeacherPage() {
   const { data: session, status } = useSession();
   const alreadyTeacher = hasRole(session?.roles, 'TEACHER', 'ADMIN');
@@ -206,42 +258,63 @@ export default function BecomeTeacherPage() {
     return () => URL.revokeObjectURL(url);
   }, [imageFile]);
 
-  const [form, setForm] = useState({
-    fullName: '', birthdate: '', gender: '',
-    street: '', houseNumber: '', postalCode: '', city: '', state: '', country: '',
-    headline: '', bio: '', experienceYears: '', motivation: '', videoUrl: '',
-  });
+  const [form, setForm] = useState(INITIAL_FORM);
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>([]);
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
 
-  // Prefill from account/application state once loaded - a resubmission
-  // after rejection starts from what was submitted before, not blank.
+  // Guards the save effect below against writing a blank draft over a real
+  // one - both the prefill effect and the save effect fire on every mount,
+  // but the prefill (draft/server restore) effect must run and finish
+  // first. Doesn't itself trigger a re-render (it's a ref, not state) -
+  // it's read by the save effect's next invocation, which the prefill
+  // effect's own setForm/setSelectedInstruments calls schedule.
+  const hydratedRef = useRef(false);
+
+  // Prefill on load, in priority order: an unsaved local draft (the
+  // applicant's own most recent edits, possibly newer than what's on the
+  // server) beats the last-submitted application (a resubmission after
+  // rejection starts from what was submitted before, not blank) beats
+  // blank. me.id isn't known until this query resolves, so the draft can
+  // only be looked up here, not in a useState lazy initializer.
   useEffect(() => {
     if (!data) return;
+    const draft = me?.id ? loadDraft(me.id) : null;
     setForm((f) => ({
       ...f,
-      fullName: f.fullName || me?.displayName || '',
-      street: f.street || application?.street || '',
-      houseNumber: f.houseNumber || application?.houseNumber || '',
-      postalCode: f.postalCode || application?.postalCode || '',
-      city: f.city || application?.city || '',
-      state: f.state || application?.state || '',
-      country: f.country || application?.country || '',
-      birthdate: f.birthdate || (application?.birthdate ? application.birthdate.slice(0, 10) : ''),
-      gender: f.gender || application?.gender || '',
-      headline: f.headline || application?.headline || '',
-      bio: f.bio || application?.bio || '',
-      experienceYears: f.experienceYears || (application?.experienceYears != null ? String(application.experienceYears) : ''),
-      motivation: f.motivation || application?.motivation || '',
-      videoUrl: f.videoUrl || application?.videoUrl || '',
+      fullName: f.fullName || draft?.form.fullName || me?.displayName || '',
+      street: f.street || draft?.form.street || application?.street || '',
+      houseNumber: f.houseNumber || draft?.form.houseNumber || application?.houseNumber || '',
+      postalCode: f.postalCode || draft?.form.postalCode || application?.postalCode || '',
+      city: f.city || draft?.form.city || application?.city || '',
+      state: f.state || draft?.form.state || application?.state || '',
+      country: f.country || draft?.form.country || application?.country || '',
+      birthdate: f.birthdate || draft?.form.birthdate || (application?.birthdate ? application.birthdate.slice(0, 10) : ''),
+      gender: f.gender || draft?.form.gender || application?.gender || '',
+      headline: f.headline || draft?.form.headline || application?.headline || '',
+      bio: f.bio || draft?.form.bio || application?.bio || '',
+      experienceYears: f.experienceYears || draft?.form.experienceYears || (application?.experienceYears != null ? String(application.experienceYears) : ''),
+      motivation: f.motivation || draft?.form.motivation || application?.motivation || '',
+      videoUrl: f.videoUrl || draft?.form.videoUrl || application?.videoUrl || '',
     }));
-    if (selectedInstruments.length === 0 && application?.instruments?.length) {
-      setSelectedInstruments(application.instruments);
+    if (selectedInstruments.length === 0) {
+      const restoredInstruments = draft?.selectedInstruments?.length ? draft.selectedInstruments : application?.instruments;
+      if (restoredInstruments?.length) setSelectedInstruments(restoredInstruments);
     }
+    if (draft?.stepIndex) setStepIndex((i) => (i === 0 ? draft.stepIndex : i));
+    hydratedRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
+
+  // Saves on every change once the prefill effect above has actually run
+  // (hydratedRef guards against overwriting a real draft with the blank
+  // initial state on mount, before that effect has had a chance to restore
+  // it). File selections aren't included - see the WizardDraft comment.
+  useEffect(() => {
+    if (!hydratedRef.current || !me?.id) return;
+    saveDraft(me.id, { form, selectedInstruments, stepIndex });
+  }, [form, selectedInstruments, stepIndex, me?.id]);
 
   function toggleInstrument(inst: string) {
     setSelectedInstruments((prev) => (prev.includes(inst) ? prev.filter((i) => i !== inst) : [...prev, inst]));
@@ -383,6 +456,11 @@ export default function BecomeTeacherPage() {
     setAudioFile(null);
     setDocumentFiles([]);
     setImageFile(null);
+    // Only reached if apply() above didn't throw - the application is now
+    // safely persisted server-side, so the local draft's job is done. Left
+    // in place on a failed submit, so the applicant doesn't lose their
+    // input to a validation error.
+    if (me?.id) clearDraft(me.id);
     await refetch();
   }
 
