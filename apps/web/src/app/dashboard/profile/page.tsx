@@ -226,7 +226,15 @@ export default function ProfilePage() {
       {/* Header */}
       <div className="border-b border-gray-200 bg-white px-6 py-8">
         <div className="mx-auto max-w-4xl">
-        <Link href="/dashboard" className="text-sm text-primary-700">← Dashboard</Link>
+        {/* A teacher/admin's actual "home" is the teacher workspace, not
+            the general student dashboard - landing back on /dashboard from
+            here (as it did before) undid the "Go to teacher profile →"
+            link just below and made this page feel like the only profile
+            that exists, rather than one of two (see the teacher-profile
+            link at role==='TEACHER' below). */}
+        <Link href={role === 'TEACHER' || role === 'ADMIN' ? '/dashboard/teacher' : '/dashboard'} className="text-sm text-primary-700">
+          ← {role === 'TEACHER' || role === 'ADMIN' ? 'Teacher workspace' : 'Dashboard'}
+        </Link>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="relative">
