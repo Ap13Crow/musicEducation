@@ -97,7 +97,10 @@ async function main() {
     });
   }
 
-  app.use(express.json({ limit: '1mb' }));
+  // Raised from the original 1mb to comfortably fit a base64-encoded CV/
+  // document/audio sample below, not just the small avatar/photo payloads
+  // that used to be the only inline uploads this API accepted.
+  app.use(express.json({ limit: '10mb' }));
 
   app.use(authMiddleware);
   app.post('/profile/avatar', async (req, res) => {
@@ -113,6 +116,110 @@ async function main() {
       update: { avatarUrl },
     });
     return res.json({ avatarUrl });
+  });
+
+  // ── Teacher application / profile files ────────────────────────────────
+  //
+  // Same mechanism as /profile/avatar above: saved straight to Postgres as
+  // a data: URL, not routed through S3 at all - there's no presigned-upload
+  // step, no S3_* secrets to configure, nothing that can be "not enabled on
+  // this deployment yet". TeacherApplication (the pending application) and
+  // TeacherProfile (the approved public profile) are separate entities with
+  // their own photo column, so each gets its own small endpoint below,
+  // mirroring the /profile/avatar → UserProfile.avatarUrl relationship.
+  //
+  // applyForTeacher/updateTeacherProfile (the GraphQL mutations) still also
+  // accept a real S3 fileUrl for imageUrl/cvUrl/audioSampleUrl/
+  // publicImageUrl/documentUrls, for a deployment that does have S3_*
+  // configured and prefers that path - these REST endpoints are simply
+  // what the web app itself calls today.
+  const TEACHER_PHOTO_PATTERN = /^data:image\/(?:jpeg|png|webp);base64,/;
+  const TEACHER_DOCUMENT_PATTERN = /^data:(?:application\/pdf|image\/(?:jpeg|png));base64,/;
+  const TEACHER_AUDIO_PATTERN = /^data:audio\/(?:mpeg|mp4|wav|x-wav|ogg);base64,/;
+
+  // Applicant may add a photo on step 1 of the wizard well before the
+  // final "Submit application" step reaches applyForTeacher, so no
+  // TeacherApplication row may exist yet - upsert rather than update-only.
+  // Every other field stays whatever it already was (null on first
+  // creation); applyForTeacher's own upsert fills and validates the rest
+  // at actual submission time.
+  app.post('/teacher-application/photo', async (req, res) => {
+    const auth = await resolveRequestUser(req, prisma);
+    if (!auth) return res.status(401).json({ error: 'Authentication required.' });
+    const imageUrl = typeof req.body?.imageUrl === 'string' ? req.body.imageUrl : '';
+    if (!TEACHER_PHOTO_PATTERN.test(imageUrl) || imageUrl.length > 750_000) {
+      return res.status(400).json({ error: 'Use a JPEG, PNG, or WebP image smaller than 500 KB.' });
+    }
+    await prisma.teacherApplication.upsert({
+      where: { userId: auth.id },
+      create: { userId: auth.id, imageUrl, instruments: [] },
+      update: { imageUrl },
+    });
+    return res.json({ imageUrl });
+  });
+
+  app.post('/teacher-application/cv', async (req, res) => {
+    const auth = await resolveRequestUser(req, prisma);
+    if (!auth) return res.status(401).json({ error: 'Authentication required.' });
+    const cvUrl = typeof req.body?.cvUrl === 'string' ? req.body.cvUrl : '';
+    if (!/^data:application\/pdf;base64,/.test(cvUrl) || cvUrl.length > 6_000_000) {
+      return res.status(400).json({ error: 'Use a PDF smaller than 4 MB.' });
+    }
+    await prisma.teacherApplication.upsert({
+      where: { userId: auth.id },
+      create: { userId: auth.id, cvUrl, instruments: [] },
+      update: { cvUrl },
+    });
+    return res.json({ cvUrl });
+  });
+
+  app.post('/teacher-application/audio', async (req, res) => {
+    const auth = await resolveRequestUser(req, prisma);
+    if (!auth) return res.status(401).json({ error: 'Authentication required.' });
+    const audioSampleUrl = typeof req.body?.audioSampleUrl === 'string' ? req.body.audioSampleUrl : '';
+    if (!TEACHER_AUDIO_PATTERN.test(audioSampleUrl) || audioSampleUrl.length > 8_000_000) {
+      return res.status(400).json({ error: 'Use an audio file smaller than 6 MB.' });
+    }
+    await prisma.teacherApplication.upsert({
+      where: { userId: auth.id },
+      create: { userId: auth.id, audioSampleUrl, instruments: [] },
+      update: { audioSampleUrl },
+    });
+    return res.json({ audioSampleUrl });
+  });
+
+  // Appends rather than replaces - matches the web wizard's "new ones are
+  // added, not replaced" copy for this field.
+  app.post('/teacher-application/document', async (req, res) => {
+    const auth = await resolveRequestUser(req, prisma);
+    if (!auth) return res.status(401).json({ error: 'Authentication required.' });
+    const documentUrl = typeof req.body?.documentUrl === 'string' ? req.body.documentUrl : '';
+    if (!TEACHER_DOCUMENT_PATTERN.test(documentUrl) || documentUrl.length > 6_000_000) {
+      return res.status(400).json({ error: 'Use a PDF, JPEG, or PNG smaller than 4 MB.' });
+    }
+    const existing = await prisma.teacherApplication.findUnique({ where: { userId: auth.id } });
+    const documentUrls = [...(existing?.documentUrls ?? []), documentUrl];
+    await prisma.teacherApplication.upsert({
+      where: { userId: auth.id },
+      create: { userId: auth.id, documentUrls, instruments: [] },
+      update: { documentUrls },
+    });
+    return res.json({ documentUrls });
+  });
+
+  app.post('/teacher/photo', async (req, res) => {
+    const auth = await resolveRequestUser(req, prisma);
+    if (!auth || (auth.role !== 'TEACHER' && auth.role !== 'ADMIN')) {
+      return res.status(401).json({ error: 'Authentication required.' });
+    }
+    const publicImageUrl = typeof req.body?.publicImageUrl === 'string' ? req.body.publicImageUrl : '';
+    if (!TEACHER_PHOTO_PATTERN.test(publicImageUrl) || publicImageUrl.length > 750_000) {
+      return res.status(400).json({ error: 'Use a JPEG, PNG, or WebP image smaller than 500 KB.' });
+    }
+    const teacherProfile = await prisma.teacherProfile.findUnique({ where: { userId: auth.id } });
+    if (!teacherProfile) return res.status(404).json({ error: 'Teacher profile not found.' });
+    await prisma.teacherProfile.update({ where: { userId: auth.id }, data: { publicImageUrl } });
+    return res.json({ publicImageUrl });
   });
   // Token-authenticated calendar subscription feed (Phase 6) - a calendar
   // app (Apple Calendar, Google Calendar, Outlook "subscribe from web")
