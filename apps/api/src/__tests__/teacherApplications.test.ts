@@ -76,7 +76,7 @@ describe('applyForTeacher: structured address validation', () => {
     const input = { ...VALID_INPUT, postalCode: '<script>' };
     await expect(
       teacherApplicationResolvers.Mutation.applyForTeacher(null, { input }, { prisma, user: studentUser } as any),
-    ).rejects.toThrow("isn't valid");
+    ).rejects.toThrow("isn't a valid format");
   });
 
   it('rejects a city name with disallowed characters', async () => {
@@ -124,6 +124,83 @@ describe('applyForTeacher: structured address validation', () => {
     await expect(
       teacherApplicationResolvers.Mutation.applyForTeacher(null, { input }, { prisma, user: studentUser } as any),
     ).rejects.toThrow('Date of birth is invalid.');
+  });
+
+  // Regression: postal code used one generic pattern for every country, so
+  // "12" passed for a Swiss address as happily as the real "8001" did.
+  describe('country-aware postal code format', () => {
+    it('accepts a correctly-formatted Swiss postal code (4 digits)', async () => {
+      const prisma = fakePrisma();
+      const input = { ...VALID_INPUT, country: 'Switzerland', postalCode: '8001' };
+      const result = await teacherApplicationResolvers.Mutation.applyForTeacher(
+        null,
+        { input },
+        { prisma, user: studentUser } as any,
+      );
+      expect(result.postalCode).toBe('8001');
+    });
+
+    it.each(['80', '800', '80012', 'CH-8001'])('rejects an invalid Swiss postal code %s', async (postalCode) => {
+      const prisma = fakePrisma();
+      const input = { ...VALID_INPUT, country: 'Switzerland', postalCode };
+      await expect(
+        teacherApplicationResolvers.Mutation.applyForTeacher(null, { input }, { prisma, user: studentUser } as any),
+      ).rejects.toThrow("isn't a valid format");
+    });
+
+    it('accepts a correctly-formatted Dutch postal code (4 digits + 2 letters)', async () => {
+      const prisma = fakePrisma();
+      const input = { ...VALID_INPUT, country: 'Netherlands', postalCode: '1011 AB' };
+      const result = await teacherApplicationResolvers.Mutation.applyForTeacher(
+        null,
+        { input },
+        { prisma, user: studentUser } as any,
+      );
+      expect(result.postalCode).toBe('1011 AB');
+    });
+
+    it('rejects a Dutch postal code missing the letter suffix', async () => {
+      const prisma = fakePrisma();
+      const input = { ...VALID_INPUT, country: 'Netherlands', postalCode: '1011' };
+      await expect(
+        teacherApplicationResolvers.Mutation.applyForTeacher(null, { input }, { prisma, user: studentUser } as any),
+      ).rejects.toThrow("isn't a valid format");
+    });
+
+    it('falls back to the generic pattern for a country with no specific format (e.g. "Other")', async () => {
+      const prisma = fakePrisma();
+      const input = { ...VALID_INPUT, country: 'Other', postalCode: 'ABC-1234' };
+      const result = await teacherApplicationResolvers.Mutation.applyForTeacher(
+        null,
+        { input },
+        { prisma, user: studentUser } as any,
+      );
+      expect(result.postalCode).toBe('ABC-1234');
+    });
+  });
+
+  // Regression: a house number needed at least one letter OR digit, so a
+  // house number that was only letters ("b" alone, no actual number) was
+  // wrongly accepted as valid.
+  describe('house number must include a digit', () => {
+    it.each(['12b', '221B', '12-14', '12 bis', '12/3'])('accepts a real house number %s', async (houseNumber) => {
+      const prisma = fakePrisma();
+      const input = { ...VALID_INPUT, houseNumber };
+      const result = await teacherApplicationResolvers.Mutation.applyForTeacher(
+        null,
+        { input },
+        { prisma, user: studentUser } as any,
+      );
+      expect(result.houseNumber).toBe(houseNumber);
+    });
+
+    it.each(['b', 'abc', '-'])('rejects a house number with no digit at all (%s)', async (houseNumber) => {
+      const prisma = fakePrisma();
+      const input = { ...VALID_INPUT, houseNumber };
+      await expect(
+        teacherApplicationResolvers.Mutation.applyForTeacher(null, { input }, { prisma, user: studentUser } as any),
+      ).rejects.toThrow("isn't valid");
+    });
   });
 });
 

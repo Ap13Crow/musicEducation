@@ -84,10 +84,58 @@ const COUNTRIES = [
 // ASCII apostrophe and typographic quote marks, so real names like
 // "St John's"/"St John’s" or "Côte d’Ivoire" aren't rejected.
 const STREET_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.,'‘’\p{Pd}]{0,99}$/u;
-const HOUSE_NUMBER_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.\p{Pd}/]{0,14}$/u;
-const POSTAL_CODE_PATTERN = /^[\p{L}0-9][\p{L}0-9\s\p{Pd}]{0,11}$/u;
+// Requires at least one digit - "b" alone isn't a real house number, but
+// "12b"/"221B"/"12-14"/"12 bis" are all fine. Mirrors the resolver.
+const HOUSE_NUMBER_PATTERN = /^(?=.*\d)[\p{L}0-9][\p{L}0-9\s.\p{Pd}/]{0,14}$/u;
 const CITY_PATTERN = /^[\p{L}][\p{L}\s.'‘’\p{Pd}]{0,99}$/u;
 const STATE_PATTERN = /^[\p{L}0-9][\p{L}0-9\s.'‘’\p{Pd}]{0,59}$/u;
+
+// Mirrors POSTAL_CODE_PATTERNS_BY_COUNTRY in teacherApplications.ts - a
+// generic pattern would accept "12" as a valid Swiss postal code just
+// because the characters were plausible. Keyed by the exact strings in
+// COUNTRIES above; the resolver is the authority and re-checks this.
+const POSTAL_CODE_PATTERNS_BY_COUNTRY: Record<string, RegExp> = {
+  Austria: /^\d{4}$/,
+  Belgium: /^\d{4}$/,
+  Bulgaria: /^\d{4}$/,
+  Canada: /^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$/,
+  Croatia: /^\d{5}$/,
+  Cyprus: /^\d{4}$/,
+  Czechia: /^\d{3} ?\d{2}$/,
+  Denmark: /^\d{4}$/,
+  Estonia: /^\d{5}$/,
+  Finland: /^\d{5}$/,
+  France: /^\d{5}$/,
+  Germany: /^\d{5}$/,
+  Greece: /^\d{3} ?\d{2}$/,
+  Hungary: /^\d{4}$/,
+  Iceland: /^\d{3}$/,
+  Ireland: /^[A-Za-z]\d[A-Za-z0-9] ?[A-Za-z0-9]{4}$/,
+  Italy: /^\d{5}$/,
+  Latvia: /^(LV-)?\d{4}$/,
+  Liechtenstein: /^\d{4}$/,
+  Lithuania: /^(LT-)?\d{5}$/,
+  Luxembourg: /^\d{4}$/,
+  Malta: /^[A-Za-z]{3} ?\d{4}$/,
+  Netherlands: /^\d{4} ?[A-Za-z]{2}$/,
+  Norway: /^\d{4}$/,
+  Poland: /^\d{2}-\d{3}$/,
+  Portugal: /^\d{4}-\d{3}$/,
+  Romania: /^\d{6}$/,
+  Slovakia: /^\d{3} ?\d{2}$/,
+  Slovenia: /^(SI-)?\d{4}$/,
+  Spain: /^\d{5}$/,
+  Sweden: /^\d{3} ?\d{2}$/,
+  Switzerland: /^\d{4}$/,
+  'United Kingdom': /^[A-Za-z]{1,2}\d[A-Za-z\d]? ?\d[A-Za-z]{2}$/,
+  'United States': /^\d{5}(-\d{4})?$/,
+};
+const POSTAL_CODE_FALLBACK_PATTERN = /^[\p{L}0-9][\p{L}0-9\s\p{Pd}]{0,11}$/u;
+
+function isValidPostalCode(postalCode: string, country: string): boolean {
+  const pattern = POSTAL_CODE_PATTERNS_BY_COUNTRY[country] ?? POSTAL_CODE_FALLBACK_PATTERN;
+  return pattern.test(postalCode);
+}
 
 const STEPS = ['About you', 'Photo', 'Your teaching', 'Motivation', 'Proof & video', 'Review'] as const;
 
@@ -212,11 +260,12 @@ export default function BecomeTeacherPage() {
     if (index === 0) {
       if (!form.fullName.trim()) return 'Enter your full name.';
       if (!STREET_PATTERN.test(form.street.trim())) return 'Enter a valid street name.';
-      if (!HOUSE_NUMBER_PATTERN.test(form.houseNumber.trim())) return 'Enter a valid house/street number.';
-      if (!POSTAL_CODE_PATTERN.test(form.postalCode.trim())) return 'Enter a valid postal code.';
+      if (!HOUSE_NUMBER_PATTERN.test(form.houseNumber.trim())) return 'Enter a valid house/street number (must include a number).';
       if (!CITY_PATTERN.test(form.city.trim())) return 'Enter a valid town/city.';
       if (form.state.trim() && !STATE_PATTERN.test(form.state.trim())) return 'Enter a valid state/region, or leave it blank.';
       if (!form.country) return 'Select your country.';
+      // Country-dependent, so this must run after the country check above.
+      if (!isValidPostalCode(form.postalCode.trim(), form.country)) return `Enter a valid postal code for ${form.country}.`;
       const age = form.birthdate ? calculateAge(form.birthdate) : null;
       if (age === null) return 'Enter your date of birth.';
       if (age < MIN_TEACHER_AGE_YEARS) return `You must be at least ${MIN_TEACHER_AGE_YEARS} to apply as a teacher.`;
