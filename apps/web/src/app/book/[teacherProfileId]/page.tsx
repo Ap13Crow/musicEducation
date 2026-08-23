@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { gql, useMutation, useQuery } from '@apollo/client';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
@@ -25,6 +25,18 @@ const BOOK = gql`
     bookSession(input: $input) { id status startsAt endsAt }
   }
 `;
+const CREATE_CHECKOUT_SESSION = gql`
+  mutation CreateBookingCheckoutSession($type: String!, $refId: ID!) {
+    createCheckoutSession(type: $type, refId: $refId) { checkoutUrl }
+  }
+`;
+
+// Every format a teacher can be booked in when they haven't set
+// teachingFormats at all (older profiles from before that field existed) -
+// the previous behavior, kept as a fallback so a teacher with no formats
+// configured isn't suddenly unbookable.
+const ALL_FORMATS = ['ONLINE', 'IN_PERSON', 'HYBRID'];
+const FORMAT_LABELS: Record<string, string> = { ONLINE: 'Online', IN_PERSON: 'In person', HYBRID: 'Hybrid' };
 
 const UNAVAILABILITY_LABELS: Record<string, string> = {
   UNAVAILABLE: 'Unavailable',
@@ -89,10 +101,28 @@ export default function BookTeacherPage() {
     variables: { id: teacherProfileId, from: weekStart.toISOString(), to: rangeEnd.toISOString() },
   });
   const [startsAt, setStartsAt] = useState('');
-  const [format, setFormat] = useState('ONLINE');
+  const [format, setFormat] = useState('');
   const [book, { loading: saving, error }] = useMutation(BOOK);
+  const [createCheckout, { loading: checkingOut }] = useMutation(CREATE_CHECKOUT_SESSION);
+  const [checkoutError, setCheckoutError] = useState('');
   const teacher = data?.teacher;
   const isOwnProfile = Boolean(session?.user?.email && session.user.email === teacher?.user?.email);
+
+  // Only a format the teacher actually offers can be selected - previously
+  // every format was offered regardless of what the teacher set (direct
+  // user feedback: "when a teacher set the appointment to a specific type
+  // ... only these can be selected"). Falls back to every format for an
+  // older profile that never set teachingFormats at all, so it doesn't
+  // suddenly become unbookable.
+  const availableFormats = useMemo(
+    () => (teacher?.teachingFormats?.length ? teacher.teachingFormats : ALL_FORMATS),
+    [teacher?.teachingFormats],
+  );
+  useEffect(() => {
+    if (availableFormats.length > 0 && !availableFormats.includes(format)) {
+      setFormat(availableFormats[0]);
+    }
+  }, [availableFormats, format]);
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => {
     const d = new Date(weekStart);
@@ -146,10 +176,39 @@ export default function BookTeacherPage() {
     return { hour, startsAt: cellStart, bookable: true, blockedLabel: null };
   }
 
+  // "The payment and check-out process for bookings is not working yet" -
+  // direct user feedback. bookSession now always creates a priced lesson
+  // PENDING (never CONFIRMED without payment - see the requiresPayment
+  // comment in apps/api/src/resolvers/bookings.ts), so this is what
+  // actually collects that payment: create the booking, then immediately
+  // send the student to Stripe checkout for it, exactly like the existing
+  // course-purchase flow (apps/web/src/app/courses/[slug]/page.tsx). A free
+  // lesson (hourlyRate 0/null) skips checkout entirely, unchanged from
+  // before.
+  const requiresPayment = Number(teacher?.hourlyRate ?? 0) > 0;
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!startsAt) return;
-    await book({ variables: { input: { teacherProfileId, startsAt, durationMin: 60, format, instrument: teacher?.instruments?.[0] } } });
+    setCheckoutError('');
+    const { data: bookData } = await book({
+      variables: { input: { teacherProfileId, startsAt, durationMin: 60, format, instrument: teacher?.instruments?.[0] } },
+    });
+    const newBooking = bookData?.bookSession;
+    if (newBooking && requiresPayment) {
+      try {
+        const { data: checkoutData } = await createCheckout({ variables: { type: 'booking', refId: newBooking.id } });
+        const checkoutUrl = checkoutData?.createCheckoutSession?.checkoutUrl;
+        if (checkoutUrl) {
+          window.location.href = checkoutUrl;
+          return;
+        }
+        setCheckoutError('Could not start checkout - your request was saved, retry payment from your profile page.');
+      } catch (checkoutErr) {
+        setCheckoutError(checkoutErr instanceof Error ? checkoutErr.message : 'Could not start checkout.');
+      }
+      return;
+    }
     router.push('/profile');
   }
 
@@ -279,19 +338,28 @@ export default function BookTeacherPage() {
                 <label className="rounded-xl border border-gray-200 p-4 text-sm">
                   <span className="flex items-center gap-2 font-medium">{format === 'ONLINE' ? <Video className="h-4 w-4" /> : <MapPin className="h-4 w-4" />}Format</span>
                   <select className="input mt-2 w-full" value={format} onChange={(e) => setFormat(e.target.value)}>
-                    <option value="ONLINE">Online</option>
-                    <option value="IN_PERSON">In person</option>
-                    <option value="HYBRID">Hybrid</option>
+                    {availableFormats.map((f: string) => (
+                      <option key={f} value={f}>{FORMAT_LABELS[f] ?? f}</option>
+                    ))}
                   </select>
                 </label>
               </div>
-              {teacher.hourlyRate && <p className="mt-4 text-sm text-gray-600">Price: {teacher.currency} {Number(teacher.hourlyRate).toFixed(2)} for one hour.</p>}
+              {teacher.hourlyRate ? (
+                <p className="mt-4 text-sm text-gray-600">
+                  Price: {teacher.currency} {Number(teacher.hourlyRate).toFixed(2)} for one hour - you&rsquo;ll pay by card on the next step.
+                </p>
+              ) : (
+                <p className="mt-4 text-sm text-gray-600">This teacher offers free lessons.</p>
+              )}
               <p className="mt-2 text-xs text-gray-400">
                 Bookable up to {leadDays === 0 ? 'the end of the day before the lesson' : `${leadDays} day${leadDays === 1 ? '' : 's'} in advance`}.
                 {teacher.cancellationDays ? ` Free cancellation up to ${teacher.cancellationDays} days before - after that, the lesson still counts as taken.` : ''}
               </p>
               {error && <p className="mt-4 text-sm text-red-600">{error.message}</p>}
-              <button disabled={saving || !startsAt} className="btn-primary mt-5 rounded-lg px-5 py-2.5 disabled:opacity-50">{saving ? 'Booking…' : 'Request this lesson'}</button>
+              {checkoutError && <p className="mt-4 text-sm text-red-600">{checkoutError}</p>}
+              <button disabled={saving || checkingOut || !startsAt} className="btn-primary mt-5 rounded-lg px-5 py-2.5 disabled:opacity-50">
+                {saving ? 'Booking…' : checkingOut ? 'Redirecting to payment…' : requiresPayment ? 'Continue to payment' : 'Request this lesson'}
+              </button>
             </section>
           </form>
         </>

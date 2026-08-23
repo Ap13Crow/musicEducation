@@ -50,19 +50,30 @@ function checkoutSessionCompletedEvent(metadata: Record<string, string>) {
 function fakePrismaForBookingWebhook(overrides: {
   paymentCreateThrowsP2002?: boolean;
   claimSucceeds: boolean;
+  // The booking this resolver's own capacity-reservation lookup should see
+  // (its first tx.booking.findUnique call). notifyBookingConfirmed makes
+  // its own separate findUnique call right after - always stubbed to null
+  // (its early-return-on-not-found guard), since this test file isn't
+  // exercising its email-content logic (see ics.test.ts/schema-wiring.test.ts
+  // for that) and a bare {teacherProfileId, instrument, userId} row would
+  // crash it (it also reads booking.user/booking.teacherProfile.user).
+  bookingForCapacity?: { teacherProfileId: string; instrument: string | null; userId: string } | null;
 }) {
   const paymentRow = { id: 'payment-1', amount: { toNumber: () => 60 }, currency: 'CHF' };
   const bookingUpdate = jest.fn().mockResolvedValue({});
   const paymentUpdateMany = jest.fn().mockResolvedValue({ count: overrides.claimSucceeds ? 1 : 0 });
-  // Mirrors notifyBookingConfirmed's own early-return-on-not-found guard -
-  // this test only needs to prove *whether* it was invoked (via this call
-  // being made), not exercise its own email-content logic (see ics.test.ts/
-  // schema-wiring.test.ts for that).
-  const txBookingFindUnique = jest.fn().mockResolvedValue(null);
+  const txBookingFindUnique = jest.fn()
+    .mockResolvedValueOnce(overrides.bookingForCapacity ?? null)
+    .mockResolvedValue(null);
+  // No TeacherInstrumentCapacity row configured -> reserveInstrumentCapacity
+  // reads it, finds nothing, and no-ops (see capacity.test.ts for its own
+  // enforcement logic) - this test only needs to prove the call happened.
+  const queryRaw = jest.fn().mockResolvedValue([]);
 
   const tx = {
     booking: { update: bookingUpdate, findUnique: txBookingFindUnique },
     payment: { updateMany: paymentUpdateMany },
+    $queryRaw: queryRaw,
   };
 
   const prisma: any = {
@@ -75,7 +86,7 @@ function fakePrismaForBookingWebhook(overrides: {
     $transaction: jest.fn(async (callback: (tx: unknown) => Promise<void>) => callback(tx)),
   };
 
-  return { prisma, tx, bookingUpdate, paymentUpdateMany, txBookingFindUnique };
+  return { prisma, tx, bookingUpdate, paymentUpdateMany, txBookingFindUnique, queryRaw };
 }
 
 describe('handleStripeWebhook - booking branch atomicity', () => {
@@ -127,5 +138,34 @@ describe('handleStripeWebhook - booking branch atomicity', () => {
     expect(prisma.payment.findUniqueOrThrow).toHaveBeenCalled();
     expect(bookingUpdate).toHaveBeenCalled();
     expect(txBookingFindUnique).toHaveBeenCalled();
+  });
+
+  // A paid booking is never created CONFIRMED (see bookSession's
+  // requiresPayment in bookings.ts) - nothing has reserved a capacity seat
+  // for it yet, so this webhook, the true confirmation moment, must do it.
+  it('reserves instrument capacity when the claim succeeds and the booking has an instrument', async () => {
+    const bookingForCapacity = { teacherProfileId: 'teacher-1', instrument: 'Piano', userId: 'user-1' };
+    const { prisma, queryRaw } = fakePrismaForBookingWebhook({ claimSucceeds: true, bookingForCapacity });
+    const { rawBody, header } = buildWebhookRequest(
+      checkoutSessionCompletedEvent({ userId: 'user-1', type: 'booking', refId: 'booking-1' }),
+    );
+
+    await handleStripeWebhook(prisma, rawBody, header);
+
+    // reserveInstrumentCapacity's own TeacherInstrumentCapacity lookup -
+    // proves it actually ran for this booking's teacher/instrument.
+    expect(queryRaw).toHaveBeenCalled();
+  });
+
+  it('never reserves capacity when the claim was already made (e.g. a Stripe retry)', async () => {
+    const bookingForCapacity = { teacherProfileId: 'teacher-1', instrument: 'Piano', userId: 'user-1' };
+    const { prisma, queryRaw } = fakePrismaForBookingWebhook({ claimSucceeds: false, bookingForCapacity });
+    const { rawBody, header } = buildWebhookRequest(
+      checkoutSessionCompletedEvent({ userId: 'user-1', type: 'booking', refId: 'booking-1' }),
+    );
+
+    await handleStripeWebhook(prisma, rawBody, header);
+
+    expect(queryRaw).not.toHaveBeenCalled();
   });
 });

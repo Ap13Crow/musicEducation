@@ -63,6 +63,17 @@ const UPDATE_PROFILE = gql`
   }
 `;
 
+// Backend has supported this since Phase 4 (apps/api/src/resolvers/
+// bookings.ts) - restores a package credit for an on-time cancellation,
+// keeps it spent for a late one - but nothing in the UI ever called it
+// ("the cancellation of bookings for students ... is also untouched",
+// direct user feedback).
+const CANCEL_BOOKING = gql`
+  mutation CancelBooking($bookingId: ID!) {
+    cancelBooking(bookingId: $bookingId) { id status lateCancellation }
+  }
+`;
+
 // "Recently visited" -> "confirm participation" -> "evaluate" -> XP credited.
 // See apps/api/src/resolvers/discovery.ts / reviews.ts.
 const GET_RECENTLY_VIEWED_EVENTS = gql`
@@ -153,6 +164,9 @@ export default function ProfilePage() {
   );
   const [confirmAttendance, { loading: confirming }] = useMutation(CONFIRM_EXTERNAL_EVENT_ATTENDANCE);
   const [evaluateEvent, { loading: evaluating }] = useMutation(EVALUATE_EXTERNAL_EVENT);
+  const [cancelBooking, { loading: cancelling }] = useMutation(CANCEL_BOOKING);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState('');
 
   const { data: feedTokenData, refetch: refetchFeedToken } = useQuery(GET_CALENDAR_FEED_TOKEN, { skip: !liveApiEnabled });
   const [rotateFeedToken, { loading: rotatingFeedToken }] = useMutation(ROTATE_CALENDAR_FEED_TOKEN);
@@ -238,6 +252,20 @@ export default function ProfilePage() {
       setPhotoError(error instanceof Error ? error.message : 'Photo upload failed.');
     } finally {
       setUploadingPhoto(false);
+    }
+  }
+
+  async function handleCancelBooking(bookingId: string) {
+    if (!confirm('Cancel this lesson? Depending on the teacher’s cancellation policy, this may still count as a late cancellation.')) return;
+    setCancelError('');
+    setCancellingId(bookingId);
+    try {
+      await cancelBooking({ variables: { bookingId } });
+      await refetch();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : 'Could not cancel this lesson.');
+    } finally {
+      setCancellingId(null);
     }
   }
 
@@ -564,6 +592,7 @@ export default function ProfilePage() {
                   Book a lesson <ExternalLink className="h-3 w-3" />
                 </a>
               </div>
+              {cancelError && <p className="mb-3 text-sm text-red-600">{cancelError}</p>}
               {mySessions.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center">
                   <p className="text-sm text-gray-500">No sessions booked yet.</p>
@@ -593,6 +622,16 @@ export default function ProfilePage() {
                       }`}>
                         {b.status}
                       </span>
+                      {(b.status === 'CONFIRMED' || b.status === 'PENDING') && (
+                        <button
+                          type="button"
+                          disabled={cancelling && cancellingId === b.id}
+                          onClick={() => handleCancelBooking(b.id)}
+                          className="shrink-0 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:border-red-300 hover:text-red-600 disabled:opacity-50"
+                        >
+                          {cancelling && cancellingId === b.id ? 'Cancelling…' : 'Cancel'}
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -973,12 +1012,7 @@ function ProfileSkeleton() {
       </div>
       <div className="mx-auto max-w-4xl px-6 py-8">
         <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 space-y-6">
-            {[1, 2, 3].map(i => <div key={i} className="card h-48 animate-pulse bg-gray-100" />)}
-          </div>
-          <div className="space-y-6">
-            {[1, 2].map(i => <div key={i} className="card h-48 animate-pulse bg-gray-100" />)}
-          </div>
+          {[1, 2, 3].map(i => <div key={i} className="card h-48 animate-pulse bg-gray-100" />)}
         </div>
       </div>
     </div>

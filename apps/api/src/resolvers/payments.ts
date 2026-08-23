@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
 import { sendPurchaseConfirmedEmail } from '../lib/emails.js';
 import { notifyBookingConfirmed } from './bookings.js';
+import { reserveInstrumentCapacity } from '../lib/capacity.js';
 import { isValidSubscriptionTermMonths, computeSubscriptionTotal, currentSubscriptionDiscountPct } from '../lib/pricing.js';
 import { grantCredits } from '../lib/lessonCredits.js';
 import type { GraphQLContext } from '../types.js';
@@ -191,6 +192,16 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
           data: { confirmationEmailAt: new Date() },
         });
         if (claimed.count > 0) {
+          // This is the true confirmation moment for a paid booking (see
+          // bookSession's requiresPayment comment in bookings.ts - a paid
+          // booking is never created CONFIRMED, so nothing has reserved a
+          // capacity seat for it yet). Gated on the same claim that guards
+          // the confirmation email, so a Stripe retry redelivering this
+          // event never reserves a second seat for the same booking.
+          const booking = await tx.booking.findUnique({ where: { id: refId } });
+          if (booking) {
+            await reserveInstrumentCapacity(tx, booking.teacherProfileId, booking.instrument, booking.userId);
+          }
           await notifyBookingConfirmed(tx, refId!);
         }
       });
