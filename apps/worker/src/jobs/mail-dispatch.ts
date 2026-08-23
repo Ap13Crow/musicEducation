@@ -60,7 +60,20 @@ export const mailDispatchJob: Job = {
         });
         sent += 1;
       } catch (error) {
-        const lastError = error instanceof Error ? error.message : String(error);
+        // nodemailer's SMTP errors carry structured detail beyond
+        // .message (a bare AUTH failure's .message is often just "Invalid
+        // login", while .code/.responseCode/.command pinpoint whether this
+        // is a credentials problem (EAUTH/535), a connectivity problem to
+        // the relay itself (ECONNECTION/ETIMEDOUT), or something else) -
+        // folding them into the one lastError string (the schema has no
+        // structured field for this) means the admin Mail Queue tab shows
+        // the actionable detail on first read, not just "Invalid login".
+        const base = error instanceof Error ? error.message : String(error);
+        const code = (error as any)?.code;
+        const responseCode = (error as any)?.responseCode;
+        const command = (error as any)?.command;
+        const detail = [code && `code=${code}`, responseCode && `responseCode=${responseCode}`, command && `command=${command}`].filter(Boolean).join(' ');
+        const lastError = detail ? `${base} (${detail})` : base;
         const exhausted = attempts >= message.maxAttempts;
         await ctx.prisma.mailOutboxMessage.update({
           where: { id: message.id },
