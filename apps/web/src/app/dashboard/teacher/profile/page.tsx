@@ -6,7 +6,7 @@ import { gql, useMutation, useQuery } from '@apollo/client';
 import { Award, BookOpen, Calendar, MapPin, Star, UserRoundCheck, Users as UsersIcon, Video } from 'lucide-react';
 import RoleGate from '@/components/auth/RoleGate';
 import { toYouTubeEmbedUrl } from '@/lib/youtube';
-import { uploadFileToStorage, resizeImageToDataUrl } from '@/lib/upload';
+import { resizeImageToDataUrl } from '@/lib/upload';
 import { membershipLabel } from '@/lib/membership';
 
 const INSTRUMENTS = ['Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute', 'Clarinet', 'Oboe', 'Trumpet', 'Organ', 'Harp', 'Percussion', 'Composition', 'Theory'];
@@ -32,7 +32,6 @@ const GET = gql`
     myBookings(page: 1, limit: 100) {
       id status
     }
-    storageConfigured
   }
 `;
 const UPDATE = gql`
@@ -49,11 +48,6 @@ const UPDATE = gql`
       id headline teachingBio hourlyRate instruments specializations teachingFormats isAvailable
       publicImageUrl introVideoUrl introVideoVisible
     }
-  }
-`;
-const REQUEST_UPLOAD_URL = gql`
-  mutation RequestTeacherImageUploadUrl($purpose: UploadPurpose!, $filename: String!, $contentType: String!) {
-    requestUploadUrl(purpose: $purpose, filename: $filename, contentType: $contentType) { uploadUrl fileUrl }
   }
 `;
 const UPDATE_POLICY = gql`
@@ -74,14 +68,12 @@ const SET_INSTRUMENT_CAPACITY = gql`
 export default function TeacherProfessionalProfilePage() {
   const { data, loading, error, refetch } = useQuery(GET, { fetchPolicy: 'cache-and-network' });
   const [update, { loading: saving }] = useMutation(UPDATE);
-  const [requestUploadUrl] = useMutation(REQUEST_UPLOAD_URL);
   const [updatePolicy, { loading: savingPolicy, error: policyError }] = useMutation(UPDATE_POLICY);
   const [setCapacity, { loading: savingCapacity }] = useMutation(SET_INSTRUMENT_CAPACITY);
   const [policyDraft, setPolicyDraft] = useState({ leadDays: '1', cancellationDays: '2' });
   const [capacityDraft, setCapacityDraft] = useState<{ instrument: string; maxActiveStudents: string }>({ instrument: '', maxActiveStudents: '' });
   const profile = data?.me?.teacherProfile;
   const account = data?.me?.profile;
-  const storageConfigured = data?.storageConfigured ?? false;
 
   const [form, setForm] = useState({ headline: '', teachingBio: '', hourlyRate: '', currency: 'CHF', specializations: '' });
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>([]);
@@ -163,16 +155,18 @@ export default function TeacherProfessionalProfilePage() {
     setImageError(null);
     setImageUploading(true);
     try {
-      // Real S3 upload when configured; otherwise fall back to a resized
-      // inline data: URL (see requireInlineTeacherPhoto in the API) so the
-      // photo still saves on a deployment without S3_* secrets.
-      const fileUrl = storageConfigured
-        ? await uploadFileToStorage(async (filename, contentType) => {
-            const { data } = await requestUploadUrl({ variables: { purpose: 'TEACHER_PROFILE_IMAGE', filename, contentType } });
-            return data.requestUploadUrl;
-          }, file)
-        : await resizeImageToDataUrl(file);
-      await update({ variables: { publicImageUrl: fileUrl } });
+      // Same mechanism as the personal account avatar (POST /profile/avatar)
+      // and the become-teacher wizard's photo step: resized/compressed
+      // in-browser, then saved straight to Postgres via its own small REST
+      // endpoint - not routed through updateTeacherProfile/GraphQL or S3.
+      const publicImageUrl = await resizeImageToDataUrl(file);
+      const res = await fetch('/api/teacher/photo', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ publicImageUrl }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error ?? 'Upload failed.');
       await refetch();
     } catch (err: any) {
       setImageError(err?.message ?? 'Upload failed.');
