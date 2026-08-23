@@ -309,9 +309,14 @@ model TeacherApplication {
   // Private, admin-review-only - never copied onto the public TeacherProfile.
   gender          String?
   motivation      String?
-  // Object storage URLs (see apps/api/src/lib/storage.ts) - populated via
-  // requestUploadUrl(purpose: TEACHER_APPLICATION_*) then attached here on
-  // submit. Never inline file data.
+  // Populated via the /teacher-application/cv, /audio, /document REST
+  // endpoints (apps/api/src/index.ts) as a small base64 data: URL saved
+  // directly here, no object storage involved - or via requestUploadUrl
+  // (purpose: TEACHER_APPLICATION_*, see apps/api/src/lib/storage.ts) on a
+  // deployment that does have S3_* configured, in which case this holds a
+  // real S3 fileUrl instead. Either way, whatever string is here is the
+  // value to link to/download - callers must not assume one format or the
+  // other.
   cvUrl           String?
   audioSampleUrl  String?
   documentUrls    String[]                  @default([])
@@ -1181,7 +1186,7 @@ model AdminSetting {
   updatedAt DateTime @updatedAt
 }
 
-// ── External event discovery (read-only projections) ──────────────────────────────────────────────────────────
+// ── External event discovery (read-only projections) ────────────────────────────────────────────────────────────────
 // Cached, normalized rows from external providers (Ticketmaster now, Classictic
 // later). Kept separate from Event: these are discovery inputs, never authored
 // content, and never enter the authored-event publishing flow.
