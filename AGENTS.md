@@ -10,7 +10,7 @@ The target runtime has three application workloads: `web`, `api`, and `worker`. 
 
 - Never commit `.env` files, credentials, private keys, Kubernetes Secrets, service-account JSON, mailbox passwords, or real API tokens.
 - Keep `.env.example` to safe placeholders. Development payments must use Stripe test mode.
-- Do not deploy, run `kubectl apply`, change cloud resources, rotate live credentials, or modify GitHub settings without explicit user authorization.
+- Do not deploy, run `kubectl apply`, change cloud resources, rotate live credentials, or modify GitHub settings outside the protected GitHub Actions workflow without explicit user authorization.
 - Treat `docker-compose*.yml`, `docker/`, and `k8s/deployment.yaml` as legacy migration references. The new provider-neutral Kubernetes scaffold is under `deploy/`.
 - Do not add mutable `latest` image tags to target manifests. Future image references must use commit tags or digests.
 - Do not reintroduce Caddy, Redis, MinIO, Moodle, LibreBooking, or pretix into the initial cluster unless an approved architecture decision requires them.
@@ -34,3 +34,4 @@ The target runtime has three application workloads: `web`, `api`, and `worker`. 
 - Keep payment, entitlement, progress, XP, and achievement state deterministic and auditable.
 - Add tests with behavior changes. Prefer contract tests at integration boundaries and conflict/concurrency tests for booking and payment flows.
 - Use Kustomize for the initial Kubernetes layout. Keep `base` provider-neutral and put environment differences in `overlays`.
+- Build application images on GitHub-hosted runners. The production self-hosted runner is only for manual, protected k3s reconciliation and diagnostics; never target it from pull-request jobs.

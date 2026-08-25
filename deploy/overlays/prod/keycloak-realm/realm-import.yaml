@@ -1,0 +1,79 @@
+apiVersion: k8s.keycloak.org/v2beta1
+kind: KeycloakRealmImport
+metadata:
+  name: mymusiccoach-production-realm
+  labels:
+    app.kubernetes.io/name: mymusiccoach-production-realm
+    app.kubernetes.io/component: realm-bootstrap
+    app.kubernetes.io/part-of: mymusic-coach
+spec:
+  keycloakCRName: keycloak
+  labels:
+    app.kubernetes.io/name: mymusiccoach-production-realm
+    app.kubernetes.io/component: realm-bootstrap
+    app.kubernetes.io/part-of: mymusic-coach
+  placeholders:
+    WEB_CLIENT_SECRET:
+      secret:
+        name: keycloak-client-secrets
+        key: WEB_CLIENT_SECRET
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  realm:
+    id: mymusic-coach
+    realm: mymusic-coach
+    displayName: My Music Coach
+    enabled: true
+    sslRequired: external
+    registrationAllowed: true
+    registrationEmailAsUsername: true
+    loginWithEmailAllowed: true
+    duplicateEmailsAllowed: false
+    resetPasswordAllowed: true
+    editUsernameAllowed: false
+    rememberMe: true
+    verifyEmail: false
+    bruteForceProtected: true
+    internationalizationEnabled: true
+    supportedLocales:
+      - en
+      - de
+      - fr
+    defaultLocale: en
+    roles:
+      realm:
+        - name: STUDENT
+          description: Registered learner
+        - name: TEACHER
+          description: Verified music teacher
+        - name: ADMIN
+          description: Platform administrator
+    defaultRoles:
+      - STUDENT
+    clients:
+      - clientId: mymusic-coach-web
+        name: My Music Coach Web
+        description: Production browser and server-side web application
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        secret: ${WEB_CLIENT_SECRET}
+        standardFlowEnabled: true
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: false
+        frontchannelLogout: true
+        rootUrl: https://mymusic.coach
+        baseUrl: https://mymusic.coach/
+        redirectUris:
+          - https://mymusic.coach/*
+        webOrigins:
+          - https://mymusic.coach
+        attributes:
+          pkce.code.challenge.method: S256
+          post.logout.redirect.uris: https://mymusic.coach/*

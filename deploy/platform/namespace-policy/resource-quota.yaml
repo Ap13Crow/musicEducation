@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: namespace-budget
+spec:
+  hard:
+    requests.cpu: '8'
+    requests.memory: 16Gi
+    limits.cpu: '16'
+    limits.memory: 32Gi
+    requests.storage: 300Gi
+    persistentvolumeclaims: '10'
+    count/secrets: '50'
+    count/configmaps: '100'
+    count/services: '25'
