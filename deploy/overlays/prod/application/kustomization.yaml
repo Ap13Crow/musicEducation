@@ -1,0 +1,82 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../workloads/application
+
+images:
+  - name: mymusiccoach/api
+    newName: ghcr.io/ap13crow/mymusiccoach-api
+    newTag: bootstrap
+  - name: mymusiccoach/web
+    newName: ghcr.io/ap13crow/mymusiccoach-web
+    newTag: bootstrap
+  - name: mymusiccoach/worker
+    newName: ghcr.io/ap13crow/mymusiccoach-worker
+    newTag: bootstrap
+
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: api
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: api
+      spec:
+        revisionHistoryLimit: 3
+        template:
+          spec:
+            imagePullSecrets:
+              - name: ghcr-pull
+            containers:
+              - name: api
+                env:
+                  - name: CORS_ORIGIN
+                    value: https://mymusic.coach
+                  - name: FRONTEND_URL
+                    value: https://mymusic.coach
+                  - name: KEYCLOAK_ISSUER
+                    value: https://auth.mymusic.coach/realms/mymusic-coach
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: web
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: web
+      spec:
+        revisionHistoryLimit: 3
+        template:
+          spec:
+            imagePullSecrets:
+              - name: ghcr-pull
+            containers:
+              - name: web
+                env:
+                  - name: NEXTAUTH_URL
+                    value: https://mymusic.coach
+                  - name: KEYCLOAK_ISSUER
+                    value: https://auth.mymusic.coach/realms/mymusic-coach
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: worker
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: worker
+      spec:
+        revisionHistoryLimit: 3
+        template:
+          spec:
+            imagePullSecrets:
+              - name: ghcr-pull

@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-initdb
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: mymusic-coach
+data:
+  10-create-databases.sh: |
+    #!/bin/sh
+    set -eu
+
+    psql --set=ON_ERROR_STOP=1 \
+      --username "$POSTGRES_USER" \
+      --dbname postgres \
+      --set=mymusiccoach_password="$MYMUSICCOACH_PASSWORD" \
+      --set=keycloak_password="$KEYCLOAK_PASSWORD" <<'SQL'
+    SELECT format('CREATE ROLE mymusiccoach_app LOGIN PASSWORD %L', :'mymusiccoach_password')
+    WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mymusiccoach_app')\gexec
+
+    SELECT format('CREATE ROLE keycloak_app LOGIN PASSWORD %L', :'keycloak_password')
+    WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'keycloak_app')\gexec
+
+    SELECT 'CREATE DATABASE mymusiccoach OWNER mymusiccoach_app'
+    WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'mymusiccoach')\gexec
+
+    SELECT 'CREATE DATABASE keycloak OWNER keycloak_app'
+    WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'keycloak')\gexec
+
+    REVOKE CONNECT ON DATABASE mymusiccoach FROM keycloak_app;
+    REVOKE CONNECT ON DATABASE keycloak FROM mymusiccoach_app;
+    SQL

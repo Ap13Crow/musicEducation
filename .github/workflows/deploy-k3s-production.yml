@@ -1,0 +1,472 @@
+name: Production k3s platform
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/deploy-k3s-production.yml'
+      - 'apps/api/**'
+      - 'apps/web/**'
+      - 'apps/worker/**'
+      - 'packages/database/**'
+      - 'packages/graphql-schema/**'
+      - 'deploy/**'
+      - 'docs/production-runbook.md'
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Operation to perform on the production k3s host
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - deploy
+          - status
+          - diagnose
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.operation != 'plan' && 'mymusiccoach-k3s-production' || format('mymusiccoach-k3s-validation-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' || inputs.operation == 'plan' }}
+
+env:
+  NAMESPACE: mymusic-coach
+  PUBLIC_URL: https://mymusic.coach
+  OIDC_ISSUER: https://auth.mymusic.coach/realms/mymusic-coach
+  REALM_IMPORT: mymusiccoach-production-realm
+  CLIENT_SECRET_NAME: keycloak-client-secrets
+  IMAGE_PREFIX: ghcr.io/ap13crow/mymusiccoach
+
+jobs:
+  validate:
+    name: Validate production manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.3
+      - name: Render every production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          targets=(
+            deploy/overlays/prod
+            deploy/platform/postgres
+            deploy/operators/keycloak
+            deploy/overlays/prod/keycloak
+            deploy/overlays/prod/keycloak-realm
+            deploy/overlays/prod/application-database
+            deploy/overlays/prod/application
+            deploy/overlays/prod/cloudflare-tunnel
+          )
+          manifests=()
+          for target in "${targets[@]}"; do
+            output="$RUNNER_TEMP/$(tr '/' '-' <<<"$target").yaml"
+            kubectl kustomize "$target" > "$output"
+            test -s "$output"
+            manifests+=("$output")
+          done
+          if grep -Eq '^[[:space:]]*kind:[[:space:]]+Secret[[:space:]]*$' "${manifests[@]}"; then
+            echo 'Rendered manifests must not contain Secret resources.' >&2
+            exit 1
+          fi
+          if grep -Eq '^[[:space:]]*image:[[:space:]]+[^#[:space:]]+:latest([[:space:]]|$)' "${manifests[@]}"; then
+            echo 'Rendered manifests must not use mutable latest image tags.' >&2
+            exit 1
+          fi
+          grep -Fq 'https://mymusic.coach' "$RUNNER_TEMP/deploy-overlays-prod-application.yaml"
+          grep -Fq 'https://auth.mymusic.coach' "$RUNNER_TEMP/deploy-overlays-prod-keycloak.yaml"
+          if grep -Fq 'dev.mymusic.coach' "$RUNNER_TEMP/deploy-overlays-prod-application.yaml" \
+            "$RUNNER_TEMP/deploy-overlays-prod-keycloak.yaml" \
+            "$RUNNER_TEMP/deploy-overlays-prod-keycloak-realm.yaml"; then
+            echo 'Production manifests contain a development hostname.' >&2
+            exit 1
+          fi
+          bash -n deploy/host/k3s/bootstrap.sh
+          bash -n deploy/scripts/sync-application-integrations.sh
+
+  publish:
+    name: Publish immutable application images
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.operation == 'deploy'
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.images.outputs.api }}
+      web: ${{ steps.images.outputs.web }}
+      worker: ${{ steps.images.outputs.worker }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Select immutable image names
+        id: images
+        shell: bash
+        run: |
+          echo "api=$IMAGE_PREFIX-api:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "web=$IMAGE_PREFIX-web:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "worker=$IMAGE_PREFIX-worker:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Build and publish API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.images.outputs.api }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - name: Build and publish web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.images.outputs.web }}
+          build-args: |
+            NEXT_PUBLIC_GRAPHQL_URL=/api/graphql
+            NEXT_PUBLIC_ENABLE_LIVE_API=true
+            NEXT_PUBLIC_KEYCLOAK_ISSUER=${{ env.OIDC_ISSUER }}
+            NEXT_PUBLIC_APP_URL=${{ env.PUBLIC_URL }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+      - name: Build and publish worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.images.outputs.worker }}
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
+
+  reconcile:
+    name: Reconcile the production k3s host
+    needs: [validate, publish]
+    if: >-
+      always() &&
+      needs.validate.result == 'success' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.operation != 'plan' &&
+      (inputs.operation != 'deploy' || needs.publish.result == 'success')
+    runs-on: [self-hosted, linux, x64, mymusiccoach-prod]
+    environment: development
+    env:
+      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      POSTGRES_MYMUSICCOACH_PASSWORD: ${{ secrets.POSTGRES_MYMUSICCOACH_PASSWORD }}
+      POSTGRES_KEYCLOAK_PASSWORD: ${{ secrets.POSTGRES_KEYCLOAK_PASSWORD }}
+      CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+      GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+      STRIPE_WEBHOOK_SECRET_V2: ${{ secrets.STRIPE_WEBHOOK_SECRET_V2 }}
+      TICKETMASTER_API_KEY: ${{ secrets.TICKETMASTER_API_KEY }}
+      CLASSICTIC_AFFILIATE_ID: ${{ secrets.CLASSICTIC_AFFILIATE_ID }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      DEEPSEEK_API_URL: ${{ secrets.DEEPSEEK_API_URL }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      S3_REGION: ${{ secrets.S3_REGION }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify the local k3s target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -r "$KUBECONFIG"
+          context="$(kubectl config current-context)"
+          test "$context" = default || {
+            echo "Refusing Kubernetes context '$context'; expected local k3s context 'default'." >&2
+            exit 1
+          }
+          kubectl get nodes -o wide
+          test "$(kubectl get nodes --no-headers | wc -l)" -eq 1
+          kubectl get node -o jsonpath='{.items[0].metadata.labels.mymusic\.coach/environment}' | grep -Fxq production
+
+      - name: Report current status
+        if: inputs.operation == 'status'
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl get nodes -o wide
+          kubectl -n "$NAMESPACE" get keycloak,statefulset,deployment,service,pod,job,cronjob,pvc 2>/dev/null || true
+          kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp 2>/dev/null | tail -n 50 || true
+
+      - name: Apply namespace safeguards
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: kubectl apply -k deploy/overlays/prod
+
+      - name: Reconcile PostgreSQL credentials and TLS
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          test -n "$POSTGRES_MYMUSICCOACH_PASSWORD" || { echo 'POSTGRES_MYMUSICCOACH_PASSWORD is missing.' >&2; exit 1; }
+          test -n "$POSTGRES_KEYCLOAK_PASSWORD" || { echo 'POSTGRES_KEYCLOAK_PASSWORD is missing.' >&2; exit 1; }
+
+          if ! kubectl -n "$NAMESPACE" get secret postgres-admin >/dev/null 2>&1; then
+            admin_password="$(openssl rand -base64 48 | tr -d '\n')"
+            kubectl -n "$NAMESPACE" create secret generic postgres-admin \
+              --from-literal=POSTGRES_PASSWORD="$admin_password"
+            unset admin_password
+            echo 'Created the stable PostgreSQL administrator credential in Kubernetes.'
+          fi
+
+          kubectl -n "$NAMESPACE" create secret generic postgres-mymusiccoach \
+            --from-literal=PGHOST=postgres.mymusic-coach.svc.cluster.local \
+            --from-literal=PGPORT=5432 \
+            --from-literal=PGDATABASE=mymusiccoach \
+            --from-literal=PGUSER=mymusiccoach_app \
+            --from-literal=PGPASSWORD="$POSTGRES_MYMUSICCOACH_PASSWORD" \
+            --from-literal=PGSSLMODE=verify-full \
+            --from-literal=PGSSLROOTCERT=/etc/postgres-ca/ca.crt \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n "$NAMESPACE" create secret generic postgres-keycloak \
+            --from-literal=PGHOST=postgres.mymusic-coach.svc.cluster.local \
+            --from-literal=PGPORT=5432 \
+            --from-literal=PGDATABASE=keycloak \
+            --from-literal=PGUSER=keycloak_app \
+            --from-literal=PGPASSWORD="$POSTGRES_KEYCLOAK_PASSWORD" \
+            --from-literal=PGSSLMODE=verify-full \
+            --from-literal=PGSSLROOTCERT=/etc/postgres-ca/ca.crt \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          if ! kubectl -n "$NAMESPACE" get secret postgres-tls >/dev/null 2>&1; then
+            tls_dir="$(mktemp -d)"
+            trap 'rm -rf "$tls_dir"' EXIT
+            openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 3650 \
+              -subj '/CN=MyMusic.Coach PostgreSQL CA' \
+              -keyout "$tls_dir/ca.key" -out "$tls_dir/ca.crt" >/dev/null 2>&1
+            openssl req -newkey rsa:3072 -sha256 -nodes \
+              -subj '/CN=postgres.mymusic-coach.svc.cluster.local' \
+              -keyout "$tls_dir/tls.key" -out "$tls_dir/server.csr" >/dev/null 2>&1
+            cat >"$tls_dir/extensions.cnf" <<'EOF'
+          subjectAltName=DNS:postgres,DNS:postgres.mymusic-coach,DNS:postgres.mymusic-coach.svc,DNS:postgres.mymusic-coach.svc.cluster.local
+          keyUsage=critical,digitalSignature,keyEncipherment
+          extendedKeyUsage=serverAuth
+          EOF
+            openssl x509 -req -sha256 -days 825 \
+              -in "$tls_dir/server.csr" \
+              -CA "$tls_dir/ca.crt" -CAkey "$tls_dir/ca.key" -CAcreateserial \
+              -extfile "$tls_dir/extensions.cnf" -out "$tls_dir/tls.crt" >/dev/null 2>&1
+            kubectl -n "$NAMESPACE" create secret generic postgres-tls \
+              --from-file=ca.crt="$tls_dir/ca.crt" \
+              --from-file=tls.crt="$tls_dir/tls.crt" \
+              --from-file=tls.key="$tls_dir/tls.key"
+            kubectl -n "$NAMESPACE" create configmap postgres-ca \
+              --from-file=ca.crt="$tls_dir/ca.crt"
+            rm -rf "$tls_dir"
+            trap - EXIT
+            echo 'Generated the internal PostgreSQL CA and server certificate.'
+          else
+            kubectl -n "$NAMESPACE" get secret postgres-tls -o jsonpath='{.data.ca\.crt}' \
+              | base64 -d > "$RUNNER_TEMP/postgres-ca.crt"
+            kubectl -n "$NAMESPACE" create configmap postgres-ca \
+              --from-file=ca.crt="$RUNNER_TEMP/postgres-ca.crt" \
+              --dry-run=client -o yaml | kubectl apply -f -
+          fi
+
+      - name: Reconcile PostgreSQL and schema
+        id: database
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl apply -k deploy/platform/postgres
+          kubectl -n "$NAMESPACE" rollout status statefulset/postgres --timeout=600s
+          kubectl -n "$NAMESPACE" delete job application-identity-schema --ignore-not-found --wait=true
+          kubectl apply -k deploy/overlays/prod/application-database
+          kubectl -n "$NAMESPACE" wait --for=condition=complete --timeout=300s job/application-identity-schema
+          kubectl -n "$NAMESPACE" logs job/application-identity-schema
+
+      - name: Install Keycloak and bootstrap its realm
+        id: identity
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          kubectl apply --server-side --field-manager=mymusiccoach-deploy -k deploy/operators/keycloak
+          kubectl -n "$NAMESPACE" rollout status deployment/keycloak-operator --timeout=300s
+          kubectl apply -k deploy/overlays/prod/keycloak
+          kubectl -n "$NAMESPACE" wait --for=condition=Ready --timeout=600s keycloak/keycloak
+          kubectl -n "$NAMESPACE" rollout status statefulset/keycloak --timeout=600s
+
+          check_realm() {
+            local log="$RUNNER_TEMP/keycloak-realm-port-forward.log"
+            kubectl -n "$NAMESPACE" port-forward service/keycloak 19080:8080 >"$log" 2>&1 &
+            local pid=$!
+            for _ in $(seq 1 45); do
+              if curl --fail --silent \
+                -H 'Host: auth.mymusic.coach' \
+                -H 'X-Forwarded-Host: auth.mymusic.coach' \
+                -H 'X-Forwarded-Proto: https' \
+                -H 'X-Forwarded-Port: 443' \
+                http://127.0.0.1:19080/realms/mymusic-coach/.well-known/openid-configuration >/dev/null 2>&1; then
+                kill "$pid" 2>/dev/null || true
+                wait "$pid" 2>/dev/null || true
+                return 0
+              fi
+              sleep 1
+            done
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            return 1
+          }
+
+          if check_realm; then
+            test -n "$(kubectl -n "$NAMESPACE" get secret "$CLIENT_SECRET_NAME" -o 'jsonpath={.data.WEB_CLIENT_SECRET}' 2>/dev/null)" || {
+              echo "Realm exists, but $CLIENT_SECRET_NAME is missing WEB_CLIENT_SECRET." >&2
+              exit 1
+            }
+            echo 'The Keycloak realm already exists; import skipped.'
+          else
+            if ! kubectl -n "$NAMESPACE" get secret "$CLIENT_SECRET_NAME" >/dev/null 2>&1; then
+              client_secret="$(openssl rand -base64 48 | tr -d '\n')"
+              kubectl -n "$NAMESPACE" create secret generic "$CLIENT_SECRET_NAME" \
+                --from-literal=WEB_CLIENT_SECRET="$client_secret"
+              unset client_secret
+            fi
+            kubectl -n "$NAMESPACE" delete keycloakrealmimport "$REALM_IMPORT" --ignore-not-found --wait=true
+            kubectl apply -k deploy/overlays/prod/keycloak-realm
+            kubectl -n "$NAMESPACE" wait --for=condition=Done --timeout=600s "keycloakrealmimport/$REALM_IMPORT"
+            check_realm || { echo 'Realm import completed but OIDC discovery failed.' >&2; exit 1; }
+            kubectl -n "$NAMESPACE" delete keycloakrealmimport "$REALM_IMPORT" --wait=true
+          fi
+
+      - name: Reconcile application and tunnel secrets
+        if: inputs.operation == 'deploy'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          set +x
+          if ! kubectl -n "$NAMESPACE" get secret application-runtime >/dev/null 2>&1; then
+            jwt_secret="$(openssl rand -base64 48 | tr -d '\n')"
+            nextauth_secret="$(openssl rand -base64 48 | tr -d '\n')"
+            kubectl -n "$NAMESPACE" create secret generic application-runtime \
+              --from-literal=JWT_SECRET="$jwt_secret" \
+              --from-literal=NEXTAUTH_SECRET="$nextauth_secret"
+            unset jwt_secret nextauth_secret
+          fi
+          NAMESPACE="$NAMESPACE" bash deploy/scripts/sync-application-integrations.sh
+
+          test -n "$CLOUDFLARE_TUNNEL_TOKEN" || { echo 'CLOUDFLARE_TUNNEL_TOKEN is missing.' >&2; exit 1; }
+          test "${#CLOUDFLARE_TUNNEL_TOKEN}" -ge 40 || { echo 'CLOUDFLARE_TUNNEL_TOKEN looks incomplete.' >&2; exit 1; }
+          kubectl -n "$NAMESPACE" create secret generic cloudflare-tunnel \
+            --from-literal=TUNNEL_TOKEN="$CLOUDFLARE_TUNNEL_TOKEN" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          pull_token="${GHCR_PULL_TOKEN:-$GITHUB_TOKEN}"
+          kubectl -n "$NAMESPACE" create secret docker-registry ghcr-pull \
+            --docker-server=ghcr.io \
+            --docker-username="$GITHUB_ACTOR" \
+            --docker-password="$pull_token" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          unset pull_token
+
+      - name: Deploy the tunnel and immutable application images
+        id: rollout
+        if: inputs.operation == 'deploy'
+        env:
+          API_IMAGE: ${{ needs.publish.outputs.api }}
+          WEB_IMAGE: ${{ needs.publish.outputs.web }}
+          WORKER_IMAGE: ${{ needs.publish.outputs.worker }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl apply -k deploy/overlays/prod/cloudflare-tunnel
+          kubectl -n "$NAMESPACE" rollout status deployment/cloudflared --timeout=300s
+
+          manifest="$RUNNER_TEMP/application.yaml"
+          kubectl kustomize deploy/overlays/prod/application > "$manifest"
+          sed -i \
+            -e "s|$IMAGE_PREFIX-api:bootstrap|$API_IMAGE|g" \
+            -e "s|$IMAGE_PREFIX-web:bootstrap|$WEB_IMAGE|g" \
+            -e "s|$IMAGE_PREFIX-worker:bootstrap|$WORKER_IMAGE|g" \
+            "$manifest"
+          grep -Fq "image: $API_IMAGE" "$manifest"
+          grep -Fq "image: $WEB_IMAGE" "$manifest"
+          grep -Fq "image: $WORKER_IMAGE" "$manifest"
+          kubectl apply -f "$manifest"
+          kubectl -n "$NAMESPACE" rollout status deployment/api --timeout=600s
+          kubectl -n "$NAMESPACE" rollout status deployment/web --timeout=600s
+          kubectl -n "$NAMESPACE" rollout status deployment/worker --timeout=600s
+
+      - name: Verify internal health
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for app in api web worker; do
+            pod="$(kubectl -n "$NAMESPACE" get pod -l "app.kubernetes.io/name=$app" -o json | jq -r '.items[] | select(.status.phase == "Running" and any(.status.containerStatuses[]?; .ready)) | .metadata.name' | head -n 1)"
+            test -n "$pod" || { echo "No Ready $app Pod found." >&2; exit 1; }
+          done
+          api_pod="$(kubectl -n "$NAMESPACE" get pod -l app.kubernetes.io/name=api -o jsonpath='{.items[0].metadata.name}')"
+          web_pod="$(kubectl -n "$NAMESPACE" get pod -l app.kubernetes.io/name=web -o jsonpath='{.items[0].metadata.name}')"
+          worker_pod="$(kubectl -n "$NAMESPACE" get pod -l app.kubernetes.io/name=worker -o jsonpath='{.items[0].metadata.name}')"
+          kubectl -n "$NAMESPACE" exec "$api_pod" -- node -e "fetch('http://127.0.0.1:4000/health/ready').then(r=>{if(!r.ok)process.exit(1)})"
+          kubectl -n "$NAMESPACE" exec "$web_pod" -- node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)})"
+          kubectl -n "$NAMESPACE" exec "$worker_pod" -- node -e "fetch('http://127.0.0.1:4100/health/ready').then(r=>{if(!r.ok)process.exit(1)})"
+          echo 'Internal application health checks passed.'
+          if curl --fail --silent --show-error --max-time 15 "$PUBLIC_URL/api/health" >/dev/null; then
+            echo 'The public Cloudflare route is healthy.'
+          else
+            echo 'Internal services are healthy; the public hostname is not ready yet. Check the Cloudflare public-hostname routes.' >&2
+          fi
+
+      - name: Diagnose network and workloads
+        if: inputs.operation == 'diagnose'
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl get nodes -o wide
+          kubectl -n "$NAMESPACE" get keycloak,statefulset,deployment,service,pod,job,cronjob,pvc -o wide 2>/dev/null || true
+          kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp 2>/dev/null | tail -n 100 || true
+          worker_pod="$(kubectl -n "$NAMESPACE" get pod -l app.kubernetes.io/name=worker -o json | jq -r '.items[] | select(.status.phase == "Running") | .metadata.name' | head -n 1)"
+          if [[ -n "$worker_pod" ]]; then
+            kubectl -n "$NAMESPACE" exec "$worker_pod" -- node -e '
+              const net = require("node:net");
+              const host = process.env.SMTP_HOST || "smtp-relay.gmail.com";
+              const port = Number(process.env.SMTP_PORT || 587);
+              const socket = net.createConnection({host, port});
+              socket.setTimeout(10000);
+              socket.once("connect", () => { console.log(`smtp_tcp=reachable host=${host} port=${port}`); socket.end(); });
+              socket.once("timeout", () => { console.error(`smtp_tcp=timeout host=${host} port=${port}`); socket.destroy(); process.exitCode=2; });
+              socket.once("error", error => { console.error(`smtp_tcp=${error.code || "error"} host=${host} port=${port}`); process.exitCode=2; });
+            '
+            kubectl -n "$NAMESPACE" logs "$worker_pod" --since=6h --tail=300 \
+              | sed -E 's/Bearer[[:space:]]+[A-Za-z0-9._~-]+/Bearer [REDACTED]/g' || true
+          fi
+          curl --fail --silent --show-error --max-time 15 "$PUBLIC_URL/api/health" || true
+
+      - name: Collect failure diagnostics
+        if: always() && inputs.operation == 'deploy' && (steps.database.outcome == 'failure' || steps.identity.outcome == 'failure' || steps.rollout.outcome == 'failure')
+        shell: bash
+        run: |
+          kubectl -n "$NAMESPACE" get keycloak,statefulset,deployment,pod,job,pvc -o wide || true
+          kubectl -n "$NAMESPACE" logs job/application-identity-schema --all-containers=true --tail=200 || true
+          kubectl -n "$NAMESPACE" logs deployment/keycloak-operator --tail=200 || true
+          kubectl -n "$NAMESPACE" logs deployment/api --tail=200 || true
+          kubectl -n "$NAMESPACE" logs deployment/web --tail=200 || true
+          kubectl -n "$NAMESPACE" logs deployment/worker --tail=200 || true
+          kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -n 100 || true

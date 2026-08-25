@@ -1,0 +1,40 @@
+cluster-init: true
+
+# Cloudflare Tunnel is the only ingress path. Neither an ingress controller nor
+# a host-port load balancer is required on this single-node installation.
+disable:
+  - traefik
+  - servicelb
+
+secrets-encryption: true
+secrets-encryption-provider: secretbox
+protect-kernel-defaults: true
+
+write-kubeconfig-mode: "0640"
+write-kubeconfig-group: k3s-deployer
+
+etcd-snapshot-schedule-cron: "0 */6 * * *"
+etcd-snapshot-retention: 28
+etcd-snapshot-compress: true
+
+kube-apiserver-arg:
+  - "enable-admission-plugins=NodeRestriction,EventRateLimit"
+  - "admission-control-config-file=/var/lib/rancher/k3s/server/psa.yaml"
+  - "audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log"
+  - "audit-policy-file=/var/lib/rancher/k3s/server/audit.yaml"
+  - "audit-log-maxage=30"
+  - "audit-log-maxbackup=10"
+  - "audit-log-maxsize=100"
+  - "service-account-extend-token-expiration=false"
+
+kube-controller-manager-arg:
+  - "terminated-pod-gc-threshold=100"
+
+kubelet-arg:
+  - "streaming-connection-idle-timeout=5m"
+  - "pod-max-pids=4096"
+  - "tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305"
+
+node-label:
+  - "mymusic.coach/environment=production"
+  - "mymusic.coach/role=single-node"

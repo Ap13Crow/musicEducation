@@ -18,7 +18,7 @@ removed. Do not reintroduce them.
 
 ### Workloads
 
-- `apps/web` — Next.js UI (served at `dev.mymusic.coach`).
+- `apps/web` — Next.js UI (served at `mymusic.coach` in production).
 - `apps/api` — GraphQL + webhooks (Stripe at `/api/webhooks/stripe`).
 - `apps/worker` — async jobs: webhook processing, email, external-event ingestion, retries.
   (Being introduced; async work currently runs in-process in the API and is moving here.)
@@ -28,8 +28,10 @@ Shared code: `packages/database` (Prisma, `db push` workflow — no migrations f
 
 ### Platform reality
 
-- Deployed on **DigitalOcean Kubernetes (DOKS)**, reached through a **Cloudflare Tunnel**:
-  `dev.mymusic.coach` → web, `auth-dev.mymusic.coach` → Keycloak. No public LoadBalancer/ingress.
+- Production runs on a hardened **single-node k3s** host, reached through an outbound
+  **Cloudflare Tunnel**: `mymusic.coach` → web and `auth.mymusic.coach` → Keycloak.
+  There is no public LoadBalancer, ingress controller, Caddy gateway, or exposed Kubernetes API.
+  The old DOKS workflows remain migration references until cutover is accepted.
 - **Keycloak** is the identity authority (OIDC, PKCE, server-side sessions). The application
   database owns profiles, roles, marketplace, bookings, courses, entitlements, progress.
   `UserExternalIdentity` maps the immutable Keycloak `sub` to the platform user — keep it.
@@ -44,11 +46,12 @@ Shared code: `packages/database` (Prisma, `db push` workflow — no migrations f
 
 ## Deployment model (how your changes reach the cluster)
 
-You author code and manifests and open a PR. **CI owns cluster mutation**, not Claude Code:
-GitHub Actions builds a SHA-tagged image, pushes it, syncs secrets from GitHub repo secrets, and
-runs `kubectl apply` against DOKS using `DIGITALOCEAN_ACCESS_TOKEN`. Do not run `kubectl apply`,
-`doctl`, credential rotation, or any cluster/cloud write yourself. Read-only `kubectl get/logs/
-describe` in the dev namespace is fine when explicitly permitted.
+You author code and manifests and open a PR. **CI owns cluster mutation**, not Claude Code.
+`.github/workflows/deploy-k3s-production.yml` builds SHA-tagged GHCR images on GitHub-hosted
+runners, then a protected, manually dispatched job uses the `mymusiccoach-prod` self-hosted
+runner to reconcile local k3s. Do not run `kubectl apply`, rotate credentials, or make direct
+cluster/cloud changes yourself. Read-only `kubectl get/logs/describe` is fine when explicitly
+permitted.
 
 ## Guardrails
 

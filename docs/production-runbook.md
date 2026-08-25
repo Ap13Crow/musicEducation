@@ -1,211 +1,132 @@
-# Production Runbook — `mymusic.coach` (Linux + Cloudflare tunnel)
+# Production runbook: single-node k3s
 
-This is the deployment checklist and diagnostic runbook for running the full
-stack on a Linux (Ubuntu) host with a Cloudflare tunnel in front. It focuses on
-the parts that commonly break behind a tunnel: the post-login dashboard, the
-Keycloak SSO round-trip, and reachability of the three external containers
-(Moodle, LibreBooking, pretix).
+This runbook moves MyMusic.Coach to the Ubuntu 24.04 `acloud6` host. The target
+is a hardened single-node k3s cluster, local encrypted-at-rest PostgreSQL, and
+an outbound Cloudflare Tunnel. Caddy, Docker Compose, MicroK8s, Moodle,
+LibreBooking, pretix, Redis, and MinIO are not part of this architecture.
 
-> TLS terminates at Cloudflare. `cloudflared` connects **outbound only** to the
-> internal Caddy gateway over plain HTTP — nothing is exposed on the host's
-> public IP.
+The host is a single failure domain. The setup is production-oriented, but it
+is not highly available. Local snapshots and database dumps do not protect
+against physical disk loss; add an encrypted off-host backup before storing
+customer data.
 
----
+## 1. Install k3s without rebooting
 
-## 1. Bring up the stack
-
-```bash
-# Generate a production .env with fresh, URL-safe secrets
-bash scripts/gen-prod-env.sh
-
-# Add the tunnel token (Cloudflare Zero Trust → Tunnels → your tunnel → token)
-echo 'CLOUDFLARE_TUNNEL_TOKEN=...' >> .env
-
-# Build the Keycloak production realm from .env (see §3 — required!)
-python3 scripts/patch-realm.py
-
-# Start everything with the production overrides + tunnel
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-make migrate
-```
-
-The override file [`docker-compose.prod.yml`](../docker-compose.prod.yml) flips
-the services that bake a hostname into their own config to the
-`https://*.mymusic.coach` hosts and adds `cloudflared`. The base
-`docker-compose.yml` stays the dev source of truth (`*.mymusic-coach.test`).
-
----
-
-## 2. Cloudflare tunnel ingress
-
-In the Cloudflare Zero Trust dashboard (or `config.yml` if you self-host the
-connector), map **every** public hostname to the Caddy gateway service. Caddy
-then fans out to each upstream by `Host` header (see
-[`docker/gateway/Caddyfile.prod`](../docker/gateway/Caddyfile.prod)).
-
-| Public hostname | Tunnel service (origin) | Notes |
-|-----------------|-------------------------|-------|
-| `app.mymusic.coach` | `http://gateway:80` | main frontend |
-| `api.mymusic.coach` | `http://gateway:80` | GraphQL API |
-| `auth.mymusic.coach` | `http://gateway:80` | Keycloak SSO |
-| `tickets.mymusic.coach` | `http://gateway:80` | Pretix widget + API |
-
-**Removed from public DNS** (headless — no Caddy route):
-`learn.mymusic.coach`, `booking.mymusic.coach` — Moodle and LibreBooking are
-API-only; the GraphQL API reaches them on the internal Docker network
-(`http://moodle:8080`, `http://librebooking:80`). Remove or do not create these
-DNS/tunnel records.
-
-Notes:
-- Point each hostname's **DNS** (CNAME) at the tunnel.
-- All ingress goes through the **one** gateway origin; do **not** point
-  hostnames directly at individual containers, or Caddy's host routing and the
-  `trusted_proxies` handling are bypassed.
-- Caddy already trusts private-range proxies
-  (`trusted_proxies static private_ranges`), so the `X-Forwarded-Proto: https`
-  that Cloudflare/cloudflared set is honored by the upstreams.
-
----
-
-## 3. Keycloak: realm, redirect URIs and role claims
-
-### Build the production realm (do not skip)
-
-`docker-compose.prod.yml` mounts `docker/keycloak/realm-export.prod.json` and
-imports it on startup. That file is **generated** by
-[`scripts/patch-realm.py`](../scripts/patch-realm.py) from
-`realm-export.json` + `.env`; it:
-
-- rewrites every client redirect URI / web origin from `*.mymusic-coach.test`
-  (http) to `*.mymusic.coach` (https),
-- drops `localhost` entries (prod trusts the live domain only),
-- injects each confidential client's secret from `.env` so Keycloak and the
-  apps share the same secret.
-
-After running it, the web client should have redirect URIs
-`https://app.mymusic.coach/*` (matching `NEXTAUTH_URL`), and the Moodle / pretix
-/ LibreBooking clients should point at their `https://*.mymusic.coach` hosts.
-Verify:
+Clone the merged repository on the server and run the reviewed bootstrap:
 
 ```bash
-python3 - <<'PY'
-import json
-r = json.load(open("docker/keycloak/realm-export.prod.json"))
-for c in r["clients"]:
-    print(c["clientId"], c.get("redirectUris"), "secret" in c)
-PY
+cd /data/projects
+git clone https://github.com/Ap13Crow/musicEducation.git mymusiccoach
+cd mymusiccoach
+sudo bash deploy/host/k3s/bootstrap.sh
 ```
 
-### Role claims feeding the dashboard
+The script pins k3s, enables Kubernetes secret encryption, audit logging,
+Pod Security Admission, EventRateLimit, compressed etcd snapshots, and
+resource safeguards. It preserves UFW's public default-deny policy, does not
+open ports 80, 443, or 6443, and does not reboot the host.
 
-The frontend reads roles from the Keycloak access token at
-`realm_access.roles` (see `apps/web/src/app/api/auth/[...nextauth]/route.ts`),
-and the dashboard renders the highest of `ADMIN > TEACHER > STUDENT > GUEST`.
-Keycloak's default `roles` client scope already adds `realm_access.roles` to the
-access token, so no custom mapper is required for roles.
-
-**New accounts must get a role.** The realm defines `STUDENT` as the default
-role. If a freshly registered Keycloak user shows up with no role (the classic
-"logged in but the dashboard can't tell who I am" symptom), confirm in the admin
-console that **Realm settings → User registration → Default roles** includes
-`STUDENT`, and assign it to existing users under **Users → Role mapping** if
-needed.
-
-### One-time admin checks on the server
-
-- **Realm settings → General**: frontend URL / hostname resolves to
-  `https://auth.mymusic.coach` (set via `KC_HOSTNAME`).
-- **Clients → `mymusic-coach-web` → Valid redirect URIs**: `https://app.mymusic.coach/*`.
-- **Clients → each external client → Valid redirect URIs**: the matching
-  `https://learn|booking|tickets.mymusic.coach` callback paths.
-- **Realm settings → Login → Require SSL**: `external requests` (so SSL is
-  required for the public hostnames while the internal tunnel hop stays HTTP).
-
----
-
-## 4. External containers: "buttons don't work / backend not accessible"
-
-Moodle and LibreBooking are **headless** in production: they have no public Caddy
-route and are only accessed by the GraphQL API over the Docker network. Only
-Pretix retains a public hostname because its JS widget must load in the browser.
-
-| Service | URL / config env | Access mode | Handled in |
-|---------|-----------------|-------------|-----------|
-| **Moodle** | `MOODLE_WWWROOT=http://moodle:8080` (internal) | API-only — GraphQL uses `MOODLE_URL` + `MOODLE_WS_TOKEN` | `docker/moodle/docker-entrypoint.sh` + `setup-webservice.php` |
-| **LibreBooking** | `LIBREBOOKING_SCRIPT_URL=http://librebooking:80` (internal) | API-only — GraphQL uses `LIBREBOOKING_URL` + `LIBREBOOKING_API_PASSWORD` | `docker/librebooking/docker-entrypoint.sh` |
-| **Pretix** | `PRETIX_URL=https://tickets.mymusic.coach` | Public — widget + API; `trust_x_forwarded_proto=on` | `docker/pretix/docker-entrypoint.sh` |
-
-If you changed any of these, the config is only regenerated on container
-(re)start — recreate the affected service:
+Verify the installation:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate moodle librebooking pretix
+sudo k3s kubectl get nodes -o wide
+sudo k3s kubectl get pods -A
+sudo k3s secrets-encrypt status
+sudo k3s etcd-snapshot ls
+sudo ufw status verbose
 ```
 
----
+## 2. Register the deployment runner
 
-## 5. Diagnostic runbook
-
-Run these on the Ubuntu host. They isolate *where* a request breaks: gateway →
-container → tunnel.
+Use a dedicated GitHub Actions runner on `acloud6`. This runner is allowed to
+deploy but is never used for pull-request builds; GitHub-hosted runners build
+and publish the images.
 
 ```bash
-# 1. Are all containers healthy?
-docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
-
-# 2. Gateway is up and routing (Host header selects the upstream)
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:80/health
-curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: app.mymusic.coach'     http://localhost:80/
-curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: api.mymusic.coach'     http://localhost:80/health
-curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: tickets.mymusic.coach' http://localhost:80/
-
-# 3. Each container answers directly on Docker network (bypass the gateway)
-# Moodle and LibreBooking are headless — no public route, check directly:
-docker compose exec moodle       curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/webservice/rest/server.php
-docker compose exec librebooking curl -s -o /dev/null -w '%{http_code}\n' http://localhost:80/
-docker compose exec pretix       curl -s -o /dev/null -w '%{http_code}\n' http://localhost:80/
-
-# 4. Public round-trip through Cloudflare (from anywhere)
-curl -sI https://app.mymusic.coach     | head -1
-curl -sI https://auth.mymusic.coach    | head -1
-curl -s  https://auth.mymusic.coach/realms/mymusic-coach/.well-known/openid-configuration | head -c 200; echo
-
-# 5. Logs for a failing service
-docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100 moodle
-docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100 cloudflared
+sudo useradd --system --create-home --shell /bin/bash mymusiccoach-runner
+sudo usermod -aG k3s-deployer mymusiccoach-runner
+sudo install -d -o mymusiccoach-runner -g mymusiccoach-runner /opt/actions-runner
 ```
 
-Interpreting results:
+In GitHub, open **Settings → Actions → Runners → New self-hosted runner**.
+Run the displayed Linux x64 download and registration commands from
+`/opt/actions-runner` as `mymusiccoach-runner`, and add the custom label
+`mymusiccoach-prod`. Then install the runner as a systemd service using the
+commands displayed by GitHub.
 
-- **Gateway health 200 but a Host-routed call 502/404** → the upstream container
-  is down or its service name/port changed; check `docker compose ps` and step 3.
-- **Step 3 works but step 2 fails** → Caddy host routing/`trusted_proxies`; check
-  `Caddyfile.prod` and `docker compose logs gateway`.
-- **Steps 2–3 work but step 4 fails** → Cloudflare tunnel ingress/DNS (§2) or the
-  tunnel token; check `docker compose logs cloudflared`.
-- **Pages load but buttons/forms do nothing, or you get redirect loops** →
-  wrong public URL / missing proxy-proto trust in §4, or a Keycloak redirect-URI
-  mismatch in §3.
+The final runner labels must include:
 
----
+- `self-hosted`
+- `linux`
+- `x64`
+- `mymusiccoach-prod`
 
-## 6. Frontend dashboard
+Confirm that the runner user can read the local kubeconfig:
 
-The post-login landing page is `/dashboard`
-(`apps/web/src/app/dashboard/page.tsx`). It is session-guarded (unauthenticated
-visitors are sent to Keycloak), shows the user's role and a three-pillar
-overview, and deep-links into Moodle / LibreBooking / pretix via the
-`NEXT_PUBLIC_LEARN_URL` / `NEXT_PUBLIC_BOOKING_URL` / `NEXT_PUBLIC_TICKETS_URL`
-env vars.
+```bash
+sudo -u mymusiccoach-runner env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get nodes
+```
 
-- It renders **typed example content** until `NEXT_PUBLIC_ENABLE_LIVE_API=true`
-  and the GraphQL API at `api.mymusic.coach` is reachable (an amber banner makes
-  this state explicit). `gen-prod-env.sh` sets this to `true` for production.
+Protect the GitHub `development` Environment with required reviewers. The new
+production workflow temporarily uses this existing Environment so its current
+secret values can be reused without copying or exposing them.
 
-### API fields not yet available (dashboard follow-ups)
+## 3. Create the new Cloudflare Tunnel
 
-The dashboard surfaces these, but the API does not yet expose them — they render
-as labelled placeholders today and should be added to the GraphQL schema later:
+Create a remotely managed tunnel for the production domain. Configure these
+public hostnames in Cloudflare Zero Trust:
 
-- **Course deadlines** — no deadline/due-date field on `Enrollment`/`Course`.
-- **Messages** — there is no messaging query/type (`messages`, threads, etc.).
+| Public hostname | Tunnel service |
+| --- | --- |
+| `mymusic.coach` | `http://web.mymusic-coach.svc.cluster.local:3000` |
+| `auth.mymusic.coach` | `http://keycloak.mymusic-coach.svc.cluster.local:8080` |
+
+Create a Cloudflare Redirect Rule from `www.mymusic.coach/*` to
+`https://mymusic.coach/$1`. There is no public API hostname: browser GraphQL
+requests use `/api/graphql` through the web service. Do not create an SMTP
+tunnel route; application mail leaves the worker directly over TCP 587.
+
+Replace the GitHub Environment secret `CLOUDFLARE_TUNNEL_TOKEN` with the token
+for this new tunnel. All other existing integration and database secrets can
+be reused unchanged.
+
+## 4. Deploy from GitHub Actions
+
+After this change is merged to `main`, open **Actions → Production k3s
+platform → Run workflow**:
+
+1. Run `plan` to validate all rendered manifests.
+2. Run `deploy` and approve the protected Environment when prompted.
+3. Run `status` after the rollout.
+4. Run `diagnose` to verify workload state and SMTP TCP reachability.
+
+The deployment creates fresh test databases, internal PostgreSQL TLS, stable
+application and OIDC secrets, Keycloak, the realm, `web`, `api`, `worker`, and
+two Cloudflare connector Pods. It builds immutable SHA-tagged images on a
+GitHub-hosted runner and never copies secret values into the checkout.
+
+The first deployment can pull private GHCR images with the workflow token. For
+reliable pulls after future cache loss, either make the three GHCR packages
+public or add a long-lived `GHCR_PULL_TOKEN` Environment secret with only
+`read:packages` scope.
+
+## 5. Acceptance checks
+
+```bash
+sudo k3s kubectl -n mymusic-coach get keycloak,statefulset,deployment,pod,pvc
+curl --fail https://mymusic.coach/api/health
+curl --fail https://auth.mymusic.coach/realms/mymusic-coach/.well-known/openid-configuration
+nc -4 -vz smtp-relay.gmail.com 587
+```
+
+Expected public firewall state remains SSH-only. Cloudflare connectors initiate
+outbound connections, so no HTTP, HTTPS, Kubernetes API, or SMTP inbound rule
+is required.
+
+## 6. Backups and recovery
+
+k3s stores compressed etcd snapshots every six hours and keeps 28. PostgreSQL
+runs a daily logical backup and keeps 14 days on a separate local PVC. Before
+real customer data is accepted, copy both backup sets to encrypted off-host
+storage and test restoration. Do not delete the DigitalOcean deployment until
+the public health, login, booking, and mail flows all pass on k3s.

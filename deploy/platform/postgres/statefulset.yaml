@@ -1,0 +1,147 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels: &postgresLabels
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: mymusic-coach
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels: *postgresLabels
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:17.10-alpine3.23
+          imagePullPolicy: IfNotPresent
+          args:
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/etc/postgresql/tls/tls.crt
+            - -c
+            - ssl_key_file=/etc/postgresql/tls/tls.key
+            - -c
+            - ssl_min_protocol_version=TLSv1.2
+            - -c
+            - password_encryption=scram-sha-256
+            - -c
+            - max_connections=100
+            - -c
+            - shared_buffers=512MB
+          env:
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_DB
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-admin
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_INITDB_ARGS
+              value: --auth-host=scram-sha-256 --auth-local=trust
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: MYMUSICCOACH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-mymusiccoach
+                  key: PGPASSWORD
+            - name: KEYCLOAK_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-keycloak
+                  key: PGPASSWORD
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -ec
+                - pg_isready --host=127.0.0.1 --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -ec
+                - pg_isready --host=127.0.0.1 --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: runtime
+              mountPath: /var/run/postgresql
+            - name: temporary
+              mountPath: /tmp
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+            - name: tls
+              mountPath: /etc/postgresql/tls
+              readOnly: true
+      volumes:
+        - name: runtime
+          emptyDir: {}
+        - name: temporary
+          emptyDir: {}
+        - name: initdb
+          configMap:
+            name: postgres-initdb
+            defaultMode: 0555
+        - name: tls
+          secret:
+            secretName: postgres-tls
+            defaultMode: 0440
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: postgres
+          app.kubernetes.io/component: database-storage
+          app.kubernetes.io/part-of: mymusic-coach
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 50Gi
