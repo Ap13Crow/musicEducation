@@ -65,6 +65,7 @@ jobs:
             --workspace @my-music-coach/database \
             --include-workspace-root
           npm run db:generate --workspace @my-music-coach/database
+          npm run build --workspace @my-music-coach/database
           npm test --workspace @my-music-coach/api -- --runInBand
           npm test --workspace @my-music-coach/worker -- --runInBand
       - name: Render every production target

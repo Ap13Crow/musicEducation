@@ -37,7 +37,11 @@ function weekdayAndHour(date: Date, timezone: string) {
   return { dayOfWeek, hour };
 }
 
-function fakePrismaForBookSession(overrides: { hourlyRate: number | null; autoApproveNewStudents: boolean }) {
+function fakePrismaForBookSession(overrides: {
+  hourlyRate: number | null;
+  autoApproveNewStudents: boolean;
+  isPublic?: boolean;
+}) {
   const timezone = 'Europe/Zurich';
   const startsAt = futureLessonStart();
   const { dayOfWeek, hour } = weekdayAndHour(startsAt, timezone);
@@ -61,7 +65,7 @@ function fakePrismaForBookSession(overrides: { hourlyRate: number | null; autoAp
   const teacherProfile = {
     id: 'tp-1',
     userId: 'teacher-1',
-    isPublic: true,
+    isPublic: overrides.isPublic ?? true,
     isAvailable: true,
     leadDays: 0,
     hourlyRate: overrides.hourlyRate,
@@ -124,6 +128,22 @@ describe('bookSession - payment gates confirmation', () => {
     expect(bookingCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({ status: 'CONFIRMED' }),
     });
+  });
+
+  it('allows an unlisted but available teacher to accept direct or returning-student bookings', async () => {
+    const { prisma, bookingCreate, startsAt } = fakePrismaForBookSession({
+      hourlyRate: 0,
+      autoApproveNewStudents: true,
+      isPublic: false,
+    });
+
+    await bookingResolvers.Mutation.bookSession(
+      null,
+      { input: { teacherProfileId: 'tp-1', startsAt: startsAt.toISOString(), durationMin: 60, format: 'ONLINE', instrument: 'Piano' } },
+      { prisma, user: studentUser } as any,
+    );
+
+    expect(bookingCreate).toHaveBeenCalled();
   });
 
   it('still respects auto-approve=false for a free lesson - PENDING awaiting teacher approval, not payment', async () => {

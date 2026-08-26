@@ -218,14 +218,12 @@ export const bookingResolvers = {
       if (teacherProfile.userId === user.id) {
         throw new GraphQLError('You cannot book a lesson with yourself.', { extensions: { code: 'BAD_USER_INPUT' } });
       }
-      // The TeacherProfile row outlives a demotion (it's history); the
-      // current role is what decides whether they can still be booked. Same
-      // TEACHER-or-ADMIN rule as the public teachers/teacher queries in
-      // users.ts - an admin discoverable there as a teacher must also be
-      // bookable here, or they'd be a dead end in the UI.
+      // The TeacherProfile row outlives a demotion (it's history); active
+      // TEACHER/ADMIN status decides whether it can still be booked.
+      // isPublic controls directory discovery only: an unlisted teacher may
+      // still accept bookings from returning students or a direct profile URL.
       if (
         teacherProfile.user.status !== 'ACTIVE' ||
-        !teacherProfile.isPublic ||
         (teacherProfile.user.role !== 'TEACHER' && teacherProfile.user.role !== 'ADMIN')
       ) {
         throw new GraphQLError('Teacher not found.', { extensions: { code: 'NOT_FOUND' } });
