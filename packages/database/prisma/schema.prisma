@@ -1080,6 +1080,8 @@ enum MailOutboxStatus {
 enum MailOutboxKind {
   BOOKING_CONFIRMATION
   BOOKING_CANCELLED
+  EVENT_CONFIRMATION
+  EVENT_CANCELLED
 }
 
 // Durable transactional-email outbox (see 021-mail-outbox.sql). A booking
@@ -1093,7 +1095,8 @@ enum MailOutboxKind {
 model MailOutboxMessage {
   id            String           @id @default(cuid())
   kind          MailOutboxKind
-  bookingId     String?
+  bookingId      String?
+  eventBookingId String?
   recipients    String[]
   subject       String
   html          String
@@ -1114,6 +1117,7 @@ model MailOutboxMessage {
 
   @@index([status, nextAttemptAt])
   @@index([bookingId])
+  @@index([eventBookingId])
 }
 
 model FeedPost {

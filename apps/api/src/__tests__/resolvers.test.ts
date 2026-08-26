@@ -183,7 +183,10 @@ describe('Teacher Filter Logic', () => {
 // construction in resolvers/users.ts `teachers`.
 describe('Teacher Discovery Role Guard', () => {
   function buildTeachersWhere(filter: any): any {
-    const where: any = { isAvailable: true, user: { role: 'TEACHER' } };
+    const where: any = {
+      isPublic: true,
+      user: { role: { in: ['TEACHER', 'ADMIN'] }, status: 'ACTIVE' },
+    };
     if (filter) {
       if (filter.instrument) where.instruments = { has: filter.instrument };
       if (filter.maxHourlyRate !== undefined) where.hourlyRate = { lte: filter.maxHourlyRate };
@@ -197,12 +200,15 @@ describe('Teacher Discovery Role Guard', () => {
   }
 
   it('always scopes teacher discovery to users who currently hold the TEACHER role', () => {
-    expect(buildTeachersWhere(null).user).toEqual({ role: 'TEACHER' });
+    expect(buildTeachersWhere(null).user).toEqual({
+      role: { in: ['TEACHER', 'ADMIN'] },
+      status: 'ACTIVE',
+    });
   });
 
   it('keeps the role guard alongside any combination of filters', () => {
     const result = buildTeachersWhere({ instrument: 'Piano', search: 'jazz' });
-    expect(result.user).toEqual({ role: 'TEACHER' });
+    expect(result.user).toEqual({ role: { in: ['TEACHER', 'ADMIN'] }, status: 'ACTIVE' });
     expect(result.instruments).toEqual({ has: 'Piano' });
     expect(result.OR).toHaveLength(1);
   });

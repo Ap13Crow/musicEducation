@@ -53,13 +53,14 @@ export const userResolvers = {
     },
 
     async user(_: unknown, { id, email }: any, { prisma }: GraphQLContext) {
-      if (id) return prisma.user.findUnique({ where: { id }, include: { profile: true, teacherProfile: true } });
-      if (email) return prisma.user.findUnique({ where: { email }, include: { profile: true, teacherProfile: true } });
+      if (id) return prisma.user.findFirst({ where: { id, status: 'ACTIVE' }, include: { profile: true, teacherProfile: true } });
+      if (email) return prisma.user.findFirst({ where: { email, status: 'ACTIVE' }, include: { profile: true, teacherProfile: true } });
       return null;
     },
 
     async searchUsers(_: unknown, { query, role, page = 1, limit = 20 }: any, { prisma }: GraphQLContext) {
       const where: any = {
+        status: 'ACTIVE',
         OR: [
           { profile: { displayName: { contains: query, mode: 'insensitive' } } },
           { email: { contains: query, mode: 'insensitive' } },
@@ -78,7 +79,7 @@ export const userResolvers = {
       // below only once they actually have a TeacherProfile - typically via
       // applyAsTeacher, which admins are also allowed to call.
       const missingProfiles = await prisma.user.findMany({
-        where: { role: 'TEACHER', teacherProfile: null },
+        where: { role: 'TEACHER', status: 'ACTIVE', teacherProfile: null },
         include: { profile: true },
       });
       for (const candidate of missingProfiles) {
@@ -106,7 +107,10 @@ export const userResolvers = {
       // Gated on isPublic, not isAvailable: isAvailable is booking
       // eligibility only (see bookSession, bookings.ts) - a teacher pausing
       // new bookings must not disappear from the directory entirely.
-      const where: any = { isPublic: true, user: { role: { in: ['TEACHER', 'ADMIN'] } } };
+      const where: any = {
+        isPublic: true,
+        user: { role: { in: ['TEACHER', 'ADMIN'] }, status: 'ACTIVE' },
+      };
       if (filter) {
         if (filter.instrument) where.instruments = { has: filter.instrument };
         if (filter.maxHourlyRate !== undefined) where.hourlyRate = { lte: filter.maxHourlyRate };
@@ -132,11 +136,20 @@ export const userResolvers = {
       return { nodes, pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount } };
     },
 
-    async teacher(_: unknown, { id }: any, { prisma }: GraphQLContext) {
+    async teacher(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
       // Same rule as the `teachers` list: a demoted user's TeacherProfile row
       // survives (history), but they stop being discoverable as a teacher.
+      const visibility = user?.role === 'ADMIN'
+        ? {}
+        : user
+          ? { OR: [{ isPublic: true }, { userId: user.id }] }
+          : { isPublic: true };
       return prisma.teacherProfile.findFirst({
-        where: { id, user: { role: { in: ['TEACHER', 'ADMIN'] } } },
+        where: {
+          id,
+          ...visibility,
+          user: { role: { in: ['TEACHER', 'ADMIN'] }, status: 'ACTIVE' },
+        },
         include: { certifications: true, availability: true },
       });
     },

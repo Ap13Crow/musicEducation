@@ -61,12 +61,13 @@ function fakePrismaForBookSession(overrides: { hourlyRate: number | null; autoAp
   const teacherProfile = {
     id: 'tp-1',
     userId: 'teacher-1',
+    isPublic: true,
     isAvailable: true,
     leadDays: 0,
     hourlyRate: overrides.hourlyRate,
     autoApproveNewStudents: overrides.autoApproveNewStudents,
     autoApproveRecurringStudents: overrides.autoApproveNewStudents,
-    user: { role: 'TEACHER', profile: { timezone } },
+    user: { role: 'TEACHER', status: 'ACTIVE', profile: { timezone } },
   };
 
   const prisma: any = {

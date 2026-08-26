@@ -64,6 +64,10 @@ async function main() {
   });
 
   registry.start();
+  // Reconcile direct Keycloak deletions immediately on rollout as well as on
+  // the five-minute schedule. This makes already-deleted identities disappear
+  // from the application user list without waiting for the first cron tick.
+  await registry.runNow('keycloak-user-sync');
   logger.info({ jobs: registry.registeredJobKeys }, 'Worker started');
 
   let shuttingDown = false;

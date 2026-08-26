@@ -15,7 +15,7 @@ function nextBackoff(attempts: number): Date {
 
 /**
  * Delivers durable outbox messages written by apps/api (booking
- * confirmations for now - see apps/api/src/lib/mailOutbox.ts). Polls
+ * confirmations for lessons and events - see apps/api/src/lib/mailOutbox.ts). Polls
  * PENDING/FAILED rows whose nextAttemptAt is due, sends each via the SMTP
  * relay, and records the outcome:
  *   - success -> SENT

@@ -37,7 +37,7 @@ describe('adminStats', () => {
     const result = await adminResolvers.Query.adminStats(null, {}, { prisma, user: adminUser } as any);
 
     expect(teacherProfileCount).toHaveBeenCalledWith({
-      where: { user: { role: { in: ['TEACHER', 'ADMIN'] } } },
+      where: { user: { role: { in: ['TEACHER', 'ADMIN'] }, status: 'ACTIVE' } },
     });
     expect(result.totalTeachers).toBe(2);
     expect(result.totalUsers).toBe(3);
@@ -70,9 +70,9 @@ describe('adminStats', () => {
 // a Keycloak identity used to leave the Postgres User row (and the admin
 // user list) completely untouched. adminUsers now hides DEACTIVATED users
 // by default, and adminDeactivateUser is the supported way to remove
-// someone that sets both sides atomically - Keycloak identity deleted
-// first (the irreversible half), Postgres marked DEACTIVATED only once
-// that succeeds, never a hard delete (bookings/payments/history survive).
+// someone. It deletes the Keycloak identity first (the irreversible half),
+// then marks Postgres DEACTIVATED only once that succeeds; it never hard
+// deletes the application history (bookings/payments/history survive).
 describe('adminUsers', () => {
   it('excludes DEACTIVATED users by default', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
@@ -94,12 +94,20 @@ describe('adminUsers', () => {
 });
 
 describe('adminDeactivateUser', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('deletes the linked Keycloak identity and marks the user DEACTIVATED, never a hard delete', async () => {
     const findFirst = jest.fn().mockResolvedValue({ id: 'ext-1', userId: 'user-1', provider: 'keycloak', externalId: 'kc-sub-1' });
     const update = jest.fn().mockResolvedValue({ id: 'user-1', status: 'DEACTIVATED' });
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
     const prisma = fakePrisma({
       userExternalIdentity: { findFirst },
-      user: { update },
+      $transaction: jest.fn(async (callback: any) => callback({
+        teacherProfile: { updateMany },
+        user: { update },
+      })),
     });
 
     await adminResolvers.Mutation.adminDeactivateUser(null, { userId: 'user-1' }, { prisma, user: adminUser } as any);
@@ -107,15 +115,25 @@ describe('adminDeactivateUser', () => {
     expect(findFirst).toHaveBeenCalledWith({ where: { userId: 'user-1', provider: 'keycloak' } });
     expect(deleteKeycloakUser).toHaveBeenCalledWith('kc-sub-1');
     expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'user-1' }, data: { status: 'DEACTIVATED' } }),
+      expect.objectContaining({
+        where: { id: 'user-1' },
+        data: { status: 'DEACTIVATED', calendarFeedToken: null },
+      }),
     );
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+      data: { isPublic: false, isAvailable: false },
+    });
   });
 
   it('still marks the user DEACTIVATED when there is no linked Keycloak identity to delete', async () => {
     const update = jest.fn().mockResolvedValue({ id: 'user-1', status: 'DEACTIVATED' });
     const prisma = fakePrisma({
       userExternalIdentity: { findFirst: jest.fn().mockResolvedValue(null) },
-      user: { update },
+      $transaction: jest.fn(async (callback: any) => callback({
+        teacherProfile: { updateMany: jest.fn() },
+        user: { update },
+      })),
     });
 
     await adminResolvers.Mutation.adminDeactivateUser(null, { userId: 'user-1' }, { prisma, user: adminUser } as any);

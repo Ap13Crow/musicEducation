@@ -38,6 +38,10 @@ export async function resolveRequestUser(
   if (!claims) return null;
 
   const user = await provisionKeycloakUser(prisma, claims);
+  // A still-valid browser token must stop working immediately after the
+  // local projection is deactivated, and recreating the same email in
+  // Keycloak must not silently regain access to preserved history.
+  if (user.status !== 'ACTIVE') return null;
   return { id: user.id, role: user.role };
 }
 

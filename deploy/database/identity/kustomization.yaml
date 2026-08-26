@@ -36,3 +36,4 @@ configMapGenerator:
       - 029-drop-user-credential.sql
       - 030-user-status.sql
       - 031-teacher-profile-public.sql
+      - 032-event-mail-outbox.sql

@@ -212,7 +212,7 @@ export const bookingResolvers = {
 
       const teacherProfile = await prisma.teacherProfile.findUnique({
         where: { id: teacherProfileId },
-        include: { user: { select: { role: true, profile: { select: { timezone: true } } } } },
+        include: { user: { select: { role: true, status: true, profile: { select: { timezone: true } } } } },
       });
       if (!teacherProfile) throw new GraphQLError('Teacher not found.', { extensions: { code: 'NOT_FOUND' } });
       if (teacherProfile.userId === user.id) {
@@ -223,7 +223,11 @@ export const bookingResolvers = {
       // TEACHER-or-ADMIN rule as the public teachers/teacher queries in
       // users.ts - an admin discoverable there as a teacher must also be
       // bookable here, or they'd be a dead end in the UI.
-      if (teacherProfile.user.role !== 'TEACHER' && teacherProfile.user.role !== 'ADMIN') {
+      if (
+        teacherProfile.user.status !== 'ACTIVE' ||
+        !teacherProfile.isPublic ||
+        (teacherProfile.user.role !== 'TEACHER' && teacherProfile.user.role !== 'ADMIN')
+      ) {
         throw new GraphQLError('Teacher not found.', { extensions: { code: 'NOT_FOUND' } });
       }
       if (!teacherProfile.isAvailable) throw new GraphQLError('Teacher is not available.', { extensions: { code: 'BAD_USER_INPUT' } });

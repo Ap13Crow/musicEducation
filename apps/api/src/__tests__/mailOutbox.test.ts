@@ -61,12 +61,31 @@ describe('enqueueMail', () => {
       data: {
         kind: 'BOOKING_CONFIRMATION',
         bookingId: 'booking-1',
+        eventBookingId: null,
         recipients: ['a@example.com', 'b@example.com'],
         subject: 'Your lesson is confirmed',
         html: '<p>hi</p>',
         icsContent: null,
         icsMethod: null,
       },
+    });
+  });
+
+  it('links event mail to the event booking that triggered it', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    await enqueueMail({ mailOutboxMessage: { create } } as any, {
+      kind: 'EVENT_CONFIRMATION',
+      eventBookingId: 'event-booking-1',
+      recipients: ['attendee@example.com'],
+      subject: 'Your event booking is confirmed',
+      html: '<p>confirmed</p>',
+    });
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        kind: 'EVENT_CONFIRMATION',
+        bookingId: null,
+        eventBookingId: 'event-booking-1',
+      }),
     });
   });
 

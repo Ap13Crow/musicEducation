@@ -36,10 +36,28 @@ describe('teachers query directory visibility', () => {
 
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ isPublic: true, user: { role: { in: ['TEACHER', 'ADMIN'] } } }),
+        where: expect.objectContaining({
+          isPublic: true,
+          user: { role: { in: ['TEACHER', 'ADMIN'] }, status: 'ACTIVE' },
+        }),
       }),
     );
     expect(findMany.mock.calls[0][0].where).not.toHaveProperty('isAvailable');
+  });
+
+  it('never exposes a deactivated teacher profile', async () => {
+    const findFirst = jest.fn().mockResolvedValue(null);
+    const prisma = fakePrisma({ teacherProfile: { findFirst } });
+
+    await userResolvers.Query.teacher(null, { id: 'profile-1' }, { prisma, user: null } as any);
+
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: 'profile-1',
+        isPublic: true,
+        user: { role: { in: ['TEACHER', 'ADMIN'] }, status: 'ACTIVE' },
+      }),
+    }));
   });
 
   it('still lets a caller filter results down to isAvailable-only within the public set', async () => {

@@ -2,10 +2,9 @@ import { sendMail } from './mailer.js';
 
 // Small, purpose-built email templates - one function per transactional
 // trigger, matching the small-helper-duplication convention already used
-// for youtube.ts/ai.ts rather than a generic templating layer. Every sender
-// here is fire-and-forget from the caller's perspective: sendMail already
-// swallows "not configured"/"failed" into a boolean, so a booking or
-// purchase must never fail because a notification couldn't go out.
+// for youtube.ts/ai.ts rather than a generic templating layer. Booking/event
+// helpers return content for the durable outbox; the remaining direct
+// purchase sender inherits sendMail's non-throwing behavior.
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -86,6 +85,62 @@ export function bookingCancelledEmailContent(booking: {
       html: wrapper(
         `<p>Hi ${escapeHtml(booking.teacherName)},</p>
          <p>Your lesson with <strong>${escapeHtml(booking.studentName)}</strong> has been cancelled.</p>
+         <p>${escapeHtml(details)}</p>`,
+      ),
+    },
+  };
+}
+
+export function eventBookingConfirmedEmailContent(booking: {
+  attendeeName: string;
+  organizerName: string;
+  eventTitle: string;
+  startsAt: Date;
+  location: string;
+}): { attendee: { subject: string; html: string }; organizer: { subject: string; html: string } } {
+  const details = `${formatUtc(booking.startsAt)} · ${booking.location}`;
+  return {
+    attendee: {
+      subject: 'Your event booking is confirmed',
+      html: wrapper(
+        `<p>Hi ${escapeHtml(booking.attendeeName)},</p>
+         <p>Your booking for <strong>${escapeHtml(booking.eventTitle)}</strong> is confirmed.</p>
+         <p>${escapeHtml(details)}</p>`,
+      ),
+    },
+    organizer: {
+      subject: 'A new event booking was confirmed',
+      html: wrapper(
+        `<p>Hi ${escapeHtml(booking.organizerName)},</p>
+         <p><strong>${escapeHtml(booking.attendeeName)}</strong> booked ${escapeHtml(booking.eventTitle)}.</p>
+         <p>${escapeHtml(details)}</p>`,
+      ),
+    },
+  };
+}
+
+export function eventBookingCancelledEmailContent(booking: {
+  attendeeName: string;
+  organizerName: string;
+  eventTitle: string;
+  startsAt: Date;
+  location: string;
+}): { attendee: { subject: string; html: string }; organizer: { subject: string; html: string } } {
+  const details = `${formatUtc(booking.startsAt)} · ${booking.location}`;
+  return {
+    attendee: {
+      subject: 'Your event booking was cancelled',
+      html: wrapper(
+        `<p>Hi ${escapeHtml(booking.attendeeName)},</p>
+         <p>Your booking for <strong>${escapeHtml(booking.eventTitle)}</strong> was cancelled.</p>
+         <p>${escapeHtml(details)}</p>`,
+      ),
+    },
+    organizer: {
+      subject: 'An event booking was cancelled',
+      html: wrapper(
+        `<p>Hi ${escapeHtml(booking.organizerName)},</p>
+         <p><strong>${escapeHtml(booking.attendeeName)}</strong> cancelled their booking for ${escapeHtml(booking.eventTitle)}.</p>
          <p>${escapeHtml(details)}</p>`,
       ),
     },
