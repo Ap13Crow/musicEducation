@@ -16,6 +16,16 @@ enum Role {
   ADMIN
 }
 
+// A user whose Keycloak identity no longer exists (deleted by an admin,
+// directly in the Keycloak console or via adminDeactivateUser) is marked
+// DEACTIVATED rather than deleted here - bookings/payments/history reference
+// this row and must survive. See adminDeactivateUser (admin.ts) and the
+// worker's keycloak-user-sync job for the two paths that set this.
+enum UserStatus {
+  ACTIVE
+  DEACTIVATED
+}
+
 enum SkillLevel {
   BEGINNER
   ELEMENTARY
@@ -115,6 +125,7 @@ model User {
   email         String    @unique
   emailVerified Boolean   @default(false)
   role          Role      @default(STUDENT)
+  status        UserStatus @default(ACTIVE)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -127,7 +138,6 @@ model User {
   // student/teacher wants to invalidate a previously shared link.
   calendarFeedToken String? @unique
 
-  credential         UserCredential?
   profile            UserProfile?
   teacherProfile     TeacherProfile?
   teacherApplication TeacherApplication?
@@ -153,16 +163,6 @@ model User {
   subscriptionPurchases  SubscriptionPurchase[]
   externalEventEngagements ExternalEventEngagement[]
   externalCalendarConnections ExternalCalendarConnection[]
-}
-
-model UserCredential {
-  id           String   @id @default(cuid())
-  userId       String   @unique
-  passwordHash String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id])
 }
 
 model UserProfile {
@@ -199,7 +199,18 @@ model TeacherProfile {
   languages        String[]
   hourlyRate       Decimal? @db.Decimal(10, 2)
   currency         String   @default("CHF")
+  // Controls booking eligibility ONLY (bookSession gates on this - see
+  // bookings.ts). Directory/search visibility is isPublic, below - the two
+  // used to be the same flag, which silently hid a teacher from the whole
+  // public directory the moment they paused new bookings.
   isAvailable      Boolean  @default(true)
+  // Controls whether this profile appears in the public teacher directory
+  // and search (`teachers` query, users.ts) - independent of isAvailable.
+  // Defaults to true for real teachers (reviewTeacherApplication/
+  // adminSetRole); applyAsTeacher overrides it to false when the caller is
+  // an ADMIN self-provisioning a profile, since holding ADMIN isn't itself
+  // an expression of intent to be publicly listed as a teacher.
+  isPublic         Boolean  @default(true)
   calendlyUsername String?
   avgRating        Float    @default(0)
   totalReviews     Int      @default(0)

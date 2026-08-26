@@ -102,7 +102,11 @@ export const userResolvers = {
       // row is never deleted on demotion (it's history — past courses/
       // bookings still reference it), so this role check — not row
       // existence — is what "is this person a teacher right now" means.
-      const where: any = { isAvailable: true, user: { role: { in: ['TEACHER', 'ADMIN'] } } };
+      //
+      // Gated on isPublic, not isAvailable: isAvailable is booking
+      // eligibility only (see bookSession, bookings.ts) - a teacher pausing
+      // new bookings must not disappear from the directory entirely.
+      const where: any = { isPublic: true, user: { role: { in: ['TEACHER', 'ADMIN'] } } };
       if (filter) {
         if (filter.instrument) where.instruments = { has: filter.instrument };
         if (filter.maxHourlyRate !== undefined) where.hourlyRate = { lte: filter.maxHourlyRate };
@@ -193,7 +197,13 @@ export const userResolvers = {
       requireRole(user, 'TEACHER', 'ADMIN');
       return prisma.teacherProfile.upsert({
         where: { userId: user!.id },
-        create: { userId: user!.id, instruments: [], musicStyles: [], languages: [] },
+        // isPublic defaults to the schema's true for everyone EXCEPT here:
+        // holding ADMIN is not itself an expression of intent to teach (see
+        // the `teachers` query above), so a profile created through this
+        // self-service path for an ADMIN starts unlisted in the public
+        // directory - reviewTeacherApplication/adminSetRole (real applicants
+        // and explicit teacher promotions) keep the true default.
+        create: { userId: user!.id, instruments: [], musicStyles: [], languages: [], isPublic: user!.role !== 'ADMIN' },
         update: {},
       });
     },
@@ -209,7 +219,7 @@ export const userResolvers = {
       // accepts as args), so every field but hourlyRate/instruments/
       // isAvailable/calendlyUsername was silently ignored.
       const {
-        headline, teachingBio, hourlyRate, instruments, specializations, teachingFormats, isAvailable, calendlyUsername,
+        headline, teachingBio, hourlyRate, instruments, specializations, teachingFormats, isAvailable, isPublic, calendlyUsername,
         introVideoVisible, publicImageUrl, leadDays, cancellationDays, autoApproveNewStudents, autoApproveRecurringStudents,
       } = args;
       const data: Record<string, unknown> = {};
@@ -274,6 +284,7 @@ export const userResolvers = {
       // letting it reach Prisma.
       if (instruments !== undefined && instruments !== null) data.instruments = instruments;
       if (isAvailable !== undefined && isAvailable !== null) data.isAvailable = isAvailable;
+      if (isPublic !== undefined && isPublic !== null) data.isPublic = isPublic;
       if (introVideoVisible !== undefined && introVideoVisible !== null) data.introVideoVisible = introVideoVisible;
       if (specializations !== undefined && specializations !== null) data.musicStyles = specializations;
       if (teachingFormats !== undefined && teachingFormats !== null) data.teachingFormats = teachingFormats;

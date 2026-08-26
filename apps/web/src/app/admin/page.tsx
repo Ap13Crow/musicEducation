@@ -107,12 +107,13 @@ function OverviewTab() {
 }
 
 const GET_ADMIN_USERS = gql`
-  query AdminUsers($role: Role, $search: String) {
-    adminUsers(role: $role, search: $search, limit: 100) {
+  query AdminUsers($role: Role, $search: String, $includeDeactivated: Boolean) {
+    adminUsers(role: $role, search: $search, includeDeactivated: $includeDeactivated, limit: 100) {
       id
       displayName
       email
       role
+      status
       createdAt
     }
   }
@@ -127,18 +128,31 @@ const SET_USER_ROLE = gql`
   }
 `;
 
+const DEACTIVATE_USER = gql`
+  mutation AdminDeactivateUser($userId: ID!) {
+    adminDeactivateUser(userId: $userId) {
+      id
+      status
+    }
+  }
+`;
+
 function UsersTab() {
   const [roleFilter, setRoleFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [includeDeactivated, setIncludeDeactivated] = useState(false);
   const [changingRole, setChangingRole] = useState<string | null>(null);
+  const [deactivating, setDeactivating] = useState<string | null>(null);
 
+  const queryVariables = { role: roleFilter || undefined, search: searchQuery || undefined, includeDeactivated };
   const { data, loading, error } = useQuery(GET_ADMIN_USERS, {
-    variables: { role: roleFilter || undefined, search: searchQuery || undefined },
+    variables: queryVariables,
     fetchPolicy: 'cache-and-network',
   });
-  const [setRole] = useMutation(SET_USER_ROLE, { refetchQueries: [{ query: GET_ADMIN_USERS, variables: { role: roleFilter || undefined, search: searchQuery || undefined } }] });
+  const [setRole] = useMutation(SET_USER_ROLE, { refetchQueries: [{ query: GET_ADMIN_USERS, variables: queryVariables }] });
+  const [deactivateUser] = useMutation(DEACTIVATE_USER, { refetchQueries: [{ query: GET_ADMIN_USERS, variables: queryVariables }] });
 
-  const users: { id: string; displayName: string; email: string; role: string; createdAt: string }[] =
+  const users: { id: string; displayName: string; email: string; role: string; status: string; createdAt: string }[] =
     data?.adminUsers ?? [];
 
   async function handleRoleChange(userId: string, role: string) {
@@ -150,9 +164,19 @@ function UsersTab() {
     }
   }
 
+  async function handleDeactivate(userId: string, email: string) {
+    if (!confirm(`Deactivate ${email}? This deletes their Keycloak sign-in identity immediately and cannot be undone — they will no longer be able to log in. Their bookings, payments, and history are kept, and this user is hidden from the list by default afterward.`)) return;
+    setDeactivating(userId);
+    try {
+      await deactivateUser({ variables: { userId } });
+    } finally {
+      setDeactivating(null);
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <input
           type="text"
           placeholder="Search users..."
@@ -170,6 +194,14 @@ function UsersTab() {
           <option value="TEACHER">Teachers</option>
           <option value="ADMIN">Admins</option>
         </select>
+        <label className="flex shrink-0 items-center gap-2 text-sm text-gray-600">
+          <input
+            type="checkbox"
+            checked={includeDeactivated}
+            onChange={(e) => setIncludeDeactivated(e.target.checked)}
+          />
+          Show deactivated
+        </label>
       </div>
 
       {error && (
@@ -185,25 +217,26 @@ function UsersTab() {
               <th className="px-4 py-3 text-left font-medium text-gray-500">Name</th>
               <th className="px-4 py-3 text-left font-medium text-gray-500">Email</th>
               <th className="px-4 py-3 text-left font-medium text-gray-500">Role</th>
+              <th className="px-4 py-3 text-left font-medium text-gray-500">Status</th>
               <th className="px-4 py-3 text-left font-medium text-gray-500">Joined</th>
               <th className="px-4 py-3 text-left font-medium text-gray-500">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading && users.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-400">Loading…</td></tr>
+              <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">Loading…</td></tr>
             )}
             {!loading && users.length === 0 && !error && (
-              <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-400">No users found.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">No users found.</td></tr>
             )}
             {users.map((user) => (
-              <tr key={user.id} className="hover:bg-gray-50">
+              <tr key={user.id} className={`hover:bg-gray-50 ${user.status === 'DEACTIVATED' ? 'opacity-60' : ''}`}>
                 <td className="px-4 py-3 font-medium">{user.displayName}</td>
                 <td className="px-4 py-3 text-gray-500">{user.email}</td>
                 <td className="px-4 py-3">
                   <select
                     value={user.role}
-                    disabled={changingRole === user.id}
+                    disabled={changingRole === user.id || user.status === 'DEACTIVATED'}
                     onChange={(e) => handleRoleChange(user.id, e.target.value)}
                     className={`rounded-full px-2 py-0.5 text-xs font-medium border-0 cursor-pointer focus:ring-1 focus:ring-primary-400 ${
                       user.role === 'ADMIN' ? 'bg-red-50 text-red-700' :
@@ -216,18 +249,37 @@ function UsersTab() {
                     <option value="ADMIN">ADMIN</option>
                   </select>
                 </td>
+                <td className="px-4 py-3">
+                  {user.status === 'DEACTIVATED' ? (
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Deactivated</span>
+                  ) : (
+                    <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-gray-500">
                   {new Date(user.createdAt).toLocaleDateString()}
                 </td>
                 <td className="px-4 py-3">
-                  <a
-                    href={KEYCLOAK_USERS_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs font-medium text-primary-600 hover:underline"
-                  >
-                    Edit in Keycloak
-                  </a>
+                  <div className="flex items-center gap-3">
+                    <a
+                      href={KEYCLOAK_USERS_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-medium text-primary-600 hover:underline"
+                    >
+                      Edit in Keycloak
+                    </a>
+                    {user.status !== 'DEACTIVATED' && (
+                      <button
+                        type="button"
+                        disabled={deactivating === user.id}
+                        onClick={() => void handleDeactivate(user.id, user.email)}
+                        className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+                      >
+                        {deactivating === user.id ? 'Deactivating…' : 'Deactivate'}
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

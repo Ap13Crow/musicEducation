@@ -9,7 +9,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import pino from 'pino';
 import { PrismaClient } from '@my-music-coach/database';
-import { authMiddleware, resolveRequestUser } from './middleware/auth.js';
+import { resolveRequestUser } from './middleware/auth.js';
 import { resolvers } from './resolvers/index.js';
 import { createLoaders } from './lib/loaders.js';
 import { handleStripeWebhook, handleStripeV2Webhook } from './resolvers/payments.js';
@@ -109,7 +109,6 @@ async function main() {
   app.use(['/teacher-application', '/teacher/photo'], express.json({ limit: '10mb' }));
   app.use(express.json({ limit: '1mb' }));
 
-  app.use(authMiddleware);
   app.post('/profile/avatar', async (req, res) => {
     const auth = await resolveRequestUser(req, prisma);
     if (!auth) return res.status(401).json({ error: 'Authentication required.' });

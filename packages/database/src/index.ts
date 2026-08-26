@@ -1,7 +1,6 @@
 export { PrismaClient, Prisma } from '@prisma/client';
 export type {
   User,
-  UserCredential,
   UserProfile,
   TeacherProfile,
   TeacherCertification,
@@ -29,6 +28,7 @@ export type {
   AdminSetting,
   ExternalEventProjection,
   Role,
+  UserStatus,
   SkillLevel,
   CourseStatus,
   BookingStatus,

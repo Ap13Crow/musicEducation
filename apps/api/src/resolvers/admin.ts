@@ -1,5 +1,6 @@
 import { GraphQLError } from 'graphql';
 import { requireRole } from '../middleware/auth.js';
+import { deleteKeycloakUser } from '../lib/keycloakAdmin.js';
 import type { GraphQLContext } from '../types.js';
 
 export const adminResolvers = {
@@ -82,9 +83,15 @@ export const adminResolvers = {
       };
     },
 
-    async adminUsers(_: unknown, { role, search, page = 1, limit = 50 }: any, { prisma, user }: GraphQLContext) {
+    async adminUsers(_: unknown, { role, search, page = 1, limit = 50, includeDeactivated = false }: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'ADMIN');
-      const where: any = {};
+      // Hidden by default: a DEACTIVATED user's Keycloak identity is gone
+      // (see adminDeactivateUser / the worker's keycloak-user-sync job),
+      // and the admin user list is where "did removing them actually work"
+      // gets judged - leaving them mixed in with active accounts would look
+      // exactly like the original bug (deleted-in-Keycloak users still
+      // showing up here).
+      const where: any = includeDeactivated ? {} : { status: 'ACTIVE' };
       if (role) where.role = role;
       if (search) {
         where.OR = [
@@ -171,6 +178,29 @@ export const adminResolvers = {
         throw new Error('Cannot ban your own account.');
       }
       return prisma.user.update({ where: { id: userId }, data: { role: 'STUDENT' }, include: { profile: true } });
+    },
+
+    // Deletes the Keycloak identity first (the irreversible half) and only
+    // marks Postgres DEACTIVATED once that succeeds - the reverse order
+    // would risk a user the app already believes is gone still being able
+    // to sign in. If the identity is already gone (404, e.g. deleted
+    // directly in the Keycloak console moments earlier), deleteKeycloakUser
+    // treats that as success too, so this mutation still finishes the
+    // Postgres side cleanly. No matching UserExternalIdentity row means the
+    // account was never linked to Keycloak (e.g. seed/test data) - nothing
+    // to delete there, just mark it DEACTIVATED.
+    async adminDeactivateUser(_: unknown, { userId }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'ADMIN');
+      if (userId === user!.id) {
+        throw new Error('Cannot deactivate your own account.');
+      }
+      const identity = await prisma.userExternalIdentity.findFirst({
+        where: { userId, provider: 'keycloak' },
+      });
+      if (identity) {
+        await deleteKeycloakUser(identity.externalId);
+      }
+      return prisma.user.update({ where: { id: userId }, data: { status: 'DEACTIVATED' }, include: { profile: true } });
     },
   },
 

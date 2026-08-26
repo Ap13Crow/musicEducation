@@ -33,3 +33,6 @@ configMapGenerator:
       - 026-external-event-engagement.sql
       - 027-external-calendar-sync-and-feed-token.sql
       - 028-teacher-application-structured-address.sql
+      - 029-drop-user-credential.sql
+      - 030-user-status.sql
+      - 031-teacher-profile-public.sql
