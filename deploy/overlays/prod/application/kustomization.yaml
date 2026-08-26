@@ -80,3 +80,8 @@ patches:
           spec:
             imagePullSecrets:
               - name: ghcr-pull
+            containers:
+              - name: worker
+                env:
+                  - name: KEYCLOAK_ISSUER
+                    value: https://auth.mymusic.coach/realms/mymusic-coach

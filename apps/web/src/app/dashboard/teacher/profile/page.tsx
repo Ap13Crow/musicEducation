@@ -23,7 +23,7 @@ const GET = gql`
       profile { city country }
       teacherProfile {
         id headline teachingBio hourlyRate currency instruments specializations teachingFormats
-        isAvailable publicImageUrl introVideoUrl introVideoVisible avgRating totalReviews
+        isAvailable isPublic publicImageUrl introVideoUrl introVideoVisible avgRating totalReviews
         memberSince distinctStudentCount publishedResourceCount
         leadDays cancellationDays autoApproveNewStudents autoApproveRecurringStudents
         instrumentCapacities { id instrument maxActiveStudents activeStudentCount remainingCapacity }
@@ -37,15 +37,15 @@ const GET = gql`
 const UPDATE = gql`
   mutation UpdateTeacherProfessionalProfile(
     $headline: String, $teachingBio: String, $hourlyRate: Float, $instruments: [String!]
-    $specializations: [String!], $teachingFormats: [String!], $isAvailable: Boolean
+    $specializations: [String!], $teachingFormats: [String!], $isAvailable: Boolean, $isPublic: Boolean
     $introVideoVisible: Boolean, $publicImageUrl: String
   ) {
     updateTeacherProfile(
       headline: $headline, teachingBio: $teachingBio, hourlyRate: $hourlyRate, instruments: $instruments
-      specializations: $specializations, teachingFormats: $teachingFormats, isAvailable: $isAvailable
+      specializations: $specializations, teachingFormats: $teachingFormats, isAvailable: $isAvailable, isPublic: $isPublic
       introVideoVisible: $introVideoVisible, publicImageUrl: $publicImageUrl
     ) {
-      id headline teachingBio hourlyRate instruments specializations teachingFormats isAvailable
+      id headline teachingBio hourlyRate instruments specializations teachingFormats isAvailable isPublic
       publicImageUrl introVideoUrl introVideoVisible
     }
   }
@@ -64,12 +64,20 @@ const SET_INSTRUMENT_CAPACITY = gql`
     }
   }
 `;
+const APPLY_AS_TEACHER = gql`
+  mutation CreateMyTeacherProfile {
+    applyAsTeacher {
+      id
+    }
+  }
+`;
 
 export default function TeacherProfessionalProfilePage() {
   const { data, loading, error, refetch } = useQuery(GET, { fetchPolicy: 'cache-and-network' });
   const [update, { loading: saving }] = useMutation(UPDATE);
   const [updatePolicy, { loading: savingPolicy, error: policyError }] = useMutation(UPDATE_POLICY);
   const [setCapacity, { loading: savingCapacity }] = useMutation(SET_INSTRUMENT_CAPACITY);
+  const [applyAsTeacher, { loading: creatingProfile, error: createError }] = useMutation(APPLY_AS_TEACHER);
   const [policyDraft, setPolicyDraft] = useState({ leadDays: '1', cancellationDays: '2' });
   const [capacityDraft, setCapacityDraft] = useState<{ instrument: string; maxActiveStudents: string }>({ instrument: '', maxActiveStudents: '' });
   const profile = data?.me?.teacherProfile;
@@ -173,6 +181,10 @@ export default function TeacherProfessionalProfilePage() {
     await update({ variables: { isAvailable: !profile.isAvailable } });
     await refetch();
   }
+  async function togglePublic() {
+    await update({ variables: { isPublic: !profile.isPublic } });
+    await refetch();
+  }
   async function toggleVideoVisible() {
     await update({ variables: { introVideoVisible: !profile.introVideoVisible } });
     await refetch();
@@ -205,6 +217,19 @@ export default function TeacherProfessionalProfilePage() {
     await refetch();
   }
 
+  // Historically this page just rendered nothing once `loading`/`error`
+  // both cleared and `profile` was still null - the case for any ADMIN who
+  // reached the TEACHER/ADMIN-gated teacher workspace without ever applying
+  // as a teacher (applyAsTeacher only auto-runs for the TEACHER role, not
+  // ADMIN - see the `teachers` query resolver). applyAsTeacher is the same
+  // mutation /become-teacher's approval flow effectively grants; calling it
+  // here creates an empty (unlisted, if ADMIN - see applyAsTeacher) profile
+  // the form below can then edit.
+  async function createProfile() {
+    await applyAsTeacher();
+    await refetch();
+  }
+
   const bookings: any[] = data?.myBookings ?? [];
   const pendingCount = bookings.filter((b) => b.status === 'PENDING').length;
   const upcomingCount = bookings.filter((b) => b.status === 'CONFIRMED').length;
@@ -227,6 +252,26 @@ export default function TeacherProfessionalProfilePage() {
         <div className="mx-auto max-w-5xl px-6 py-8">
           {loading && !data && <p className="text-sm text-gray-500">Loading…</p>}
           {error && <p className="text-sm text-red-600">Failed to load your profile: {error.message}</p>}
+
+          {!loading && !error && !profile && (
+            <div className="card flex flex-col items-center gap-3 p-10 text-center">
+              <UserRoundCheck className="h-8 w-8 text-primary-600" />
+              <h2 className="font-serif text-xl font-semibold text-gray-900">Create your teacher profile</h2>
+              <p className="max-w-md text-sm text-gray-600">
+                You don&apos;t have a teacher profile yet. Create one to fill in your bio, instruments, rate, and
+                photo — you can decide separately whether it&apos;s visible in the public directory.
+              </p>
+              {createError && <p className="text-sm text-red-600">{createError.message}</p>}
+              <button
+                type="button"
+                onClick={() => void createProfile()}
+                disabled={creatingProfile}
+                className="btn-primary mt-2 rounded-lg px-5 py-2.5 text-sm disabled:opacity-50"
+              >
+                {creatingProfile ? 'Creating…' : 'Create my teacher profile'}
+              </button>
+            </div>
+          )}
 
           {profile && (
             <div className="grid gap-6 lg:grid-cols-3">
@@ -328,6 +373,20 @@ export default function TeacherProfessionalProfilePage() {
                     {saved && <span className="text-xs text-green-700">Saved.</span>}
                   </div>
                 </form>
+
+                {/* Directory visibility toggle */}
+                <section className="card p-6">
+                  <h2 className="font-semibold text-gray-900">Public directory</h2>
+                  <label className="mt-3 flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={Boolean(profile.isPublic)} onChange={() => void togglePublic()} />
+                    Show my profile in the public teacher directory and search
+                  </label>
+                  <p className="mt-2 text-xs text-gray-500">
+                    Independent of booking availability below — turning this off hides you from{' '}
+                    <Link href="/teachers" className="text-primary-700 underline">the directory</Link> entirely, even if
+                    you&apos;re still accepting bookings.
+                  </p>
+                </section>
 
                 {/* Availability toggle */}
                 <section className="card p-6">

@@ -2,8 +2,11 @@
 
 process.env.JWT_SECRET = 'test-secret-key-for-unit-tests';
 
+jest.mock('../lib/keycloakAdmin', () => ({ deleteKeycloakUser: jest.fn().mockResolvedValue(undefined) }));
+
 import { requireRole } from '../middleware/auth';
 import { adminResolvers } from '../resolvers/admin';
+import { deleteKeycloakUser } from '../lib/keycloakAdmin';
 
 const adminUser = { id: 'admin-1', role: 'ADMIN' } as const;
 
@@ -59,6 +62,79 @@ describe('adminStats', () => {
     const prisma = fakePrisma();
     await expect(
       adminResolvers.Query.adminStats(null, {}, { prisma, user: { id: 's-1', role: 'STUDENT' } } as any),
+    ).rejects.toThrow('FORBIDDEN');
+  });
+});
+
+// Regression coverage for "Deleted user remains on MyMusic.Coach": deleting
+// a Keycloak identity used to leave the Postgres User row (and the admin
+// user list) completely untouched. adminUsers now hides DEACTIVATED users
+// by default, and adminDeactivateUser is the supported way to remove
+// someone that sets both sides atomically - Keycloak identity deleted
+// first (the irreversible half), Postgres marked DEACTIVATED only once
+// that succeeds, never a hard delete (bookings/payments/history survive).
+describe('adminUsers', () => {
+  it('excludes DEACTIVATED users by default', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = fakePrisma({ user: { findMany } });
+
+    await adminResolvers.Query.adminUsers(null, {}, { prisma, user: adminUser } as any);
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'ACTIVE' } }));
+  });
+
+  it('includes DEACTIVATED users when includeDeactivated is true', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = fakePrisma({ user: { findMany } });
+
+    await adminResolvers.Query.adminUsers(null, { includeDeactivated: true }, { prisma, user: adminUser } as any);
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: {} }));
+  });
+});
+
+describe('adminDeactivateUser', () => {
+  it('deletes the linked Keycloak identity and marks the user DEACTIVATED, never a hard delete', async () => {
+    const findFirst = jest.fn().mockResolvedValue({ id: 'ext-1', userId: 'user-1', provider: 'keycloak', externalId: 'kc-sub-1' });
+    const update = jest.fn().mockResolvedValue({ id: 'user-1', status: 'DEACTIVATED' });
+    const prisma = fakePrisma({
+      userExternalIdentity: { findFirst },
+      user: { update },
+    });
+
+    await adminResolvers.Mutation.adminDeactivateUser(null, { userId: 'user-1' }, { prisma, user: adminUser } as any);
+
+    expect(findFirst).toHaveBeenCalledWith({ where: { userId: 'user-1', provider: 'keycloak' } });
+    expect(deleteKeycloakUser).toHaveBeenCalledWith('kc-sub-1');
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'user-1' }, data: { status: 'DEACTIVATED' } }),
+    );
+  });
+
+  it('still marks the user DEACTIVATED when there is no linked Keycloak identity to delete', async () => {
+    const update = jest.fn().mockResolvedValue({ id: 'user-1', status: 'DEACTIVATED' });
+    const prisma = fakePrisma({
+      userExternalIdentity: { findFirst: jest.fn().mockResolvedValue(null) },
+      user: { update },
+    });
+
+    await adminResolvers.Mutation.adminDeactivateUser(null, { userId: 'user-1' }, { prisma, user: adminUser } as any);
+
+    expect(deleteKeycloakUser).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalled();
+  });
+
+  it('refuses to deactivate your own account', async () => {
+    const prisma = fakePrisma({ userExternalIdentity: { findFirst: jest.fn() }, user: { update: jest.fn() } });
+    await expect(
+      adminResolvers.Mutation.adminDeactivateUser(null, { userId: adminUser.id }, { prisma, user: adminUser } as any),
+    ).rejects.toThrow('Cannot deactivate your own account.');
+  });
+
+  it('still requires ADMIN', async () => {
+    const prisma = fakePrisma();
+    await expect(
+      adminResolvers.Mutation.adminDeactivateUser(null, { userId: 'user-1' }, { prisma, user: { id: 's-1', role: 'STUDENT' } } as any),
     ).rejects.toThrow('FORBIDDEN');
   });
 });

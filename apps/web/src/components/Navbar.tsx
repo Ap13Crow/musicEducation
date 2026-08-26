@@ -75,7 +75,7 @@ export default function Navbar() {
                   Log in
                 </button>
                 <button
-                  onClick={() => signIn('keycloak', { callbackUrl: '/dashboard' }, { kc_action: 'register', prompt: 'login', max_age: '0' })}
+                  onClick={() => signIn('keycloak', { callbackUrl: '/dashboard' }, { prompt: 'create' })}
                   className="btn-primary rounded-lg px-4 py-2 text-sm"
                 >
                   Register
@@ -196,7 +196,7 @@ export default function Navbar() {
                   Log in
                 </button>
                 <button
-                  onClick={() => signIn('keycloak', { callbackUrl: '/dashboard' }, { kc_action: 'register', prompt: 'login', max_age: '0' })}
+                  onClick={() => signIn('keycloak', { callbackUrl: '/dashboard' }, { prompt: 'create' })}
                   className="btn-primary rounded-lg px-4 py-2 text-sm"
                 >
                   Register

@@ -352,6 +352,120 @@ jobs:
             kubectl -n "$NAMESPACE" delete keycloakrealmimport "$REALM_IMPORT" --wait=true
           fi
 
+      # The two steps below reconcile the realm's SMTP settings into the
+      # ALREADY-EXISTING realm on every deploy - the KeycloakRealmImport
+      # above only ever applies once (see "Install Keycloak and bootstrap
+      # its realm"), so an SMTP block added to realm-import.yaml would never
+      # reach a realm that already exists. Ported verbatim from
+      # deploy-keycloak-dev.yml, which has run this successfully for the
+      # development realm; production had no equivalent step, which is why
+      # "Forgot password" has never sent a real email in production even
+      # though resetPasswordAllowed is on.
+      - name: Synchronize the realm SMTP secret
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          # Merge, not replace: WEB_CLIENT_SECRET (created or verified by the
+          # bootstrap step above) must survive a run where SMTP_PASSWORD
+          # isn't set, and vice versa.
+          existing_json="$(kubectl -n "$NAMESPACE" get secret "$CLIENT_SECRET_NAME" -o json 2>/dev/null || echo '{}')"
+          existing_value() {
+            local b64
+            b64="$(echo "$existing_json" | jq -r --arg k "$1" '.data[$k] // empty')"
+            if [[ -n "$b64" ]]; then echo "$b64" | base64 -d; fi
+          }
+          web_client_secret="$(existing_value WEB_CLIENT_SECRET)"
+          test -n "$web_client_secret" || {
+            echo "Secret '$CLIENT_SECRET_NAME' is missing WEB_CLIENT_SECRET; the realm bootstrap step above should have set it." >&2
+            exit 1
+          }
+          effective_smtp_password="${SMTP_PASSWORD:-$(existing_value SMTP_PASSWORD)}"
+
+          args=(--from-literal=WEB_CLIENT_SECRET="$web_client_secret")
+          if [[ -n "$effective_smtp_password" ]]; then
+            args+=(--from-literal=SMTP_PASSWORD="$effective_smtp_password")
+            echo 'SMTP_PASSWORD configured.'
+          else
+            echo 'SMTP_PASSWORD is absent; the next step leaves the realm SMTP settings and email verification untouched.'
+          fi
+          kubectl -n "$NAMESPACE" create secret generic "$CLIENT_SECRET_NAME" \
+            "${args[@]}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo "Synchronized $CLIENT_SECRET_NAME without printing its values."
+
+      - name: Configure realm SMTP and email verification
+        id: smtp
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+
+          smtp_password_b64="$(kubectl -n "$NAMESPACE" get secret "$CLIENT_SECRET_NAME" -o 'jsonpath={.data.SMTP_PASSWORD}' 2>/dev/null || true)"
+          if [[ -z "$smtp_password_b64" ]]; then
+            echo "SMTP_PASSWORD is not set - leaving the realm's SMTP settings and email verification as they are."
+            exit 0
+          fi
+          smtp_password="$(echo "$smtp_password_b64" | base64 -d)"
+
+          kubectl -n "$NAMESPACE" get secret keycloak-initial-admin >/dev/null
+          admin_username="$(kubectl -n "$NAMESPACE" get secret keycloak-initial-admin -o 'jsonpath={.data.username}' | base64 -d)"
+          admin_password="$(kubectl -n "$NAMESPACE" get secret keycloak-initial-admin -o 'jsonpath={.data.password}' | base64 -d)"
+          test -n "$admin_username" && test -n "$admin_password"
+
+          keycloak_pod="$(kubectl -n "$NAMESPACE" get pods -l app=keycloak -o json | jq -r '.items[] | select(.status.phase == "Running") | .metadata.name' | head -n 1)"
+          test -n "$keycloak_pod" || {
+            echo 'No running Keycloak Pod was found.' >&2
+            exit 1
+          }
+
+          kcadm_config="/tmp/kcadm-smtp-$GITHUB_RUN_ID.config"
+          smtp_json="/tmp/realm-smtp-$GITHUB_RUN_ID.json"
+          cleanup() {
+            kubectl -n "$NAMESPACE" exec "$keycloak_pod" -- rm -f "$kcadm_config" "$smtp_json" >/dev/null 2>&1 || true
+            unset admin_password smtp_password smtp_json_content
+          }
+          trap cleanup EXIT
+
+          kubectl -n "$NAMESPACE" exec "$keycloak_pod" -- \
+            /opt/keycloak/bin/kcadm.sh config credentials \
+            --config "$kcadm_config" \
+            --server http://127.0.0.1:8080 \
+            --realm master \
+            --user "$admin_username" \
+            --password "$admin_password" >/dev/null
+
+          # smtp-relay.gmail.com/587/STARTTLS is Google Workspace's documented
+          # relay (see deploy/README.md) - Keycloak sends its own native
+          # verify-email/reset-password mail through this once verifyEmail is
+          # on, no application code involved.
+          #
+          # The password travels over stdin into a file inside the Pod
+          # instead of as a kcadm -s command-line argument - argv is visible
+          # via process listings and can end up in audit logs. jq -Rs safely
+          # JSON-encodes it regardless of what characters it contains; kcadm
+          # update merges these fields onto the existing realm rather than
+          # replacing it wholesale, same as -s would.
+          smtp_json_content="$(jq -n --arg password "$smtp_password" '{
+            smtpServer: {
+              host: "smtp-relay.gmail.com", port: "587",
+              from: "camille@mymusic.coach", fromDisplayName: "MyMusic.Coach",
+              starttls: "true", auth: "true",
+              user: "camille@mymusic.coach", password: $password
+            },
+            verifyEmail: true
+          }')"
+          kubectl -n "$NAMESPACE" exec -i "$keycloak_pod" -- sh -c "umask 077 && cat > $smtp_json" <<< "$smtp_json_content"
+
+          kubectl -n "$NAMESPACE" exec "$keycloak_pod" -- \
+            /opt/keycloak/bin/kcadm.sh update realms/mymusic-coach \
+            --config "$kcadm_config" \
+            -f "$smtp_json" >/dev/null
+
+          echo 'Realm SMTP configured and email verification enabled.'
+
       - name: Reconcile application and tunnel secrets
         if: inputs.operation == 'deploy'
         shell: bash

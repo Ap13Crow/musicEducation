@@ -10,6 +10,14 @@ enum Role {
   ADMIN
 }
 
+# ACTIVE unless the user's Keycloak identity has been deleted - see
+# adminDeactivateUser and the worker's keycloak-user-sync job. Never implies
+# the Postgres row itself was deleted; bookings/payments/history survive.
+enum UserStatus {
+  ACTIVE
+  DEACTIVATED
+}
+
 enum SkillLevel {
   BEGINNER
   ELEMENTARY
@@ -128,14 +136,6 @@ type PageInfo {
   totalCount: Int!
 }
 
-# ── Auth ──────────
-
-type AuthPayload {
-  accessToken: String!
-  refreshToken: String!
-  user: User!
-}
-
 type ZoomMeetingInfo {
   meetingId: String!
   joinUrl: String!
@@ -150,6 +150,7 @@ type User {
   username: String!
   displayName: String!
   role: Role!
+  status: UserStatus!
   isEmailVerified: Boolean!
   avatarUrl: String
   createdAt: DateTime!
@@ -191,7 +192,10 @@ type TeacherProfile {
   instruments: [String!]!
   specializations: [String!]!
   teachingFormats: [String!]!
+  # Booking eligibility only - see isPublic for directory/search visibility.
   isAvailable: Boolean!
+  # Directory/search visibility only - see isAvailable for booking eligibility.
+  isPublic: Boolean!
   avgRating: Float!
   totalReviews: Int!
   yearsExperience: Int
@@ -1022,13 +1026,6 @@ type PlatformStats {
 
 # ── Input Types ──────────
 
-input RegisterInput {
-  email: String!
-  username: String!
-  displayName: String!
-  password: String!
-}
-
 input UpdateProfileInput {
   displayName: String
   bio: String
@@ -1373,7 +1370,8 @@ type Query {
   # Admin
   adminStats: AdminStats!
   adminSettings: [AdminSetting!]!
-  adminUsers(role: Role, search: String, page: Int, limit: Int): [User!]!
+  # DEACTIVATED users are excluded unless includeDeactivated is true.
+  adminUsers(role: Role, search: String, page: Int, limit: Int, includeDeactivated: Boolean): [User!]!
   # Transactional-email delivery queue, most recent first - ADMIN only. A
   # non-empty DEAD_LETTER filter is the "notifications are silently
   # failing" signal this exists for.
@@ -1395,15 +1393,6 @@ type Query {
 # ── Mutations ──────────
 
 type Mutation {
-  # Auth
-  register(input: RegisterInput!): AuthPayload!
-  login(email: String!, password: String!): AuthPayload!
-  logout: Boolean!
-  refreshToken(token: String!): AuthPayload!
-  requestPasswordReset(email: String!): Boolean!
-  resetPassword(token: String!, newPassword: String!): Boolean!
-  verifyEmail(token: String!): Boolean!
-
   # Users
   updateProfile(input: UpdateProfileInput!): User!
   applyAsTeacher(input: ApplyAsTeacherInput): TeacherProfile!
@@ -1419,6 +1408,7 @@ type Mutation {
     specializations: [String!]
     teachingFormats: [String!]
     isAvailable: Boolean
+    isPublic: Boolean
     calendlyUsername: String
     # Show/hide the intro video copied from the approved application - the
     # teacher's own call, per the product decision that they decide whether
@@ -1558,6 +1548,12 @@ type Mutation {
   updateAdminSetting(key: String!, value: String!): AdminSetting!
   adminBanUser(userId: ID!): User!
   adminSetRole(userId: ID!, role: Role!): User!
+  # Deletes the user's Keycloak identity (irreversible) and marks the
+  # Postgres row DEACTIVATED - never a hard delete, so bookings/payments/
+  # history stay intact. Replaces deleting the identity directly in the
+  # Keycloak console, which left this application's record behind
+  # unchanged with no indication the identity was gone.
+  adminDeactivateUser(userId: ID!): User!
   # Re-queues a DEAD_LETTER (or still-FAILED) message for immediate retry -
   # resets attempts to 0 and nextAttemptAt to now, so the next mail-dispatch
   # tick picks it up. Use once the underlying cause (e.g. SMTP_PASSWORD) is

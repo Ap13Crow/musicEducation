@@ -1,5 +1,4 @@
 import { mergeResolvers } from '@graphql-tools/merge';
-import { authResolvers } from './auth.js';
 import { userResolvers } from './users.js';
 import { courseResolvers } from './courses.js';
 import { bookingResolvers } from './bookings.js';
@@ -32,7 +31,6 @@ const scalarResolvers = {
 
 export const resolvers = mergeResolvers([
   { ...scalarResolvers },
-  authResolvers,
   userResolvers,
   courseResolvers,
   bookingResolvers,
