@@ -47,21 +47,19 @@ spec:
               value: https://auth-dev.mymusic.coach/realms/mymusic-coach
             - name: KEYCLOAK_CLIENT_ID
               value: mymusic-coach-web
-            # The Keycloak Operator's own initial superadmin (master realm),
-            # used only by adminDeactivateUser (see
-            # apps/api/src/lib/keycloakAdmin.ts) to delete an identity - this
-            # Secret is created automatically for every Keycloak CR, so no
-            # separate service-account client/permissions setup is needed.
-            - name: KEYCLOAK_ADMIN_USERNAME
+            # Realm-scoped service account used only for user deletion.
+            - name: KEYCLOAK_ADMIN_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: keycloak-initial-admin
-                  key: username
-            - name: KEYCLOAK_ADMIN_PASSWORD
+                  name: keycloak-user-admin-client
+                  key: CLIENT_ID
+                  optional: true
+            - name: KEYCLOAK_ADMIN_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: keycloak-initial-admin
-                  key: password
+                  name: keycloak-user-admin-client
+                  key: CLIENT_SECRET
+                  optional: true
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:

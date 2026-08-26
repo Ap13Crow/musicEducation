@@ -4,10 +4,30 @@
 -- query) - a teacher pausing new bookings was silently removed from the
 -- directory entirely, even though the UI copy only ever described the
 -- booking half. isPublic now owns directory visibility; isAvailable keeps
--- booking eligibility only. Defaults to true so every existing teacher's
--- current directory visibility is unchanged by this migration.
+-- booking eligibility only. Existing rows inherit their previous effective
+-- visibility from isAvailable; future profiles default to public unless the
+-- application explicitly creates them privately (for example an ADMIN).
 BEGIN;
 
-ALTER TABLE "TeacherProfile" ADD COLUMN IF NOT EXISTS "isPublic" BOOLEAN NOT NULL DEFAULT true;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'TeacherProfile'
+      AND column_name = 'isPublic'
+  ) THEN
+    ALTER TABLE "TeacherProfile"
+      ADD COLUMN "isPublic" BOOLEAN NOT NULL DEFAULT true;
+
+    -- Preserve the visibility users had before the flags were separated.
+    -- This backfill only runs while creating the column, so later user choices
+    -- are never overwritten when the idempotent schema Job is replayed.
+    UPDATE "TeacherProfile"
+    SET "isPublic" = "isAvailable";
+  END IF;
+END
+$$;
 
 COMMIT;

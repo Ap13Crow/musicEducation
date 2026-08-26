@@ -212,18 +212,20 @@ export const bookingResolvers = {
 
       const teacherProfile = await prisma.teacherProfile.findUnique({
         where: { id: teacherProfileId },
-        include: { user: { select: { role: true, profile: { select: { timezone: true } } } } },
+        include: { user: { select: { role: true, status: true, profile: { select: { timezone: true } } } } },
       });
       if (!teacherProfile) throw new GraphQLError('Teacher not found.', { extensions: { code: 'NOT_FOUND' } });
       if (teacherProfile.userId === user.id) {
         throw new GraphQLError('You cannot book a lesson with yourself.', { extensions: { code: 'BAD_USER_INPUT' } });
       }
-      // The TeacherProfile row outlives a demotion (it's history); the
-      // current role is what decides whether they can still be booked. Same
-      // TEACHER-or-ADMIN rule as the public teachers/teacher queries in
-      // users.ts - an admin discoverable there as a teacher must also be
-      // bookable here, or they'd be a dead end in the UI.
-      if (teacherProfile.user.role !== 'TEACHER' && teacherProfile.user.role !== 'ADMIN') {
+      // The TeacherProfile row outlives a demotion (it's history); active
+      // TEACHER/ADMIN status decides whether it can still be booked.
+      // isPublic controls directory discovery only: an unlisted teacher may
+      // still accept bookings from returning students or a direct profile URL.
+      if (
+        teacherProfile.user.status !== 'ACTIVE' ||
+        (teacherProfile.user.role !== 'TEACHER' && teacherProfile.user.role !== 'ADMIN')
+      ) {
         throw new GraphQLError('Teacher not found.', { extensions: { code: 'NOT_FOUND' } });
       }
       if (!teacherProfile.isAvailable) throw new GraphQLError('Teacher is not available.', { extensions: { code: 'BAD_USER_INPUT' } });

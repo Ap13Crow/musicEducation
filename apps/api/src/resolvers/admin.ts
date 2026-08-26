@@ -19,8 +19,10 @@ export const adminResolvers = {
       const now = new Date();
       const [totalCourses, totalTeachers, totalStudents, nativeEvents, externalEvents] = await Promise.all([
         prisma.course.count({ where: { status: 'PUBLISHED' } }),
-        prisma.teacherProfile.count({ where: { user: { role: { in: ['TEACHER', 'ADMIN'] } } } }),
-        prisma.user.count({ where: { role: 'STUDENT' } }),
+        prisma.teacherProfile.count({
+          where: { isPublic: true, user: { role: { in: ['TEACHER', 'ADMIN'] }, status: 'ACTIVE' } },
+        }),
+        prisma.user.count({ where: { role: 'STUDENT', status: 'ACTIVE' } }),
         prisma.event.count({ where: { isPublished: true, startsAt: { gte: now } } }),
         prisma.externalEventProjection.count({
           where: { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
@@ -65,8 +67,10 @@ export const adminResolvers = {
       // was a real gap, not an intentional narrower scope.
       const [totalUsers, totalTeachers, totalCourses, nativeEvents, externalEvents, totalBookings, revenueAgg] =
         await Promise.all([
-          prisma.user.count(),
-          prisma.teacherProfile.count({ where: { user: { role: { in: ['TEACHER', 'ADMIN'] } } } }),
+          prisma.user.count({ where: { status: 'ACTIVE' } }),
+          prisma.teacherProfile.count({
+            where: { user: { role: { in: ['TEACHER', 'ADMIN'] }, status: 'ACTIVE' } },
+          }),
           prisma.course.count(),
           prisma.event.count(),
           prisma.externalEventProjection.count(),
@@ -200,7 +204,17 @@ export const adminResolvers = {
       if (identity) {
         await deleteKeycloakUser(identity.externalId);
       }
-      return prisma.user.update({ where: { id: userId }, data: { status: 'DEACTIVATED' }, include: { profile: true } });
+      return prisma.$transaction(async (tx) => {
+        await tx.teacherProfile.updateMany({
+          where: { userId },
+          data: { isPublic: false, isAvailable: false },
+        });
+        return tx.user.update({
+          where: { id: userId },
+          data: { status: 'DEACTIVATED', calendarFeedToken: null },
+          include: { profile: true },
+        });
+      });
     },
   },
 

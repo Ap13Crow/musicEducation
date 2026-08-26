@@ -41,19 +41,19 @@ spec:
             # production hostname the same way in deploy/overlays/prod.
             - name: KEYCLOAK_ISSUER
               value: https://auth-dev.mymusic.coach/realms/mymusic-coach
-            # The Keycloak Operator's own initial superadmin (master realm) -
-            # this Secret is created automatically for every Keycloak CR, so
-            # no separate service-account client/permissions setup is needed.
-            - name: KEYCLOAK_ADMIN_USERNAME
+            # Realm-scoped service account used only for user reconciliation.
+            - name: KEYCLOAK_ADMIN_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: keycloak-initial-admin
-                  key: username
-            - name: KEYCLOAK_ADMIN_PASSWORD
+                  name: keycloak-user-admin-client
+                  key: CLIENT_ID
+                  optional: true
+            - name: KEYCLOAK_ADMIN_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: keycloak-initial-admin
-                  key: password
+                  name: keycloak-user-admin-client
+                  key: CLIENT_SECRET
+                  optional: true
             - name: STRIPE_SECRET_KEY
               valueFrom:
                 secretKeyRef:

@@ -985,6 +985,8 @@ enum MailOutboxStatus {
 enum MailOutboxKind {
   BOOKING_CONFIRMATION
   BOOKING_CANCELLED
+  EVENT_CONFIRMATION
+  EVENT_CANCELLED
 }
 
 # A queued/delivered/failed transactional-email attempt (see
@@ -994,6 +996,7 @@ type MailOutboxMessage {
   id: ID!
   kind: MailOutboxKind!
   bookingId: ID
+  eventBookingId: ID
   recipients: [String!]!
   subject: String!
   status: MailOutboxStatus!

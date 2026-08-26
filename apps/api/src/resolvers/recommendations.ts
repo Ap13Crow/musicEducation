@@ -40,8 +40,9 @@ export const recommendationResolvers = {
       // deleted (it's history), so role is what "is a teacher" means here.
       const teachers = await prisma.teacherProfile.findMany({
         where: {
+          isPublic: true,
           isAvailable: true,
-          user: { role: 'TEACHER' },
+          user: { role: { in: ['TEACHER', 'ADMIN'] }, status: 'ACTIVE' },
           ...(instruments.length > 0 && { instruments: { hasSome: instruments } }),
         },
         take: 5,

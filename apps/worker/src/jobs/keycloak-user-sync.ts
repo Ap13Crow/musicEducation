@@ -4,17 +4,18 @@ import type { Job } from './types.js';
 /**
  * Safety net for Keycloak-side deletions that bypass the app's own
  * adminDeactivateUser mutation (apps/api/src/resolvers/admin.ts) - e.g. an
- * admin still deleting a user directly in the Keycloak console. Daily
- * (identity churn is low; this is a reconciliation pass, not anything
- * latency-sensitive) diff of every ACTIVE user's linked Keycloak identity
- * against the realm's actual user list; anything missing gets marked
- * DEACTIVATED. Never touches Postgres rows for users with no
+ * admin still deleting a user directly in the Keycloak console. Every five
+ * minutes it diffs every ACTIVE user's linked Keycloak identity against the
+ * realm's actual user list; anything missing gets marked DEACTIVATED. This
+ * keeps a direct console deletion from remaining visible/usable for the rest
+ * of the day without putting a Keycloak round trip on every website request.
+ * Never touches Postgres rows for users with no
  * UserExternalIdentity(provider: 'keycloak') link at all (e.g. seed/test
  * data) - there is nothing in Keycloak to have gone missing for those.
  */
 export const keycloakUserSyncJob: Job = {
   key: 'keycloak-user-sync',
-  schedule: '0 3 * * *',
+  schedule: '*/5 * * * *',
   async run(ctx) {
     if (!keycloakAdminConfigured()) {
       ctx.logger.info('Keycloak admin client is not configured; skipping keycloak-user-sync.');
@@ -34,9 +35,16 @@ export const keycloakUserSyncJob: Job = {
       return;
     }
 
-    const { count } = await ctx.prisma.user.updateMany({
-      where: { id: { in: orphanedUserIds }, status: 'ACTIVE' },
-      data: { status: 'DEACTIVATED' },
+    const count = await ctx.prisma.$transaction(async (tx) => {
+      await tx.teacherProfile.updateMany({
+        where: { userId: { in: orphanedUserIds } },
+        data: { isPublic: false, isAvailable: false },
+      });
+      const result = await tx.user.updateMany({
+        where: { id: { in: orphanedUserIds }, status: 'ACTIVE' },
+        data: { status: 'DEACTIVATED', calendarFeedToken: null },
+      });
+      return result.count;
     });
     ctx.logger.warn(
       { checked: linked.length, deactivated: count, userIds: orphanedUserIds },

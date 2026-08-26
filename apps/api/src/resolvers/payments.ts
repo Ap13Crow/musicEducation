@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
 import { sendPurchaseConfirmedEmail } from '../lib/emails.js';
 import { notifyBookingConfirmed } from './bookings.js';
+import { notifyEventBookingConfirmed } from './events.js';
 import { reserveInstrumentCapacity } from '../lib/capacity.js';
 import { isValidSubscriptionTermMonths, computeSubscriptionTotal, currentSubscriptionDiscountPct } from '../lib/pricing.js';
 import { grantCredits } from '../lib/lessonCredits.js';
@@ -219,25 +220,23 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
         }
       });
     } else if (type === 'event') {
-      await prisma.eventBooking.upsert({
-        where: { userId_eventId: { userId: userId!, eventId: refId! } },
-        update: { paymentId: payment.id, status: 'CONFIRMED' },
-        create: { userId: userId!, eventId: refId!, paymentId: payment.id, status: 'CONFIRMED' },
+      await prisma.$transaction(async (tx) => {
+        const eventBooking = await tx.eventBooking.upsert({
+          where: { userId_eventId: { userId: userId!, eventId: refId! } },
+          update: { paymentId: payment.id, status: 'CONFIRMED' },
+          create: { userId: userId!, eventId: refId!, paymentId: payment.id, status: 'CONFIRMED' },
+        });
+        const claimed = await tx.payment.updateMany({
+          where: { id: payment.id, confirmationEmailAt: null },
+          data: { confirmationEmailAt: new Date() },
+        });
+        if (claimed.count > 0) {
+          await notifyEventBookingConfirmed(tx, eventBooking.id);
+        }
       });
       // Mirrors the free-event award in events.ts bookEvent - refId=eventId
       // keeps it one-time even if Stripe retries this webhook.
       await awardXpOnce(prisma, userId!, 'EVENT_ATTENDED', refId!, EVENT_ATTENDED_XP);
-      if (await claimConfirmationEmail()) {
-        const [ticketedEvent, buyer] = await Promise.all([
-          prisma.event.findUnique({ where: { id: refId } }),
-          getBuyerInfo(),
-        ]);
-        void sendPurchaseConfirmedEmail({
-          toEmail: buyer.email, toName: buyer.name,
-          description: `Ticket: ${ticketedEvent?.title ?? 'your event'}`,
-          amount: payment.amount.toNumber(), currency: payment.currency,
-        });
-      }
     } else if (type === 'package') {
       const meta = session.metadata ?? {};
       // create() (not update, unlike the booking branch above) - a package

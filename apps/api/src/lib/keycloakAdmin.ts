@@ -2,15 +2,9 @@
 // adminDeactivateUser (../resolvers/admin.ts) deletes one identity
 // synchronously when an admin uses the "Deactivate" action in the app.
 //
-// Authenticates as the Keycloak Operator's own initial superadmin (master
-// realm) via the `keycloak-initial-admin` Secret the operator creates
-// automatically for every Keycloak CR - the same account
-// .github/workflows/deploy-keycloak-dev.yml's "Configure realm SMTP" step
-// already uses via kcadm.sh. Reusing it means no new service-account client
-// or extra realm-permissions setup is needed in any environment; it does
-// mean this file (like apps/worker/src/lib/mailer.ts duplicating
-// apps/api/src/lib/mailer.ts) is deliberately duplicated rather than shared
-// - see apps/worker/src/lib/keycloakAdmin.ts.
+// Authenticates as a dedicated confidential client in the application realm.
+// It receives only realm-management query/view/manage-users roles; the
+// application never receives Keycloak's master-realm superadmin password.
 //
 // The realm to operate on, and the Keycloak server's base URL, are derived
 // from KEYCLOAK_ISSUER (already required for verifying SSO tokens - see
@@ -31,9 +25,9 @@ function keycloakRealm(): string | null {
 export function keycloakAdminConfigured(): boolean {
   return Boolean(
     keycloakBaseUrl() &&
-      keycloakRealm() &&
-      process.env.KEYCLOAK_ADMIN_USERNAME &&
-      process.env.KEYCLOAK_ADMIN_PASSWORD,
+    keycloakRealm() &&
+    process.env.KEYCLOAK_ADMIN_CLIENT_ID &&
+    process.env.KEYCLOAK_ADMIN_CLIENT_SECRET,
   );
 }
 
@@ -42,16 +36,18 @@ let cachedToken: { value: string; expiresAt: number } | null = null;
 async function getAdminToken(baseUrl: string): Promise<string> {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 5_000) return cachedToken.value;
 
-  const username = process.env.KEYCLOAK_ADMIN_USERNAME;
-  const password = process.env.KEYCLOAK_ADMIN_PASSWORD;
-  if (!username || !password) {
-    throw new Error('KEYCLOAK_ADMIN_USERNAME/KEYCLOAK_ADMIN_PASSWORD are not configured.');
+  const realm = keycloakRealm();
+  const clientId = process.env.KEYCLOAK_ADMIN_CLIENT_ID;
+  const clientSecret = process.env.KEYCLOAK_ADMIN_CLIENT_SECRET;
+  if (!realm || !clientId || !clientSecret) {
+    throw new Error('KEYCLOAK_ADMIN_CLIENT_ID/KEYCLOAK_ADMIN_CLIENT_SECRET are not configured.');
   }
 
-  const res = await fetch(`${baseUrl}/realms/master/protocol/openid-connect/token`, {
+  const res = await fetch(`${baseUrl}/realms/${realm}/protocol/openid-connect/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'password', client_id: 'admin-cli', username, password }),
+    body: new URLSearchParams({ grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret }),
+    signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) {
     throw new Error(`Keycloak admin token request failed: ${res.status} ${await res.text()}`);
@@ -79,6 +75,7 @@ export async function deleteKeycloakUser(keycloakUserId: string): Promise<void> 
   const res = await fetch(`${baseUrl}/admin/realms/${realm}/users/${keycloakUserId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok && res.status !== 404) {
     throw new Error(`Keycloak admin delete-user failed: ${res.status} ${await res.text()}`);

@@ -1,9 +1,102 @@
 import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
+import { eventBookingConfirmedEmailContent, eventBookingCancelledEmailContent } from '../lib/emails.js';
+import { enqueueMail, recipientAddresses } from '../lib/mailOutbox.js';
+import { displayNameOf } from '../lib/displayName.js';
 import type { GraphQLContext } from '../types.js';
+import type { Prisma } from '@my-music-coach/database';
 
 const EVENT_ATTENDED_XP = 40;
+
+function eventLocation(event: {
+  format: string;
+  venueName?: string | null;
+  venueAddress?: string | null;
+  city?: string | null;
+  onlineMeetingUrl?: string | null;
+}): string {
+  if (event.format === 'ONLINE') return event.onlineMeetingUrl || 'Online';
+  return [event.venueName, event.venueAddress, event.city].filter(Boolean).join(', ') || 'See MyMusic.Coach for venue details';
+}
+
+async function eventBookingNotificationData(tx: Prisma.TransactionClient, eventBookingId: string) {
+  const booking = await tx.eventBooking.findUnique({
+    where: { id: eventBookingId },
+    include: {
+      user: { include: { profile: true } },
+      event: { include: { publisher: { include: { profile: true } } } },
+    },
+  });
+  if (!booking) return null;
+
+  const attendeeName = booking.user
+    ? displayNameOf(booking.user)
+    : booking.email?.split('@')[0] || 'attendee';
+  return {
+    booking,
+    attendeeName,
+    organizerName: displayNameOf(booking.event.publisher),
+    location: eventLocation(booking.event),
+    attendeeRecipients: booking.user
+      ? recipientAddresses(booking.user.email, booking.user.profile?.notificationEmail)
+      : recipientAddresses(booking.email, null),
+    organizerRecipients: recipientAddresses(
+      booking.event.publisher.email,
+      booking.event.publisher.profile?.notificationEmail,
+    ),
+  };
+}
+
+export async function notifyEventBookingConfirmed(tx: Prisma.TransactionClient, eventBookingId: string) {
+  const notification = await eventBookingNotificationData(tx, eventBookingId);
+  if (!notification) return;
+  const { booking, attendeeName, organizerName, location, attendeeRecipients, organizerRecipients } = notification;
+  const content = eventBookingConfirmedEmailContent({
+    attendeeName,
+    organizerName,
+    eventTitle: booking.event.title,
+    startsAt: booking.event.startsAt,
+    location,
+  });
+  await enqueueMail(tx, {
+    kind: 'EVENT_CONFIRMATION',
+    eventBookingId,
+    recipients: attendeeRecipients,
+    ...content.attendee,
+  });
+  await enqueueMail(tx, {
+    kind: 'EVENT_CONFIRMATION',
+    eventBookingId,
+    recipients: organizerRecipients,
+    ...content.organizer,
+  });
+}
+
+export async function notifyEventBookingCancelled(tx: Prisma.TransactionClient, eventBookingId: string) {
+  const notification = await eventBookingNotificationData(tx, eventBookingId);
+  if (!notification) return;
+  const { booking, attendeeName, organizerName, location, attendeeRecipients, organizerRecipients } = notification;
+  const content = eventBookingCancelledEmailContent({
+    attendeeName,
+    organizerName,
+    eventTitle: booking.event.title,
+    startsAt: booking.event.startsAt,
+    location,
+  });
+  await enqueueMail(tx, {
+    kind: 'EVENT_CANCELLED',
+    eventBookingId,
+    recipients: attendeeRecipients,
+    ...content.attendee,
+  });
+  await enqueueMail(tx, {
+    kind: 'EVENT_CANCELLED',
+    eventBookingId,
+    recipients: organizerRecipients,
+    ...content.organizer,
+  });
+}
 
 export const eventResolvers = {
   Query: {
@@ -138,10 +231,14 @@ export const eventResolvers = {
       }
       if (Number(event.price) > 0) throw new GraphQLError('Please complete payment first.', { extensions: { code: 'PAYMENT_REQUIRED' } });
 
-      const booking = await prisma.eventBooking.create({
-        data: { userId: user.id, eventId, status: 'CONFIRMED' },
+      const booking = await prisma.$transaction(async (tx) => {
+        const created = await tx.eventBooking.create({
+          data: { userId: user.id, eventId, status: 'CONFIRMED' },
+        });
+        await tx.event.update({ where: { id: eventId }, data: { currentCapacity: { increment: 1 } } });
+        await notifyEventBookingConfirmed(tx, created.id);
+        return created;
       });
-      await prisma.event.update({ where: { id: eventId }, data: { currentCapacity: { increment: 1 } } });
       // Once per event (refId=eventId), not per-user-globally - a paid event's
       // equivalent award fires from the Stripe webhook in payments.ts instead.
       await awardXpOnce(prisma, user.id, 'EVENT_ATTENDED', eventId, EVENT_ATTENDED_XP);
@@ -153,8 +250,13 @@ export const eventResolvers = {
       const booking = await prisma.eventBooking.findUnique({ where: { id: bookingId } });
       if (!booking) throw new GraphQLError('Booking not found.', { extensions: { code: 'NOT_FOUND' } });
       if (booking.userId !== user.id) throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
-      await prisma.event.update({ where: { id: booking.eventId }, data: { currentCapacity: { decrement: 1 } } });
-      return prisma.eventBooking.update({ where: { id: bookingId }, data: { status: 'CANCELLED' } });
+      if (booking.status === 'CANCELLED') return booking;
+      return prisma.$transaction(async (tx) => {
+        await tx.event.update({ where: { id: booking.eventId }, data: { currentCapacity: { decrement: 1 } } });
+        const cancelled = await tx.eventBooking.update({ where: { id: bookingId }, data: { status: 'CANCELLED' } });
+        await notifyEventBookingCancelled(tx, bookingId);
+        return cancelled;
+      });
     },
   },
 

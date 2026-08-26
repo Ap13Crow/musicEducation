@@ -37,7 +37,7 @@ spec:
     resetPasswordAllowed: true
     editUsernameAllowed: false
     rememberMe: true
-    verifyEmail: false
+    verifyEmail: true
     bruteForceProtected: true
     internationalizationEnabled: true
     supportedLocales:

@@ -8,11 +8,9 @@
 // per-app lib helpers - see apps/worker/src/lib/mailer.ts vs
 // apps/api/src/lib/mailer.ts).
 //
-// Authenticates as the Keycloak Operator's own initial superadmin (master
-// realm) via the `keycloak-initial-admin` Secret the operator creates
-// automatically for every Keycloak CR - the same account
-// .github/workflows/deploy-keycloak-dev.yml's "Configure realm SMTP" step
-// already uses via kcadm.sh.
+// Authenticates as a dedicated confidential client in the application realm.
+// It receives only realm-management query/view/manage-users roles; the
+// application never receives Keycloak's master-realm superadmin password.
 //
 // The realm to operate on, and the Keycloak server's base URL, are derived
 // from KEYCLOAK_ISSUER rather than adding yet another URL/realm env var
@@ -32,9 +30,9 @@ function keycloakRealm(): string | null {
 export function keycloakAdminConfigured(): boolean {
   return Boolean(
     keycloakBaseUrl() &&
-      keycloakRealm() &&
-      process.env.KEYCLOAK_ADMIN_USERNAME &&
-      process.env.KEYCLOAK_ADMIN_PASSWORD,
+    keycloakRealm() &&
+    process.env.KEYCLOAK_ADMIN_CLIENT_ID &&
+    process.env.KEYCLOAK_ADMIN_CLIENT_SECRET,
   );
 }
 
@@ -43,16 +41,18 @@ let cachedToken: { value: string; expiresAt: number } | null = null;
 async function getAdminToken(baseUrl: string): Promise<string> {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 5_000) return cachedToken.value;
 
-  const username = process.env.KEYCLOAK_ADMIN_USERNAME;
-  const password = process.env.KEYCLOAK_ADMIN_PASSWORD;
-  if (!username || !password) {
-    throw new Error('KEYCLOAK_ADMIN_USERNAME/KEYCLOAK_ADMIN_PASSWORD are not configured.');
+  const realm = keycloakRealm();
+  const clientId = process.env.KEYCLOAK_ADMIN_CLIENT_ID;
+  const clientSecret = process.env.KEYCLOAK_ADMIN_CLIENT_SECRET;
+  if (!realm || !clientId || !clientSecret) {
+    throw new Error('KEYCLOAK_ADMIN_CLIENT_ID/KEYCLOAK_ADMIN_CLIENT_SECRET are not configured.');
   }
 
-  const res = await fetch(`${baseUrl}/realms/master/protocol/openid-connect/token`, {
+  const res = await fetch(`${baseUrl}/realms/${realm}/protocol/openid-connect/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'password', client_id: 'admin-cli', username, password }),
+    body: new URLSearchParams({ grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret }),
+    signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) {
     throw new Error(`Keycloak admin token request failed: ${res.status} ${await res.text()}`);
@@ -73,7 +73,10 @@ export async function listKeycloakUserIds(): Promise<Set<string>> {
   const pageSize = 100;
   for (let first = 0; ; first += pageSize) {
     const url = `${baseUrl}/admin/realms/${realm}/users?briefRepresentation=true&max=${pageSize}&first=${first}`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10_000),
+    });
     if (!res.ok) throw new Error(`Keycloak admin list-users failed: ${res.status} ${await res.text()}`);
     const page = (await res.json()) as Array<{ id: string }>;
     for (const u of page) ids.add(u.id);

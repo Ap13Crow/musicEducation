@@ -71,6 +71,10 @@ spec:
               psql --set=ON_ERROR_STOP=1 --file=/schema/026-external-event-engagement.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/027-external-calendar-sync-and-feed-token.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/028-teacher-application-structured-address.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/029-drop-user-credential.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/030-user-status.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/031-teacher-profile-public.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/032-event-mail-outbox.sql
           envFrom:
             - secretRef:
                 name: postgres-mymusiccoach
