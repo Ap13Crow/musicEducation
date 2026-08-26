@@ -30,6 +30,19 @@ spec:
           command: [sh, -ec]
           args:
             - |
+              for attempt in $(seq 1 60); do
+                if psql --no-password --set=ON_ERROR_STOP=1 --command='SELECT 1' >/dev/null 2>&1; then
+                  echo 'PostgreSQL service is accepting authenticated TLS connections.'
+                  break
+                fi
+                if [ "$attempt" -eq 60 ]; then
+                  echo 'PostgreSQL service did not become reachable within 120 seconds.' >&2
+                  exit 1
+                fi
+                echo "Waiting for PostgreSQL service ($attempt/60)..."
+                sleep 2
+              done
+
               psql --set=ON_ERROR_STOP=1 --file=/schema/001-identity.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/002-practice.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/003-profile-contract.sql
