@@ -123,7 +123,27 @@ Expected public firewall state remains SSH-only. Cloudflare connectors initiate
 outbound connections, so no HTTP, HTTPS, Kubernetes API, or SMTP inbound rule
 is required.
 
-## 6. Backups and recovery
+## 6. Authenticate outbound mail
+
+Google Workspace is the only sender for `mymusic.coach`. Cloudflare DNS must
+contain exactly one root SPF record:
+
+```text
+v=spf1 include:_spf.google.com ~all
+```
+
+Do not retain the legacy `include:spf.infomaniak.ch` entry unless an audited
+service still sends mail through Infomaniak. In Google Admin, open **Apps →
+Google Workspace → Gmail → Authenticate email**, generate a 2048-bit key with
+selector `google`, publish the supplied TXT value at
+`google._domainkey.mymusic.coach`, and click **Start authentication** after
+DNS propagation. Keep the existing DMARC policy only after SPF and DKIM pass.
+
+Production deployment validates SPF, Google DKIM, and DMARC before reconciling
+Keycloak SMTP. Keycloak also sets an aligned envelope sender explicitly so
+password reset and verification messages satisfy DMARC.
+
+## 7. Backups and recovery
 
 k3s stores compressed etcd snapshots every six hours and keeps 28. PostgreSQL
 runs a daily logical backup and keeps 14 days on a separate local PVC. Before
