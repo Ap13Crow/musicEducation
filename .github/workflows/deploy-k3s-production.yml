@@ -414,6 +414,40 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
           echo "Synchronized $CLIENT_SECRET_NAME without printing its values."
 
+      - name: Verify outbound mail DNS authentication
+        if: inputs.operation == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          dns_txt() {
+            curl --fail --silent --show-error --max-time 20 \
+              -H 'accept: application/dns-json' \
+              "https://cloudflare-dns.com/dns-query?name=$1&type=TXT" |
+              jq -r '.Answer[]? | select(.type == 16) | .data' |
+              tr -d '"'
+          }
+
+          spf="$(dns_txt mymusic.coach | grep '^v=spf1 ' || true)"
+          [[ "$spf" == *'include:_spf.google.com'* ]] || {
+            echo 'mymusic.coach SPF does not authorize Google Workspace (include:_spf.google.com).' >&2
+            exit 1
+          }
+
+          dkim="$(dns_txt google._domainkey.mymusic.coach || true)"
+          [[ "$dkim" == *'v=DKIM1;'* ]] || {
+            echo 'Google Workspace DKIM is missing at google._domainkey.mymusic.coach.' >&2
+            exit 1
+          }
+
+          dmarc="$(dns_txt _dmarc.mymusic.coach || true)"
+          [[ "$dmarc" == *'v=DMARC1;'* ]] || {
+            echo 'DMARC is missing at _dmarc.mymusic.coach.' >&2
+            exit 1
+          }
+
+          echo 'SPF, Google DKIM, and DMARC records are published.'
+
       - name: Configure realm SMTP and email verification
         id: smtp
         if: inputs.operation == 'deploy'
@@ -471,7 +505,9 @@ jobs:
             smtpServer: {
               host: "smtp-relay.gmail.com", port: "587",
               from: "camille@mymusic.coach", fromDisplayName: "MyMusic.Coach",
-              starttls: "true", auth: "true",
+              replyTo: "camille@mymusic.coach",
+              envelopeFrom: "camille@mymusic.coach",
+              starttls: "true", ssl: "false", auth: "true",
               user: "camille@mymusic.coach", password: $password
             },
             registrationAllowed: true,
@@ -497,6 +533,8 @@ jobs:
               .smtpServer.port == "587" and
               .smtpServer.starttls == "true" and
               .smtpServer.auth == "true" and
+              .smtpServer.ssl == "false" and
+              .smtpServer.envelopeFrom == "camille@mymusic.coach" and
               (.smtpServer.password | type == "string" and length > 0)
             ' >/dev/null
 
