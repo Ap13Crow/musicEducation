@@ -14,3 +14,8 @@ patches:
       - op: replace
         path: /spec/hostname/hostname
         value: https://auth.mymusic.coach
+      - op: add
+        path: /spec/additionalOptions/-
+        value:
+          name: features-disabled
+          value: workflows
