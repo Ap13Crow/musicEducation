@@ -22,7 +22,7 @@ const RATING_OPTIONS = [
 ];
 
 const GET_TEACHERS = gql`
-  query GetTeachers($filter: TeacherFilterInput, $page: Int, $limit: Int) {
+  query GetTeachers($filter: TeacherFilterInput, $page: Int, $limit: Int, $slotInstrument: String) {
     teachers(filter: $filter, page: $page, limit: $limit) {
       nodes {
         id userId headline teachingBio hourlyRate currency
@@ -30,6 +30,8 @@ const GET_TEACHERS = gql`
         locationCity locationCountry
         isAvailable yearsExperience publicImageUrl
         avgRating totalReviews memberSince distinctStudentCount publishedResourceCount
+        nextBookableSlot(instrument: $slotInstrument) { startsAt endsAt timezone }
+        instrumentCapacities { instrument maxActiveStudents activeStudentCount remainingCapacity }
         user { id email displayName }
         certifications { id title issuingBody }
       }
@@ -38,9 +40,12 @@ const GET_TEACHERS = gql`
   }
 `;
 
-function TeacherCard({ teacher }: { teacher: any }) {
+function TeacherCard({ teacher, activeInstrument }: { teacher: any; activeInstrument: string }) {
   const { data: session } = useSession();
   const isOwnProfile = Boolean(session?.user?.email && session.user.email === teacher.user?.email);
+  const capacity = activeInstrument
+    ? teacher.instrumentCapacities?.find((item: any) => item.instrument === activeInstrument)
+    : null;
 
   return (
     <article className="card p-5 hover:border-primary-300 transition-colors">
@@ -56,7 +61,7 @@ function TeacherCard({ teacher }: { teacher: any }) {
               {teacher.user?.displayName}
             </Link>
             {teacher.isAvailable ? (
-              <span className="shrink-0 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Available</span>
+              <span className="shrink-0 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Accepting students</span>
             ) : (
               <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">Unavailable</span>
             )}
@@ -81,6 +86,17 @@ function TeacherCard({ teacher }: { teacher: any }) {
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+        {teacher.nextBookableSlot && (
+          <span className="flex items-center gap-1 font-medium text-emerald-700">
+            <Clock className="h-3.5 w-3.5" />
+            Next opening {new Date(teacher.nextBookableSlot.startsAt).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
+        {capacity?.remainingCapacity != null && (
+          <span className={capacity.remainingCapacity === 0 ? 'font-medium text-red-600' : 'text-gray-500'}>
+            {capacity.remainingCapacity === 0 ? `${activeInstrument} is full` : `${capacity.remainingCapacity} ${activeInstrument} place${capacity.remainingCapacity === 1 ? '' : 's'} left`}
+          </span>
+        )}
         {teacher.avgRating > 0 && (
           <span className="flex items-center gap-1">
             <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
@@ -176,6 +192,7 @@ export default function TeachersPage() {
   const [minExperience, setMinExperience] = useState<number | undefined>(undefined);
   const [minRating, setMinRating] = useState<number | undefined>(undefined);
   const [availableOnly, setAvailableOnly] = useState(false);
+  const [availableDate, setAvailableDate] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
   const liveApiEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_API === 'true';
@@ -183,12 +200,20 @@ export default function TeachersPage() {
   const filter: any = {};
   if (activeInstrument) filter.instrument = activeInstrument;
   if (activeFormat) filter.format = activeFormat.toUpperCase().replace('-', '_');
+  if (minExperience !== undefined) filter.minExperience = minExperience;
   if (minRating !== undefined) filter.minRating = minRating;
   if (availableOnly) filter.isAvailable = true;
+  if (availableDate) {
+    const from = new Date(`${availableDate}T00:00:00`);
+    const to = new Date(from);
+    to.setDate(to.getDate() + 1);
+    filter.availableFrom = from.toISOString();
+    filter.availableTo = to.toISOString();
+  }
   if (searchQuery) filter.search = searchQuery;
 
   const { data, loading, error } = useQuery(GET_TEACHERS, {
-    variables: { filter: Object.keys(filter).length > 0 ? filter : undefined, page: 1, limit: 24 },
+    variables: { filter: Object.keys(filter).length > 0 ? filter : undefined, page: 1, limit: 24, slotInstrument: activeInstrument || null },
     skip: !liveApiEnabled,
   });
 
@@ -212,7 +237,7 @@ export default function TeachersPage() {
     });
   }, [data, activeInstrument, activeFormat, minExperience, minRating, availableOnly, searchQuery]);
 
-  const hasActiveFilters = !!activeInstrument || !!activeFormat || minExperience !== undefined || minRating !== undefined || availableOnly || !!searchQuery;
+  const hasActiveFilters = !!activeInstrument || !!activeFormat || minExperience !== undefined || minRating !== undefined || availableOnly || !!availableDate || !!searchQuery;
 
   function clearFilters() {
     setSearchQuery('');
@@ -221,6 +246,7 @@ export default function TeachersPage() {
     setMinExperience(undefined);
     setMinRating(undefined);
     setAvailableOnly(false);
+    setAvailableDate('');
   }
 
   return (
@@ -260,7 +286,7 @@ export default function TeachersPage() {
             <SlidersHorizontal className="h-4 w-4" /> Filters
             {hasActiveFilters && (
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-xs text-white">
-                {[!!activeInstrument, !!activeFormat, minExperience !== undefined, minRating !== undefined, availableOnly].filter(Boolean).length}
+                {[!!activeInstrument, !!activeFormat, minExperience !== undefined, minRating !== undefined, availableOnly, !!availableDate].filter(Boolean).length}
               </span>
             )}
           </button>
@@ -350,7 +376,7 @@ export default function TeachersPage() {
             </div>
 
             {/* Availability */}
-            <div className="flex items-center gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -358,7 +384,11 @@ export default function TeachersPage() {
                   onChange={(e) => setAvailableOnly(e.target.checked)}
                   className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                 />
-                Available now only
+                Accepting new students
+              </label>
+              <label className="text-sm font-medium text-gray-700">
+                Available on
+                <input type="date" value={availableDate} min={new Date().toISOString().slice(0, 10)} onChange={(event) => setAvailableDate(event.target.value)} className="input mt-1 w-full" />
               </label>
             </div>
 
@@ -395,7 +425,7 @@ export default function TeachersPage() {
             {filteredTeachers.length > 0 ? (
               <div className="grid gap-6 sm:grid-cols-2">
                 {filteredTeachers.map((teacher: any) => (
-                  <TeacherCard key={teacher.id} teacher={teacher} />
+                  <TeacherCard key={teacher.id} teacher={teacher} activeInstrument={activeInstrument} />
                 ))}
               </div>
             ) : (

@@ -217,6 +217,11 @@ type TeacherProfile {
   introVideoVisible: Boolean!
   certifications: [TeacherCertification!]
   availability: [TeacherAvailability!]
+  # Concrete, conflict-free one-hour openings generated from recurring
+  # availability, bookings/holds, time off and private/external busy time.
+  # Both bounds are required and the API caps the range at 63 days.
+  bookableSlots(from: DateTime!, to: DateTime!, instrument: String, limit: Int): [BookableLessonSlot!]!
+  nextBookableSlot(instrument: String): BookableLessonSlot
   # Date this teacher's profile was first provisioned (approval time) -
   # "years/months teaching on MyMusic.Coach" is calculated client-side from
   # this, never from self-reported yearsExperience (pre-platform history).
@@ -276,6 +281,13 @@ type TeacherAvailability {
   dayOfWeek: Int
   startTime: String
   endTime: String
+  timezone: String!
+}
+
+type BookableLessonSlot {
+  startsAt: DateTime!
+  endsAt: DateTime!
+  timezone: String!
 }
 
 enum UnavailabilityLabel {
@@ -1233,6 +1245,11 @@ input TeacherFilterInput {
   isAvailable: Boolean
   minExperience: Int
   search: String
+  # Return teachers with at least one real conflict-free opening in this
+  # bounded range. Supply both values; the directory date picker sends a
+  # single local calendar day as an ISO range.
+  availableFrom: DateTime
+  availableTo: DateTime
 }
 
 input CourseFilterInput {
@@ -1308,7 +1325,7 @@ type Query {
   categories: [Category!]!
 
   # Bookings
-  myBookings(status: BookingStatus, page: Int, limit: Int): [Booking!]!
+  myBookings(status: BookingStatus, page: Int, limit: Int, from: DateTime, to: DateTime): [Booking!]!
   booking(id: ID!): Booking
   teacherAvailability(teacherProfileId: ID!, date: DateTime): [TeacherAvailability!]!
   # Bounded by [from, to] like every other calendar query here - never an
@@ -1357,7 +1374,7 @@ type Query {
   feedPost(id: ID!): FeedPost
 
   # Reviews
-  reviews(courseId: ID, eventId: ID, bookingId: ID, page: Int, limit: Int): ReviewConnection!
+  reviews(courseId: ID, eventId: ID, bookingId: ID, teacherProfileId: ID, page: Int, limit: Int): ReviewConnection!
 
   # Student availability (self-declaration)
   myAvailability: [StudentAvailability!]!

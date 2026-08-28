@@ -71,6 +71,11 @@ function fakePrismaForBookSession(overrides: {
     hourlyRate: overrides.hourlyRate,
     autoApproveNewStudents: overrides.autoApproveNewStudents,
     autoApproveRecurringStudents: overrides.autoApproveNewStudents,
+    instruments: ['Piano'],
+    availability: [
+      { dayOfWeek, startTime: `${String(hour).padStart(2, '0')}:00`, endTime: `${String(hour + 1).padStart(2, '0')}:00`, timezone },
+    ],
+    instrumentCapacities: [],
     user: { role: 'TEACHER', status: 'ACTIVE', profile: { timezone } },
   };
 
@@ -82,10 +87,12 @@ function fakePrismaForBookSession(overrides: {
         { dayOfWeek, startTime: `${String(hour).padStart(2, '0')}:00`, endTime: `${String(hour + 1).padStart(2, '0')}:00`, timezone },
       ]),
     },
-    // Conflict check and isRecurringStudent both call booking.findFirst;
-    // null satisfies both ("no conflict" / "not a recurring student").
-    booking: { findFirst: jest.fn().mockResolvedValue(null) },
-    teacherUnavailability: { findFirst: jest.fn().mockResolvedValue(null) },
+    // isRecurringStudent calls findFirst; concrete slot discovery reads the
+    // bounded active-booking list. Both are empty for these tests.
+    booking: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
+    teacherUnavailability: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
+    personalAppointment: { findMany: jest.fn().mockResolvedValue([]) },
+    externalBusyInterval: { findMany: jest.fn().mockResolvedValue([]) },
     // Prisma's $transaction has two call shapes: a callback (the booking
     // create below) and an array (awardXpOnce's XP-grant transaction,
     // fired-and-forgotten after every successful booking) - both must

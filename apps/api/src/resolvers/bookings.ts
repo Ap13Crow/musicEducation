@@ -6,6 +6,7 @@ import { enqueueMail, recipientAddresses } from '../lib/mailOutbox.js';
 import { buildBookingIcs } from '../lib/ics.js';
 import { isWithinBookingWindow, isLateCancellation, APPROVAL_HOLD_HOURS } from '../lib/bookingPolicy.js';
 import { reserveInstrumentCapacity } from '../lib/capacity.js';
+import { getBookableSlots, LESSON_DURATION_MINUTES } from '../lib/bookableSlots.js';
 import { consumeCredit, restoreCredit } from '../lib/lessonCredits.js';
 import { displayNameOf } from '../lib/displayName.js';
 import type { GraphQLContext } from '../types.js';
@@ -132,17 +133,33 @@ export async function notifyBookingCancelled(tx: Prisma.TransactionClient, booki
 
 export const bookingResolvers = {
   Query: {
-    async myBookings(_: unknown, { status, page = 1, limit = 20 }: any, { prisma, user }: GraphQLContext) {
+    async myBookings(_: unknown, { status, page = 1, limit = 20, from, to }: any, { prisma, user }: GraphQLContext) {
       requireAuth(user);
       // Include both bookings where user is the student (userId) and where user is the teacher
       const teacherProfile = await prisma.teacherProfile.findUnique({ where: { userId: user.id } });
       const where: any = {
-        OR: [
+        AND: [{ OR: [
           { userId: user.id },
           ...(teacherProfile ? [{ teacherProfileId: teacherProfile.id }] : []),
-        ],
+        ] }],
       };
       if (status) where.status = status;
+      if (Boolean(from) !== Boolean(to)) {
+        throw new GraphQLError('Choose both the start and end of the booking range.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      if (from && to) {
+        const [rangeStart, rangeEnd] = [new Date(from), new Date(to)];
+        if (Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime()) || rangeEnd <= rangeStart) {
+          throw new GraphQLError('Invalid booking range.', { extensions: { code: 'BAD_USER_INPUT' } });
+        }
+        where.AND.push({
+          startsAt: { lt: rangeEnd },
+          OR: [
+            { endsAt: { gt: rangeStart } },
+            { endsAt: null, startsAt: { gte: rangeStart } },
+          ],
+        });
+      }
       const skip = (page - 1) * limit;
       return prisma.booking.findMany({ where, skip, take: limit, orderBy: { startsAt: 'desc' } });
     },
@@ -247,55 +264,21 @@ export const bookingResolvers = {
           { extensions: { code: 'BAD_USER_INPUT' } },
         );
       }
-      const endsAt = new Date(startsAtDate.getTime() + 60 * 60 * 1000);
-      const availability = await prisma.teacherAvailability.findMany({ where: { teacherProfileId } });
-      const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const matchesAvailability = availability.some((slot) => {
-        const timezone = slot.timezone ?? 'Europe/Zurich';
-        const parts = new Intl.DateTimeFormat('en-US', {
-          timeZone: timezone, weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-        }).formatToParts(startsAtDate);
-        const weekday = weekdayNames.indexOf(parts.find((part) => part.type === 'weekday')?.value ?? '');
-        const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? -1);
-        const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? -1);
-        const requestedMinutes = hour * 60 + minute;
-        const [startHour, startMinute] = slot.startTime.split(':').map(Number);
-        const [endHour, endMinute] = slot.endTime.split(':').map(Number);
-        const slotStart = startHour * 60 + startMinute;
-        const slotEnd = endHour * 60 + endMinute;
-        return weekday === slot.dayOfWeek &&
-          requestedMinutes >= slotStart &&
-          requestedMinutes + 60 <= slotEnd &&
-          (requestedMinutes - slotStart) % 60 === 0;
+      const endsAt = new Date(startsAtDate.getTime() + LESSON_DURATION_MINUTES * 60_000);
+      // One source of truth for discovery and mutation validation. This
+      // includes recurring-rule alignment (including :15/:30 starts), live
+      // booking holds, time off, personal/external busy intervals, lead
+      // time and the selected instrument's remaining capacity. The old
+      // mutation duplicated only part of those rules and could disagree
+      // with what the calendar showed.
+      const offered = await getBookableSlots(prisma, teacherProfileId, startsAtDate, endsAt, {
+        instrument,
+        limit: 1,
+        now: new Date(),
       });
-      if (!matchesAvailability) {
-        throw new GraphQLError('This time was not offered by the teacher.', { extensions: { code: 'BAD_USER_INPUT' } });
+      if (offered.length !== 1 || offered[0].startsAt.getTime() !== startsAtDate.getTime()) {
+        throw new GraphQLError('Time slot not available.', { extensions: { code: 'BAD_USER_INPUT' } });
       }
-
-      const conflict = await prisma.booking.findFirst({
-        where: {
-          teacherProfileId,
-          AND: [{ startsAt: { lt: endsAt } }, { endsAt: { gt: startsAtDate } }],
-          OR: [
-            { status: 'CONFIRMED' },
-            // A PENDING hold blocks the slot only while it's still live -
-            // an expired manual-approval request (see holdExpiresAt) no
-            // longer counts, matching "prevent double booking during the
-            // hold" without blocking the slot forever once it lapses.
-            { status: 'PENDING', OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: new Date() } }] },
-          ],
-        },
-      });
-      if (conflict) throw new GraphQLError('Time slot not available.', { extensions: { code: 'BAD_USER_INPUT' } });
-
-      // Unavailability overrides availability: a block covering any part of
-      // this slot removes it from bookable discovery, same rule the
-      // teacherUnavailability query enforces for display. Never leaks the
-      // block's private `note` here - just makes the slot unbookable.
-      const unavailable = await prisma.teacherUnavailability.findFirst({
-        where: { teacherProfileId, startsAt: { lt: endsAt }, endsAt: { gt: startsAtDate } },
-      });
-      if (unavailable) throw new GraphQLError('Time slot not available.', { extensions: { code: 'BAD_USER_INPUT' } });
 
       // A booking needs its own Stripe payment only when it isn't already
       // covered by a prepaid package credit and the teacher actually
