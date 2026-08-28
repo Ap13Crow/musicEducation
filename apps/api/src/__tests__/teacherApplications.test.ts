@@ -2,8 +2,13 @@
 
 process.env.JWT_SECRET = 'test-secret-key-for-unit-tests';
 
+jest.mock('../lib/keycloakAdmin', () => ({
+  setKeycloakUserRealmRole: jest.fn().mockResolvedValue(undefined),
+}));
+
 import { requireAuth, requireRole } from '../middleware/auth';
 import { calculateAge, teacherApplicationResolvers } from '../resolvers/teacherApplications';
+import { setKeycloakUserRealmRole } from '../lib/keycloakAdmin';
 
 const studentUser = { id: 'student-1', role: 'STUDENT' } as const;
 const VALID_INPUT = {
@@ -273,6 +278,96 @@ describe('reviewTeacherApplication permission checks', () => {
 
   it('denies unauthenticated callers', () => {
     expect(() => requireRole(null, 'ADMIN')).toThrow('UNAUTHENTICATED');
+  });
+});
+
+describe('teacher application review', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('keeps draft upload-only applications out of the admin review queue by default', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = fakePrisma({
+      teacherApplication: { findMany },
+    });
+
+    await teacherApplicationResolvers.Query.teacherApplications(
+      null,
+      {},
+      { prisma, user: { id: 'admin-1', role: 'ADMIN' } } as any,
+    );
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { status: { not: 'DRAFT' } },
+    }));
+  });
+
+  it('mirrors teacher approval into Keycloak before promoting the local user', async () => {
+    const application = {
+      id: 'app-1',
+      userId: 'student-1',
+      headline: 'Piano coach',
+      bio: 'Patient and structured lessons',
+      instruments: ['Piano'],
+      experienceYears: 8,
+      imageUrl: 'data:image/png;base64,abc',
+      videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    };
+    const updateApplication = jest.fn().mockResolvedValue({ ...application, status: 'APPROVED' });
+    const updateUser = jest.fn().mockResolvedValue({
+      id: 'student-1',
+      role: 'TEACHER',
+      profile: { instruments: ['Piano'], musicStyles: ['Classical'], bio: null },
+    });
+    const upsertTeacherProfile = jest.fn().mockResolvedValue({ id: 'tp-1' });
+    const prisma = fakePrisma({
+      teacherApplication: {
+        findUnique: jest.fn().mockResolvedValue(application),
+      },
+      userExternalIdentity: {
+        findFirst: jest.fn().mockResolvedValue({ externalId: 'kc-user-1' }),
+      },
+      $transaction: jest.fn(async (callback: any) => callback({
+        teacherApplication: { update: updateApplication },
+        user: { update: updateUser },
+        teacherProfile: { upsert: upsertTeacherProfile },
+      })),
+    });
+
+    await teacherApplicationResolvers.Mutation.reviewTeacherApplication(
+      null,
+      { id: 'app-1', approve: true },
+      { prisma, user: { id: 'admin-1', role: 'ADMIN' } } as any,
+    );
+
+    expect(setKeycloakUserRealmRole).toHaveBeenCalledWith('kc-user-1', 'TEACHER');
+    expect(updateUser).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'student-1' },
+      data: { role: 'TEACHER' },
+    }));
+    expect(upsertTeacherProfile).toHaveBeenCalled();
+  });
+
+  it('refuses to review an upload-only draft application', async () => {
+    const prisma = fakePrisma({
+      teacherApplication: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'draft-1', userId: 'student-1', status: 'DRAFT' }),
+      },
+      userExternalIdentity: { findFirst: jest.fn() },
+      $transaction: jest.fn(),
+    });
+
+    await expect(
+      teacherApplicationResolvers.Mutation.reviewTeacherApplication(
+        null,
+        { id: 'draft-1', approve: true },
+        { prisma, user: { id: 'admin-1', role: 'ADMIN' } } as any,
+      ),
+    ).rejects.toThrow('Draft applications are not ready for review.');
+
+    expect(setKeycloakUserRealmRole).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
 

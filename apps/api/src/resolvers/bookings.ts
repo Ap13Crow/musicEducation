@@ -25,6 +25,7 @@ export async function isRecurringStudent(prisma: PrismaClient, teacherProfileId:
 }
 
 const TEACHER_FOUND_XP = 30;
+const MAX_CONTIGUOUS_LESSON_DURATION_MINUTES = 4 * LESSON_DURATION_MINUTES;
 
 const PLATFORM_ORGANIZER = { name: 'MyMusic.Coach', email: process.env.SMTP_FROM ?? 'no-reply@mymusic.coach' };
 
@@ -275,8 +276,13 @@ export const bookingResolvers = {
       }
       if (!teacherProfile.isAvailable) throw new GraphQLError('Teacher is not available.', { extensions: { code: 'BAD_USER_INPUT' } });
 
-      if (durationMin !== 60) {
-        throw new GraphQLError('Lessons are booked in one-hour slots.', { extensions: { code: 'BAD_USER_INPUT' } });
+      if (
+        !Number.isInteger(durationMin) ||
+        durationMin < LESSON_DURATION_MINUTES ||
+        durationMin > MAX_CONTIGUOUS_LESSON_DURATION_MINUTES ||
+        durationMin % LESSON_DURATION_MINUTES !== 0
+      ) {
+        throw new GraphQLError('Lessons can be booked as 1, 2, 3 or 4 contiguous one-hour slots.', { extensions: { code: 'BAD_USER_INPUT' } });
       }
       const startsAtDate = new Date(startsAt);
       if (Number.isNaN(startsAtDate.getTime()) || startsAtDate <= new Date()) {
@@ -292,7 +298,7 @@ export const bookingResolvers = {
           { extensions: { code: 'BAD_USER_INPUT' } },
         );
       }
-      const endsAt = new Date(startsAtDate.getTime() + LESSON_DURATION_MINUTES * 60_000);
+      const endsAt = new Date(startsAtDate.getTime() + durationMin * 60_000);
       // One source of truth for discovery and mutation validation. This
       // includes recurring-rule alignment (including :15/:30 starts), live
       // booking holds, time off, personal/external busy intervals, lead
@@ -301,10 +307,14 @@ export const bookingResolvers = {
       // with what the calendar showed.
       const offered = await getBookableSlots(prisma, teacherProfileId, startsAtDate, endsAt, {
         instrument,
-        limit: 1,
+        limit: durationMin / LESSON_DURATION_MINUTES,
         now: new Date(),
       });
-      if (offered.length !== 1 || offered[0].startsAt.getTime() !== startsAtDate.getTime()) {
+      const offeredStarts = new Set(offered.map((slot) => slot.startsAt.getTime()));
+      const everyHourIsOpen = Array.from({ length: durationMin / LESSON_DURATION_MINUTES }, (_, index) =>
+        startsAtDate.getTime() + index * LESSON_DURATION_MINUTES * 60_000,
+      ).every((expectedStart) => offeredStarts.has(expectedStart));
+      if (!everyHourIsOpen) {
         throw new GraphQLError('Time slot not available.', { extensions: { code: 'BAD_USER_INPUT' } });
       }
 

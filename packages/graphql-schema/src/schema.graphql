@@ -123,6 +123,7 @@ enum EventBookingStatus {
 }
 
 enum TeacherApplicationStatus {
+  DRAFT
   PENDING
   APPROVED
   REJECTED

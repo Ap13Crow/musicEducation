@@ -38,6 +38,7 @@ const CREATE_CHECKOUT_SESSION = gql`
 const ALL_FORMATS = ['ONLINE', 'IN_PERSON', 'HYBRID'];
 const FORMAT_LABELS: Record<string, string> = { ONLINE: 'Online', IN_PERSON: 'In person', HYBRID: 'Hybrid' };
 const MAX_WEEKS_AHEAD = 8;
+const DURATION_OPTIONS = [60, 120, 180, 240];
 
 function startOfWeek(value: Date): Date {
   const day = new Date(value);
@@ -52,6 +53,7 @@ export default function BookTeacherPage() {
   const { data: session } = useSession();
   const [weekOffset, setWeekOffset] = useState(0);
   const [startsAt, setStartsAt] = useState('');
+  const [durationMin, setDurationMin] = useState(60);
   const [format, setFormat] = useState('');
   const [instrument, setInstrument] = useState('');
   const [checkoutError, setCheckoutError] = useState('');
@@ -100,8 +102,22 @@ export default function BookTeacherPage() {
   useEffect(() => setStartsAt(''), [weekOffset, instrument]);
 
   const slots: CalendarSlot[] = teacher?.bookableSlots ?? [];
+  const slotStartTimes = useMemo(() => new Set(slots.map((slot) => new Date(slot.startsAt).getTime())), [slots]);
+  const durationSlots = useMemo(() => slots.filter((slot) => {
+    const start = new Date(slot.startsAt).getTime();
+    return Array.from({ length: durationMin / 60 }, (_, index) => start + index * 60 * 60 * 1000)
+      .every((expectedStart) => slotStartTimes.has(expectedStart));
+  }).map((slot) => ({
+    ...slot,
+    endsAt: new Date(new Date(slot.startsAt).getTime() + durationMin * 60_000).toISOString(),
+  })), [durationMin, slotStartTimes, slots]);
   const selectedCapacity: any = capacityByInstrument.get(instrument);
   const requiresPayment = Number(teacher?.hourlyRate ?? 0) > 0;
+  const lessonPrice = teacher?.hourlyRate ? Number(teacher.hourlyRate) * (durationMin / 60) : 0;
+
+  useEffect(() => {
+    if (startsAt && !durationSlots.some((slot) => slot.startsAt === startsAt)) setStartsAt('');
+  }, [durationSlots, startsAt]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -112,7 +128,7 @@ export default function BookTeacherPage() {
     }
     setCheckoutError('');
     const { data: bookData } = await book({
-      variables: { input: { teacherProfileId, startsAt, durationMin: 60, format, instrument } },
+      variables: { input: { teacherProfileId, startsAt, durationMin, format, instrument } },
     });
     const newBooking = bookData?.bookSession;
     if (newBooking && requiresPayment) {
@@ -160,7 +176,7 @@ export default function BookTeacherPage() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="flex items-center gap-2 text-lg font-semibold"><CalendarDays className="h-5 w-5" />Choose a lesson</h2>
-                  <p className="mt-1 text-sm text-gray-500">Only real, conflict-free one-hour openings are shown.</p>
+                  <p className="mt-1 text-sm text-gray-500">Only real, conflict-free openings are shown for the selected lesson length.</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button type="button" onClick={() => setWeekOffset((value) => Math.max(0, value - 1))} disabled={weekOffset === 0} className="rounded-lg border border-gray-200 p-2 disabled:opacity-30" aria-label="Previous week"><ChevronLeft className="h-4 w-4" /></button>
@@ -174,13 +190,13 @@ export default function BookTeacherPage() {
               <div className="mt-5">
                 <WeeklySlotCalendar
                   weekStart={weekStart}
-                  slots={slots}
+                  slots={durationSlots}
                   blocks={data?.teacherUnavailability ?? []}
                   selectedStartsAt={startsAt}
                   onSelect={(slot) => setStartsAt(slot.startsAt)}
                 />
               </div>
-              {slots.length === 0 && (
+              {durationSlots.length === 0 && (
                 <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
                   No openings for {instrument || 'this instrument'} in this week. Try the next week{selectedCapacity?.remainingCapacity === 0 ? ', or choose another instrument because this one is currently full' : ''}.
                 </p>
@@ -209,7 +225,17 @@ export default function BookTeacherPage() {
 
               <section className="card p-5">
                 <h2 className="flex items-center gap-2 font-semibold"><Clock className="h-4 w-4" />Lesson details</h2>
-                <p className="mt-3 text-sm"><strong>60 minutes</strong>{teacher.hourlyRate ? ` · ${teacher.currency} ${Number(teacher.hourlyRate).toFixed(2)}` : ' · Free'}</p>
+                <label className="mt-3 block text-sm font-medium">
+                  Lesson length
+                  <select className="input mt-2 w-full" value={durationMin} onChange={(event) => setDurationMin(Number(event.target.value))}>
+                    {DURATION_OPTIONS.map((minutes) => (
+                      <option key={minutes} value={minutes}>
+                        {minutes / 60} hour{minutes === 60 ? '' : 's'}{teacher.hourlyRate ? ` · ${teacher.currency} ${(Number(teacher.hourlyRate) * (minutes / 60)).toFixed(2)}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="mt-3 text-sm"><strong>{durationMin} minutes</strong>{teacher.hourlyRate ? ` · ${teacher.currency} ${lessonPrice.toFixed(2)}` : ' · Free'}</p>
                 <label className="mt-4 block text-sm font-medium">
                   <span className="flex items-center gap-2">{format === 'ONLINE' ? <Video className="h-4 w-4" /> : <MapPin className="h-4 w-4" />}Format</span>
                   <select className="input mt-2 w-full" value={format} onChange={(event) => setFormat(event.target.value)}>

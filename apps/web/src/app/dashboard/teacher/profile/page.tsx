@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { gql, useMutation, useQuery } from '@apollo/client';
-import { Award, BookOpen, Calendar, MapPin, Star, UserRoundCheck, Users as UsersIcon, Video } from 'lucide-react';
+import { Award, BookOpen, Calendar, CreditCard, MapPin, Star, Trash2, UserRoundCheck, Users as UsersIcon, Video } from 'lucide-react';
 import RoleGate from '@/components/auth/RoleGate';
 import { toYouTubeEmbedUrl } from '@/lib/youtube';
 import { resizeImageToDataUrl } from '@/lib/upload';
@@ -71,6 +71,50 @@ const APPLY_AS_TEACHER = gql`
     }
   }
 `;
+const GET_OFFERS = gql`
+  query TeacherCommercialOffers($teacherProfileId: ID!) {
+    teacherPackageOffers(teacherProfileId: $teacherProfileId) {
+      id instrument lessonCount pricePerPackage pricePerLesson currency isPublished
+    }
+    teacherSubscriptionOffers(teacherProfileId: $teacherProfileId) {
+      id includedHoursPerMonth termMonths monthlyPrice currency upfrontDiscountPct upfrontTotal undiscountedTotal isPublished
+    }
+  }
+`;
+const CREATE_PACKAGE_OFFER = gql`
+  mutation CreatePackageOffer($instrument: String, $lessonCount: Int!, $pricePerPackage: Float!, $currency: String) {
+    createPackageOffer(instrument: $instrument, lessonCount: $lessonCount, pricePerPackage: $pricePerPackage, currency: $currency) {
+      id
+    }
+  }
+`;
+const UPDATE_PACKAGE_OFFER = gql`
+  mutation UpdatePackageOffer($id: ID!, $isPublished: Boolean) {
+    updatePackageOffer(id: $id, isPublished: $isPublished) { id isPublished }
+  }
+`;
+const DELETE_PACKAGE_OFFER = gql`mutation DeletePackageOffer($id: ID!) { deletePackageOffer(id: $id) }`;
+const CREATE_SUBSCRIPTION_OFFER = gql`
+  mutation CreateSubscriptionOffer($includedHoursPerMonth: Int!, $termMonths: Int!, $monthlyPrice: Float!, $currency: String) {
+    createSubscriptionOffer(includedHoursPerMonth: $includedHoursPerMonth, termMonths: $termMonths, monthlyPrice: $monthlyPrice, currency: $currency) {
+      id
+    }
+  }
+`;
+const UPDATE_SUBSCRIPTION_OFFER = gql`
+  mutation UpdateSubscriptionOffer($id: ID!, $isPublished: Boolean) {
+    updateSubscriptionOffer(id: $id, isPublished: $isPublished) { id isPublished }
+  }
+`;
+const DELETE_SUBSCRIPTION_OFFER = gql`mutation DeleteSubscriptionOffer($id: ID!) { deleteSubscriptionOffer(id: $id) }`;
+
+function money(currency: string, amount: number): string {
+  return `${currency} ${Number(amount).toFixed(2)}`;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
 
 export default function TeacherProfessionalProfilePage() {
   const { data, loading, error, refetch } = useQuery(GET, { fetchPolicy: 'cache-and-network' });
@@ -78,10 +122,24 @@ export default function TeacherProfessionalProfilePage() {
   const [updatePolicy, { loading: savingPolicy, error: policyError }] = useMutation(UPDATE_POLICY);
   const [setCapacity, { loading: savingCapacity }] = useMutation(SET_INSTRUMENT_CAPACITY);
   const [applyAsTeacher, { loading: creatingProfile, error: createError }] = useMutation(APPLY_AS_TEACHER);
-  const [policyDraft, setPolicyDraft] = useState({ leadDays: '1', cancellationDays: '2' });
-  const [capacityDraft, setCapacityDraft] = useState<{ instrument: string; maxActiveStudents: string }>({ instrument: '', maxActiveStudents: '' });
   const profile = data?.me?.teacherProfile;
   const account = data?.me?.profile;
+  const { data: offerData, loading: offersLoading, refetch: refetchOffers } = useQuery(GET_OFFERS, {
+    variables: { teacherProfileId: profile?.id ?? '' },
+    skip: !profile?.id,
+    fetchPolicy: 'cache-and-network',
+  });
+  const [createPackageOffer, { loading: creatingPackage }] = useMutation(CREATE_PACKAGE_OFFER);
+  const [updatePackageOffer, { loading: updatingPackage }] = useMutation(UPDATE_PACKAGE_OFFER);
+  const [deletePackageOffer, { loading: deletingPackage }] = useMutation(DELETE_PACKAGE_OFFER);
+  const [createSubscriptionOffer, { loading: creatingSubscription }] = useMutation(CREATE_SUBSCRIPTION_OFFER);
+  const [updateSubscriptionOffer, { loading: updatingSubscription }] = useMutation(UPDATE_SUBSCRIPTION_OFFER);
+  const [deleteSubscriptionOffer, { loading: deletingSubscription }] = useMutation(DELETE_SUBSCRIPTION_OFFER);
+  const [policyDraft, setPolicyDraft] = useState({ leadDays: '1', cancellationDays: '2' });
+  const [capacityDraft, setCapacityDraft] = useState<{ instrument: string; maxActiveStudents: string }>({ instrument: '', maxActiveStudents: '' });
+  const [packageDraft, setPackageDraft] = useState({ instrument: '', lessonCount: '5', pricePerPackage: '' });
+  const [subscriptionDraft, setSubscriptionDraft] = useState({ includedHoursPerMonth: '4', termMonths: '6', monthlyPrice: '' });
+  const [offerError, setOfferError] = useState<string | null>(null);
 
   const [form, setForm] = useState({ headline: '', teachingBio: '', hourlyRate: '', currency: 'CHF', specializations: '' });
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>([]);
@@ -152,6 +210,99 @@ export default function TeacherProfessionalProfilePage() {
     await setCapacity({ variables: { instrument: capacityDraft.instrument.trim(), maxActiveStudents } });
     setCapacityDraft({ instrument: '', maxActiveStudents: '' });
     await refetch();
+  }
+
+  async function addPackageOffer(e: React.FormEvent) {
+    e.preventDefault();
+    const pricePerPackage = Number(packageDraft.pricePerPackage);
+    if (!Number.isFinite(pricePerPackage) || pricePerPackage <= 0) {
+      setOfferError('Enter a positive package price.');
+      return;
+    }
+    setOfferError(null);
+    try {
+      await createPackageOffer({
+        variables: {
+          instrument: packageDraft.instrument.trim() || null,
+          lessonCount: Number(packageDraft.lessonCount),
+          pricePerPackage,
+          currency: profile.currency ?? 'CHF',
+        },
+      });
+      setPackageDraft({ instrument: '', lessonCount: '5', pricePerPackage: '' });
+      await refetchOffers();
+    } catch (error) {
+      setOfferError(errorMessage(error, 'Could not create package offer.'));
+    }
+  }
+
+  async function addSubscriptionOffer(e: React.FormEvent) {
+    e.preventDefault();
+    const includedHoursPerMonth = Number(subscriptionDraft.includedHoursPerMonth);
+    const monthlyPrice = Number(subscriptionDraft.monthlyPrice);
+    if (!Number.isInteger(includedHoursPerMonth) || includedHoursPerMonth <= 0) {
+      setOfferError('Enter a positive whole number of included hours per month.');
+      return;
+    }
+    if (!Number.isFinite(monthlyPrice) || monthlyPrice <= 0) {
+      setOfferError('Enter a positive monthly price.');
+      return;
+    }
+    setOfferError(null);
+    try {
+      await createSubscriptionOffer({
+        variables: {
+          includedHoursPerMonth,
+          termMonths: Number(subscriptionDraft.termMonths),
+          monthlyPrice,
+          currency: profile.currency ?? 'CHF',
+        },
+      });
+      setSubscriptionDraft({ includedHoursPerMonth: '4', termMonths: '6', monthlyPrice: '' });
+      await refetchOffers();
+    } catch (error) {
+      setOfferError(errorMessage(error, 'Could not create subscription offer.'));
+    }
+  }
+
+  async function togglePackageOffer(offer: any) {
+    setOfferError(null);
+    try {
+      await updatePackageOffer({ variables: { id: offer.id, isPublished: !offer.isPublished } });
+      await refetchOffers();
+    } catch (error) {
+      setOfferError(errorMessage(error, 'Could not update package offer.'));
+    }
+  }
+
+  async function removePackageOffer(id: string) {
+    setOfferError(null);
+    try {
+      await deletePackageOffer({ variables: { id } });
+      await refetchOffers();
+    } catch (error) {
+      setOfferError(errorMessage(error, 'Could not delete package offer.'));
+    }
+  }
+
+  async function toggleSubscriptionOffer(offer: any) {
+    setOfferError(null);
+    try {
+      await updateSubscriptionOffer({ variables: { id: offer.id, isPublished: !offer.isPublished } });
+      await refetchOffers();
+    } catch (error) {
+      setOfferError(errorMessage(error, 'Could not update subscription offer.'));
+    }
+  }
+
+  async function removeSubscriptionOffer(id: string) {
+    setOfferError(null);
+    try {
+      await deleteSubscriptionOffer({ variables: { id } });
+      await refetchOffers();
+    } catch (error) {
+      setOfferError(errorMessage(error, 'Could not delete subscription offer.'));
+    }
   }
 
   function toggleInstrument(inst: string) {
@@ -233,6 +384,9 @@ export default function TeacherProfessionalProfilePage() {
   const bookings: any[] = data?.myBookings ?? [];
   const pendingCount = bookings.filter((b) => b.status === 'PENDING').length;
   const upcomingCount = bookings.filter((b) => b.status === 'CONFIRMED').length;
+  const packageOffers = offerData?.teacherPackageOffers ?? [];
+  const subscriptionOffers = offerData?.teacherSubscriptionOffers ?? [];
+  const offerBusy = creatingPackage || updatingPackage || deletingPackage || creatingSubscription || updatingSubscription || deletingSubscription;
 
   return (
     <RoleGate allow={['TEACHER', 'ADMIN']} callbackUrl="/dashboard/teacher/profile">
@@ -463,6 +617,108 @@ export default function TeacherProfessionalProfilePage() {
                   </form>
                 </section>
 
+                <section className="card p-6">
+                  <h2 className="flex items-center gap-2 font-semibold text-gray-900">
+                    <CreditCard className="h-4 w-4 text-primary-600" /> Packages and subscriptions
+                  </h2>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Publish prepaid options students can buy from your public profile. Purchases keep the exact terms
+                    shown at checkout even if you unpublish the offer later.
+                  </p>
+                  {offerError && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{offerError}</p>}
+
+                  <div className="mt-5 grid gap-5 lg:grid-cols-2">
+                    <div className="rounded-xl border p-4">
+                      <h3 className="font-medium text-gray-900">Lesson packages</h3>
+                      <form onSubmit={addPackageOffer} className="mt-3 grid gap-3">
+                        <label className="text-sm font-medium">
+                          Instrument
+                          <select className="input mt-1 w-full" value={packageDraft.instrument} onChange={(e) => setPackageDraft({ ...packageDraft, instrument: e.target.value })}>
+                            <option value="">Any listed instrument</option>
+                            {selectedInstruments.map((instrument) => <option key={instrument} value={instrument}>{instrument}</option>)}
+                          </select>
+                        </label>
+                        <label className="text-sm font-medium">
+                          Lessons
+                          <select className="input mt-1 w-full" value={packageDraft.lessonCount} onChange={(e) => setPackageDraft({ ...packageDraft, lessonCount: e.target.value })}>
+                            {[5, 10, 20].map((count) => <option key={count} value={count}>{count} lessons</option>)}
+                          </select>
+                        </label>
+                        <label className="text-sm font-medium">
+                          Total package price
+                          <input type="number" min="0.01" step="0.01" className="input mt-1 w-full" value={packageDraft.pricePerPackage} onChange={(e) => setPackageDraft({ ...packageDraft, pricePerPackage: e.target.value })} placeholder={profile.currency ?? 'CHF'} />
+                        </label>
+                        <button disabled={creatingPackage} className="btn-secondary rounded-lg px-4 py-2 text-sm disabled:opacity-50">{creatingPackage ? 'Creating…' : 'Create package'}</button>
+                      </form>
+                      <div className="mt-4 space-y-2">
+                        {packageOffers.map((offer: any) => (
+                          <div key={offer.id} className="rounded-lg bg-gray-50 p-3 text-sm">
+                            <div className="flex items-start justify-between gap-3">
+                              <span>
+                                <strong>{offer.lessonCount} lessons</strong>
+                                <span className="block text-xs text-gray-500">{offer.instrument || 'Any listed instrument'} · {money(offer.currency, offer.pricePerLesson)} / lesson</span>
+                              </span>
+                              <span className={`rounded-full px-2 py-0.5 text-xs ${offer.isPublished ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-600'}`}>{offer.isPublished ? 'Published' : 'Draft'}</span>
+                            </div>
+                            <div className="mt-3 flex items-center justify-between gap-3">
+                              <span className="font-medium">{money(offer.currency, offer.pricePerPackage)}</span>
+                              <div className="flex gap-2">
+                                <button type="button" disabled={offerBusy} onClick={() => void togglePackageOffer(offer)} className="text-xs text-primary-700 underline">{offer.isPublished ? 'Unpublish' : 'Publish'}</button>
+                                <button type="button" disabled={offerBusy} onClick={() => void removePackageOffer(offer.id)} className="text-red-600" aria-label="Delete package offer"><Trash2 className="h-4 w-4" /></button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {!offersLoading && packageOffers.length === 0 && <p className="text-sm text-gray-500">No lesson packages yet.</p>}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border p-4">
+                      <h3 className="font-medium text-gray-900">Upfront subscriptions</h3>
+                      <form onSubmit={addSubscriptionOffer} className="mt-3 grid gap-3">
+                        <label className="text-sm font-medium">
+                          Hours per month
+                          <input type="number" min="1" step="1" className="input mt-1 w-full" value={subscriptionDraft.includedHoursPerMonth} onChange={(e) => setSubscriptionDraft({ ...subscriptionDraft, includedHoursPerMonth: e.target.value })} />
+                        </label>
+                        <label className="text-sm font-medium">
+                          Term
+                          <select className="input mt-1 w-full" value={subscriptionDraft.termMonths} onChange={(e) => setSubscriptionDraft({ ...subscriptionDraft, termMonths: e.target.value })}>
+                            <option value="6">6 months</option>
+                            <option value="12">12 months</option>
+                          </select>
+                        </label>
+                        <label className="text-sm font-medium">
+                          Monthly price
+                          <input type="number" min="0.01" step="0.01" className="input mt-1 w-full" value={subscriptionDraft.monthlyPrice} onChange={(e) => setSubscriptionDraft({ ...subscriptionDraft, monthlyPrice: e.target.value })} placeholder={profile.currency ?? 'CHF'} />
+                        </label>
+                        <button disabled={creatingSubscription} className="btn-secondary rounded-lg px-4 py-2 text-sm disabled:opacity-50">{creatingSubscription ? 'Creating…' : 'Create subscription'}</button>
+                      </form>
+                      <div className="mt-4 space-y-2">
+                        {subscriptionOffers.map((offer: any) => (
+                          <div key={offer.id} className="rounded-lg bg-gray-50 p-3 text-sm">
+                            <div className="flex items-start justify-between gap-3">
+                              <span>
+                                <strong>{offer.termMonths} months</strong>
+                                <span className="block text-xs text-gray-500">{offer.includedHoursPerMonth} hour{offer.includedHoursPerMonth === 1 ? '' : 's'} / month · paid upfront</span>
+                              </span>
+                              <span className={`rounded-full px-2 py-0.5 text-xs ${offer.isPublished ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-600'}`}>{offer.isPublished ? 'Published' : 'Draft'}</span>
+                            </div>
+                            <div className="mt-3 flex items-center justify-between gap-3">
+                              <span className="font-medium">{money(offer.currency, offer.upfrontTotal)}</span>
+                              <div className="flex gap-2">
+                                <button type="button" disabled={offerBusy} onClick={() => void toggleSubscriptionOffer(offer)} className="text-xs text-primary-700 underline">{offer.isPublished ? 'Unpublish' : 'Publish'}</button>
+                                <button type="button" disabled={offerBusy} onClick={() => void removeSubscriptionOffer(offer.id)} className="text-red-600" aria-label="Delete subscription offer"><Trash2 className="h-4 w-4" /></button>
+                              </div>
+                            </div>
+                            {offer.upfrontDiscountPct > 0 && <p className="mt-1 text-xs text-emerald-700">{offer.upfrontDiscountPct}% upfront discount vs monthly total</p>}
+                          </div>
+                        ))}
+                        {!offersLoading && subscriptionOffers.length === 0 && <p className="text-sm text-gray-500">No subscriptions yet.</p>}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
                 {profile.introVideoUrl && (
                   <section className="card p-6">
                     <h3 className="flex items-center gap-2 text-sm font-medium"><Video className="h-4 w-4" /> Presentation video</h3>
@@ -534,7 +790,10 @@ export default function TeacherProfessionalProfilePage() {
                   <p className="mt-2 text-sm text-gray-700">
                     {profile.hourlyRate ? `${profile.currency} ${profile.hourlyRate}/hr` : 'Contact for pricing'}
                   </p>
-                  <p className="mt-1 text-xs text-gray-400">Packages and subscriptions will appear here once published.</p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    {packageOffers.filter((offer: any) => offer.isPublished).length} published package{packageOffers.filter((offer: any) => offer.isPublished).length === 1 ? '' : 's'} ·{' '}
+                    {subscriptionOffers.filter((offer: any) => offer.isPublished).length} published subscription{subscriptionOffers.filter((offer: any) => offer.isPublished).length === 1 ? '' : 's'}
+                  </p>
                 </section>
               </aside>
             </div>

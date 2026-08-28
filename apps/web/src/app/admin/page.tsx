@@ -309,6 +309,11 @@ function ageFromBirthdate(birthdate: string): number | null {
   if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < dob.getDate())) age -= 1;
   return age;
 }
+
+function teacherApplicationAttachmentUrl(applicationId: string, kind: 'cv' | 'audio' | 'document', index?: number): string {
+  const params = index === undefined ? '' : `?index=${index}`;
+  return `/api/teacher-application/attachment/${applicationId}/${kind}${params}`;
+}
 const REVIEW_APPLICATION = gql`
   mutation ReviewTeacherApplication($id: ID!, $approve: Boolean!) {
     reviewTeacherApplication(id: $id, approve: $approve) { id status }
@@ -456,11 +461,11 @@ function ApplicationCard({ app, reviewing, onReview }: { app: any; reviewing: bo
               <p className="mt-0.5 text-sm italic text-gray-400">No CV, video, audio sample or documents on file.</p>
             ) : (
               <p className="mt-1 flex flex-wrap gap-3 text-xs">
-                {app.cvUrl && <a href={app.cvUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">CV</a>}
+                {app.cvUrl && <a href={teacherApplicationAttachmentUrl(app.id, 'cv')} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">CV</a>}
                 {app.videoUrl && <a href={app.videoUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Presentation video</a>}
-                {app.audioSampleUrl && <a href={app.audioSampleUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Audio sample</a>}
+                {app.audioSampleUrl && <a href={teacherApplicationAttachmentUrl(app.id, 'audio')} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Audio sample</a>}
                 {app.documentUrls?.map((url: string, i: number) => (
-                  <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Document {i + 1}</a>
+                  <a key={url} href={teacherApplicationAttachmentUrl(app.id, 'document', i)} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">Document {i + 1}</a>
                 ))}
               </p>
             )}

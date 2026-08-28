@@ -532,7 +532,7 @@ export default function BecomeTeacherPage() {
                 You&rsquo;ll need a My Music Coach account first — creating one takes a minute, then you&rsquo;ll
                 come straight back here to finish your application.
               </p>
-              <button onClick={() => signIn('keycloak', { callbackUrl: '/become-teacher' })} className="btn-primary px-8 py-3">
+              <button onClick={() => signIn('keycloak', { callbackUrl: '/become-teacher' }, { prompt: 'create' })} className="btn-primary px-8 py-3">
                 Create account &amp; continue
               </button>
             </div>

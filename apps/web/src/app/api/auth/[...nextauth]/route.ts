@@ -21,11 +21,11 @@ const internalGraphqlUrl =
 /**
  * The platform database — not the Keycloak access token — owns the user's
  * role and display name (see CLAUDE.md: "the application database owns
- * profiles, roles..."). Admin role changes (adminSetRole) only ever touch
- * the database, never Keycloak, so decoding `realm_access.roles` from the
- * token would keep showing a role the admin already revoked. Ask the API
- * (which resolves the same access token back to its DB-backed user on every
- * request) for the authoritative values instead.
+ * profiles, roles..."). Admin role changes are mirrored back into Keycloak
+ * for the next login token, but the browser may still be holding the
+ * previous access token for a while. Ask the API (which resolves that token
+ * back to its DB-backed user on every request) for the authoritative values
+ * instead of trusting decoded token roles in the session.
  */
 async function fetchIdentity(accessToken: string): Promise<{ role: string; displayName: string | null } | null> {
   try {

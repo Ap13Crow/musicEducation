@@ -166,6 +166,26 @@ async function main() {
     return value;
   }
 
+  function decodeInlineDataUrl(value: string): { contentType: string; bytes: Buffer } | null {
+    const match = /^data:([^;,]+);base64,([A-Za-z0-9+/]+=*)$/.exec(value);
+    if (!match) return null;
+    const base64 = match[2];
+    const paddingLength = (/=*$/.exec(base64) as RegExpExecArray)[0].length;
+    if (base64.length % 4 !== 0 || paddingLength > 2) return null;
+    return { contentType: match[1], bytes: Buffer.from(base64, 'base64') };
+  }
+
+  function extensionForContentType(contentType: string): string {
+    if (contentType === 'application/pdf') return 'pdf';
+    if (contentType === 'audio/mpeg') return 'mp3';
+    if (contentType === 'audio/mp4') return 'm4a';
+    if (contentType === 'audio/wav' || contentType === 'audio/x-wav') return 'wav';
+    if (contentType === 'audio/ogg') return 'ogg';
+    if (contentType === 'image/jpeg') return 'jpg';
+    if (contentType === 'image/png') return 'png';
+    return 'bin';
+  }
+
   const TEACHER_PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
   const TEACHER_PHOTO_MAX_BYTES = 500 * 1024;
   const TEACHER_DOCUMENT_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
@@ -188,7 +208,7 @@ async function main() {
     }
     await prisma.teacherApplication.upsert({
       where: { userId: auth.id },
-      create: { userId: auth.id, imageUrl, instruments: [] },
+      create: { userId: auth.id, status: 'DRAFT', imageUrl, instruments: [] },
       update: { imageUrl },
     });
     return res.json({ imageUrl });
@@ -203,7 +223,7 @@ async function main() {
     }
     await prisma.teacherApplication.upsert({
       where: { userId: auth.id },
-      create: { userId: auth.id, cvUrl, instruments: [] },
+      create: { userId: auth.id, status: 'DRAFT', cvUrl, instruments: [] },
       update: { cvUrl },
     });
     return res.json({ cvUrl });
@@ -218,7 +238,7 @@ async function main() {
     }
     await prisma.teacherApplication.upsert({
       where: { userId: auth.id },
-      create: { userId: auth.id, audioSampleUrl, instruments: [] },
+      create: { userId: auth.id, status: 'DRAFT', audioSampleUrl, instruments: [] },
       update: { audioSampleUrl },
     });
     return res.json({ audioSampleUrl });
@@ -241,10 +261,45 @@ async function main() {
     }
     const application = await prisma.teacherApplication.upsert({
       where: { userId: auth.id },
-      create: { userId: auth.id, documentUrls: [documentUrl], instruments: [] },
+      create: { userId: auth.id, status: 'DRAFT', documentUrls: [documentUrl], instruments: [] },
       update: { documentUrls: { push: documentUrl } },
     });
     return res.json({ documentUrls: application.documentUrls });
+  });
+
+  app.get('/teacher-application/:applicationId/attachment/:kind/:index?', async (req, res) => {
+    const auth = await resolveRequestUser(req, prisma);
+    if (!auth) return res.status(401).json({ error: 'Authentication required.' });
+    const application = await prisma.teacherApplication.findUnique({
+      where: { id: req.params.applicationId },
+      select: { userId: true, cvUrl: true, audioSampleUrl: true, documentUrls: true },
+    });
+    if (!application) return res.status(404).json({ error: 'Application not found.' });
+    if (auth.role !== 'ADMIN' && application.userId !== auth.id) {
+      return res.status(403).json({ error: 'Access denied.' });
+    }
+
+    const index = Number(req.params.index ?? 0);
+    const kind = req.params.kind;
+    const url =
+      kind === 'cv'
+        ? application.cvUrl
+        : kind === 'audio'
+          ? application.audioSampleUrl
+          : kind === 'document' && Number.isInteger(index) && index >= 0
+            ? application.documentUrls[index]
+            : null;
+    if (!url) return res.status(404).json({ error: 'Attachment not found.' });
+
+    if (/^https?:\/\//i.test(url)) return res.redirect(url);
+    const decoded = decodeInlineDataUrl(url);
+    if (!decoded) return res.status(415).json({ error: 'Attachment is not readable.' });
+    const ext = extensionForContentType(decoded.contentType);
+    res.setHeader('Content-Type', decoded.contentType);
+    res.setHeader('Content-Length', String(decoded.bytes.length));
+    res.setHeader('Content-Disposition', `inline; filename="teacher-application-${kind}.${ext}"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.send(decoded.bytes);
   });
 
   app.post('/teacher/photo', async (req, res) => {
