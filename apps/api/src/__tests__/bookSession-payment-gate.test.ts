@@ -4,12 +4,12 @@
 // teacher's auto-approve setting, with no regard for whether the lesson was
 // paid at all - a teacher with auto-approve on got a CONFIRMED booking for
 // a priced lesson with no payment ever collected. "Payment state is a state
-// machine; the signed webhook - never the browser redirect - confirms
-// payment" (CLAUDE.md) - so a booking that needs its own payment (no
+// machine; Stripe - never the browser redirect - confirms payment"
+// (CLAUDE.md) - so a booking that needs its own payment (no
 // covering package credit, and the teacher actually charges for lessons)
 // must never be created CONFIRMED here regardless of auto-approve; only
 // handleStripeWebhook's 'booking' branch (see stripe-booking-webhook.test.ts)
-// confirms it, once Stripe reports the charge succeeded.
+// attaches payment; the teacher's confirmBooking action confirms it.
 process.env.JWT_SECRET = 'test-secret-key-for-unit-tests';
 
 import { bookingResolvers } from '../resolvers/bookings';

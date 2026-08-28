@@ -75,6 +75,7 @@ spec:
               psql --set=ON_ERROR_STOP=1 --file=/schema/030-user-status.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/031-teacher-profile-public.sql
               psql --set=ON_ERROR_STOP=1 --file=/schema/032-event-mail-outbox.sql
+              psql --set=ON_ERROR_STOP=1 --file=/schema/033-booking-request-mail.sql
           envFrom:
             - secretRef:
                 name: postgres-mymusiccoach

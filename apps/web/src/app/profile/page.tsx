@@ -40,7 +40,7 @@ const GET_PROFILE = gql`
       }
     }
     myBookings(page: 1, limit: 20) {
-      id status instrument startsAt endsAt format
+      id status instrument startsAt endsAt format paymentId
       teacher {
         id headline avgRating
         user { id displayName avatarUrl }
@@ -620,7 +620,9 @@ export default function ProfilePage() {
                         : b.status === 'COMPLETED' ? 'bg-blue-50 text-blue-700'
                         : 'bg-gray-100 text-gray-600'
                       }`}>
-                        {b.status}
+                        {b.status === 'PENDING'
+                          ? (b.paymentId ? 'AWAITING TEACHER' : 'PAYMENT PENDING')
+                          : b.status}
                       </span>
                       {(b.status === 'CONFIRMED' || b.status === 'PENDING') && (
                         <button

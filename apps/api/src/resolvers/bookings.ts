@@ -1,7 +1,7 @@
 import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
-import { bookingConfirmedEmailContent, bookingCancelledEmailContent } from '../lib/emails.js';
+import { bookingConfirmedEmailContent, bookingCancelledEmailContent, bookingRequestEmailContent } from '../lib/emails.js';
 import { enqueueMail, recipientAddresses } from '../lib/mailOutbox.js';
 import { buildBookingIcs } from '../lib/ics.js';
 import { isWithinBookingWindow, isLateCancellation, APPROVAL_HOLD_HOURS } from '../lib/bookingPolicy.js';
@@ -31,6 +31,34 @@ const PLATFORM_ORGANIZER = { name: 'MyMusic.Coach', email: process.env.SMTP_FROM
 function bookingLocation(format: string, meetingUrl: string | null | undefined): string | null {
   if (format === 'ONLINE') return meetingUrl || 'Online';
   return null;
+}
+
+export async function notifyBookingRequested(
+  tx: Prisma.TransactionClient,
+  bookingId: string,
+  paymentStatus: 'PAID' | 'COVERED' | 'NOT_REQUIRED',
+) {
+  const booking = await tx.booking.findUnique({
+    where: { id: bookingId },
+    include: { user: { include: { profile: true } }, teacherProfile: { include: { user: { include: { profile: true } } } } },
+  });
+  if (!booking) return;
+  const studentName = displayNameOf(booking.user);
+  const teacherName = displayNameOf(booking.teacherProfile.user);
+  const content = bookingRequestEmailContent({
+    studentName,
+    teacherName,
+    startsAt: booking.startsAt,
+    durationMin: booking.durationMin,
+    format: booking.format,
+    instrument: booking.instrument,
+    paymentStatus,
+    teacherWorkspaceUrl: `${(process.env.FRONTEND_URL ?? 'https://mymusic.coach').replace(/\/$/, '')}/dashboard/teacher`,
+  });
+  const studentRecipients = recipientAddresses(booking.user.email, booking.user.profile?.notificationEmail);
+  const teacherRecipients = recipientAddresses(booking.teacherProfile.user.email, booking.teacherProfile.user.profile?.notificationEmail);
+  await enqueueMail(tx, { kind: 'BOOKING_REQUEST', bookingId, recipients: studentRecipients, ...content.student });
+  await enqueueMail(tx, { kind: 'BOOKING_REQUEST', bookingId, recipients: teacherRecipients, ...content.teacher });
 }
 
 // Shared by bookSession (auto-confirmed when the teacher has no hourly rate)
@@ -284,13 +312,12 @@ export const bookingResolvers = {
       // covered by a prepaid package credit and the teacher actually
       // charges for lessons (hourlyRate 0/null - a free/trial lesson -
       // skips payment entirely, same as before this check existed).
-      // "Payment state is a state machine; the signed webhook - never the
-      // browser redirect - confirms payment" (see CLAUDE.md), so a booking
-      // that requires payment is NEVER created CONFIRMED here, regardless
-      // of the teacher's auto-approve setting - payment itself is the
-      // confirmation for this kind of booking. Only handleStripeWebhook's
-      // 'booking' branch (payments.ts) performs that transition, once
-      // Stripe actually reports the charge succeeded. Before this check,
+      // "Payment state is a state machine; Stripe - never the browser
+      // redirect - confirms payment" (see CLAUDE.md), so a booking that
+      // requires payment is NEVER created CONFIRMED here, regardless of the
+      // teacher's auto-approve setting. Stripe attaches the successful
+      // payment while keeping the request PENDING; only the teacher's later
+      // confirmBooking action confirms the lesson. Before this check,
       // every paid booking with auto-approve on was created CONFIRMED with
       // no payment ever collected - a free-lesson loophole.
       const requiresPayment = !packagePurchase && Number(teacherProfile.hourlyRate ?? 0) > 0;
@@ -336,6 +363,8 @@ export const bookingResolvers = {
         // manually-approved one.
         if (created.status === 'CONFIRMED') {
           await notifyBookingConfirmed(tx, created.id);
+        } else if (!requiresPayment) {
+          await notifyBookingRequested(tx, created.id, packagePurchase ? 'COVERED' : 'NOT_REQUIRED');
         }
         return created;
       });
@@ -352,6 +381,9 @@ export const bookingResolvers = {
       const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { teacherProfile: true } });
       if (!booking) throw new GraphQLError('Booking not found.', { extensions: { code: 'NOT_FOUND' } });
       if (booking.teacherProfile.userId !== user.id) throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
+      if (Number(booking.teacherProfile.hourlyRate ?? 0) > 0 && !booking.packagePurchaseId && !booking.paymentId) {
+        throw new GraphQLError('This booking is still awaiting payment.', { extensions: { code: 'PAYMENT_REQUIRED' } });
+      }
       if (booking.holdExpiresAt && booking.holdExpiresAt <= new Date()) {
         throw new GraphQLError('This request has expired and can no longer be approved.', { extensions: { code: 'CONFLICT' } });
       }
@@ -366,15 +398,15 @@ export const bookingResolvers = {
         // every single time. updateMany's WHERE guard makes at most one
         // call ever win the transition, the same idempotency shape
         // claimConfirmationEmail (payments.ts) uses for the Stripe path.
+        // Validate capacity before the status write. reserveInstrumentCapacity
+        // intentionally ignores an already-active student; running it after
+        // this booking became CONFIRMED would let the booking match itself.
+        await reserveInstrumentCapacity(tx, booking.teacherProfileId, booking.instrument, booking.userId);
         const claimed = await tx.booking.updateMany({
           where: { id: bookingId, status: 'PENDING' },
           data: { status: 'CONFIRMED', holdExpiresAt: null },
         });
         if (claimed.count > 0) {
-          // Same capacity enforcement point as the auto-approved path in
-          // bookSession - a manually-approved booking becomes an active
-          // relationship right here, not at the original request.
-          await reserveInstrumentCapacity(tx, booking.teacherProfileId, booking.instrument, booking.userId);
           if (booking.packagePurchaseId) {
             await consumeCredit(tx, booking.packagePurchaseId, booking.id);
           }

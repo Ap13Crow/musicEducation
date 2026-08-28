@@ -10,8 +10,9 @@ const GET_TEACHER_BOOKINGS = gql`
   query TeacherBookings {
     me { id }
     myBookings(page: 1, limit: 20) {
-      id status instrument startsAt format
+      id status instrument startsAt format paymentId packagePurchaseId
       student { id displayName avatarUrl }
+      teacher { hourlyRate }
     }
   }
 `;
@@ -24,12 +25,22 @@ const CANCEL_BOOKING = gql`
     cancelBooking(bookingId: $bookingId) { id status }
   }
 `;
+const CONFIRM_BOOKING = gql`
+  mutation TeacherConfirmBooking($bookingId: ID!) {
+    confirmBooking(bookingId: $bookingId) { id status }
+  }
+`;
 
 function UpcomingSessions() {
-  const { data, loading, error, refetch } = useQuery(GET_TEACHER_BOOKINGS, { fetchPolicy: 'cache-and-network' });
+  const { data, loading, error, refetch } = useQuery(GET_TEACHER_BOOKINGS, {
+    fetchPolicy: 'cache-and-network',
+    pollInterval: 10_000,
+  });
   const [cancelBooking, { loading: cancelling }] = useMutation(CANCEL_BOOKING);
+  const [confirmBooking, { loading: accepting }] = useMutation(CONFIRM_BOOKING);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
-  const [cancelError, setCancelError] = useState('');
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState('');
   const meId = data?.me?.id;
   // myBookings returns rows where the caller is either the student or the
   // teacher; a booked-with-me session is one where the student isn't me.
@@ -39,15 +50,28 @@ function UpcomingSessions() {
 
   async function handleCancel(bookingId: string) {
     if (!confirm('Cancel this lesson? The student will be notified.')) return;
-    setCancelError('');
+    setActionError('');
     setCancellingId(bookingId);
     try {
       await cancelBooking({ variables: { bookingId } });
       await refetch();
     } catch (err) {
-      setCancelError(err instanceof Error ? err.message : 'Could not cancel this lesson.');
+      setActionError(err instanceof Error ? err.message : 'Could not cancel this lesson.');
     } finally {
       setCancellingId(null);
+    }
+  }
+
+  async function handleAccept(bookingId: string) {
+    setActionError('');
+    setAcceptingId(bookingId);
+    try {
+      await confirmBooking({ variables: { bookingId } });
+      await refetch();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not accept this lesson.');
+    } finally {
+      setAcceptingId(null);
     }
   }
 
@@ -57,14 +81,16 @@ function UpcomingSessions() {
         <Calendar className="h-4 w-4 text-primary-600" /> Booked sessions
       </h2>
       {error && <p className="mt-3 text-sm text-red-600">Failed to load sessions: {error.message}</p>}
-      {cancelError && <p className="mt-3 text-sm text-red-600">{cancelError}</p>}
+      {actionError && <p className="mt-3 text-sm text-red-600">{actionError}</p>}
       {!error && !loading && sessions.length === 0 && (
         <p className="mt-3 text-sm text-gray-500">No students have booked a session with you yet.</p>
       )}
       {sessions.length > 0 && (
         <ul className="mt-4 space-y-3">
-          {(sessions as any[]).map((b: any) => (
-            <li key={b.id} className="flex items-center gap-3 rounded-lg border border-gray-100 p-3">
+          {(sessions as any[]).map((b: any) => {
+            const canAccept = Boolean(b.paymentId || b.packagePurchaseId || Number(b.teacher?.hourlyRate ?? 0) <= 0);
+            return (
+              <li key={b.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 p-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600">
                 {b.student?.avatarUrl
                   ? <img src={b.student.avatarUrl} alt="" className="h-10 w-10 rounded-full object-cover" />
@@ -83,8 +109,18 @@ function UpcomingSessions() {
                 : b.status === 'COMPLETED' ? 'bg-blue-50 text-blue-700'
                 : 'bg-gray-100 text-gray-600'
               }`}>
-                {b.status}
+                {b.status === 'PENDING' ? (canAccept ? 'AWAITING APPROVAL' : 'AWAITING PAYMENT') : b.status}
               </span>
+              {b.status === 'PENDING' && canAccept && (
+                <button
+                  type="button"
+                  disabled={accepting && acceptingId === b.id}
+                  onClick={() => handleAccept(b.id)}
+                  className="shrink-0 rounded-lg bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+                >
+                  {accepting && acceptingId === b.id ? 'Accepting…' : 'Accept'}
+                </button>
+              )}
               {(b.status === 'CONFIRMED' || b.status === 'PENDING') && (
                 <button
                   type="button"
@@ -92,11 +128,12 @@ function UpcomingSessions() {
                   onClick={() => handleCancel(b.id)}
                   className="shrink-0 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 hover:border-red-300 hover:text-red-600 disabled:opacity-50"
                 >
-                  {cancelling && cancellingId === b.id ? 'Cancelling…' : 'Cancel'}
+                  {cancelling && cancellingId === b.id ? 'Updating…' : b.status === 'PENDING' ? 'Decline' : 'Cancel'}
                 </button>
               )}
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

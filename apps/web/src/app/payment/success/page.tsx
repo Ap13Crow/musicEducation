@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { gql, useQuery } from '@apollo/client';
+import { gql, useMutation, useQuery } from '@apollo/client';
 import { CheckCircle, Loader2 } from 'lucide-react';
 
 // The redirect here only means Stripe collected payment - the webhook
@@ -19,7 +19,15 @@ const GET_ENROLLMENT = gql`
 `;
 const GET_BOOKING = gql`
   query PaymentSuccessBooking($id: ID!) {
-    booking(id: $id) { id status }
+    booking(id: $id) {
+      id status paymentId
+      teacher { user { displayName } }
+    }
+  }
+`;
+const RECONCILE_BOOKING_PAYMENT = gql`
+  mutation ReconcileBookingPayment($sessionId: String!) {
+    reconcileBookingPayment(sessionId: $sessionId) { id status paymentId }
   }
 `;
 const GET_EVENT_BOOKINGS = gql`
@@ -65,28 +73,56 @@ function CourseConfirmation({ courseId }: { courseId: string }) {
   );
 }
 
-function BookingConfirmation({ bookingId }: { bookingId: string }) {
-  const { data, startPolling, stopPolling } = useQuery(GET_BOOKING, { variables: { id: bookingId } });
+function BookingConfirmation({ bookingId, sessionId }: { bookingId: string; sessionId: string | null }) {
+  const { data, refetch, startPolling, stopPolling } = useQuery(GET_BOOKING, { variables: { id: bookingId } });
+  const [reconcile] = useMutation(RECONCILE_BOOKING_PAYMENT);
   const [attempts, setAttempts] = useState(0);
+  const [reconcileError, setReconcileError] = useState('');
+  const reconciliationStarted = useRef(false);
+  const paid = Boolean(data?.booking?.paymentId);
   const confirmed = data?.booking?.status === 'CONFIRMED';
+  const requestRecorded = paid || confirmed;
+
   useEffect(() => {
-    if (confirmed || attempts >= MAX_POLLS) {
+    if (!sessionId || reconciliationStarted.current) return;
+    reconciliationStarted.current = true;
+    reconcile({ variables: { sessionId } })
+      .then(() => refetch())
+      .catch((error) => setReconcileError(error instanceof Error ? error.message : 'Payment verification is taking longer than expected.'));
+  }, [reconcile, refetch, sessionId]);
+
+  useEffect(() => {
+    if (requestRecorded || attempts >= MAX_POLLS) {
       stopPolling();
       return;
     }
     startPolling(POLL_INTERVAL_MS);
     const t = setTimeout(() => setAttempts((a) => a + 1), POLL_INTERVAL_MS);
     return () => clearTimeout(t);
-  }, [confirmed, attempts, startPolling, stopPolling]);
+  }, [requestRecorded, attempts, startPolling, stopPolling]);
 
   return (
-    <Confirmation
-      confirmed={confirmed}
-      pending={!confirmed && attempts < MAX_POLLS}
-      confirmedText="Your lesson booking is confirmed."
-      link="/dashboard"
-      linkLabel="Go to my dashboard"
-    />
+    <div className="card mx-auto max-w-md p-8 text-center">
+      {requestRecorded ? (
+        <CheckCircle className="mx-auto mb-4 h-14 w-14 text-green-600" />
+      ) : (
+        <Loader2 className="mx-auto mb-4 h-14 w-14 animate-spin text-primary-600" />
+      )}
+      <h1 className="text-2xl font-bold">{requestRecorded ? 'Payment successful' : 'Verifying payment'}</h1>
+      <p className="mt-3 text-gray-600">
+        {confirmed
+          ? 'Your lesson is confirmed. Your confirmation email includes the calendar invitation.'
+          : requestRecorded
+            ? `Your booking request was sent${data?.booking?.teacher?.user?.displayName ? ` to ${data.booking.teacher.user.displayName}` : ''}. The teacher has been notified, and we will email you again once it is accepted.`
+            : attempts < MAX_POLLS
+              ? 'Stripe is confirming your payment and sending the request to the teacher…'
+              : 'Your payment was received, but verification is taking longer than expected. Your booking remains visible in your profile while we finish processing it.'}
+      </p>
+      {reconcileError && !requestRecorded && <p className="mt-3 text-sm text-amber-700">{reconcileError}</p>}
+      <Link href="/profile" className="btn-primary mt-6 inline-block rounded-lg px-6 py-3">
+        View my bookings
+      </Link>
+    </div>
   );
 }
 
@@ -156,6 +192,7 @@ export default function PaymentSuccessPage() {
 
   const type = params.get('type');
   const ref = params.get('ref');
+  const sessionId = params.get('session_id');
 
   return (
     <main className="px-6 py-20">
@@ -164,7 +201,7 @@ export default function PaymentSuccessPage() {
       ) : type === 'course' ? (
         <CourseConfirmation courseId={ref} />
       ) : type === 'booking' ? (
-        <BookingConfirmation bookingId={ref} />
+        <BookingConfirmation bookingId={ref} sessionId={sessionId} />
       ) : type === 'event' ? (
         <EventConfirmation eventId={ref} />
       ) : (

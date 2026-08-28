@@ -25,14 +25,15 @@ function fakePrisma(overrides: Record<string, any> = {}) {
   };
   const prisma: any = {
     booking: {
-      findUnique: jest.fn().mockResolvedValue({
+      findUnique: jest.fn().mockResolvedValue(overrides.initialBooking ?? {
         id: 'booking-1',
         instrument: null,
         packagePurchaseId: null,
+        paymentId: null,
         holdExpiresAt: null,
         teacherProfileId: 'tp-1',
         userId: 'student-1',
-        teacherProfile: { userId: 'teacher-1' },
+        teacherProfile: { userId: 'teacher-1', hourlyRate: 0 },
       }),
     },
     $transaction: jest.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(tx)),
@@ -63,5 +64,34 @@ describe('confirmBooking', () => {
     await expect(
       bookingResolvers.Mutation.confirmBooking(null, { bookingId: 'booking-1' }, { prisma, user: teacherUser } as any),
     ).rejects.toThrow('no longer pending approval');
+  });
+
+  it('does not let the teacher accept a priced booking before Stripe has attached payment', async () => {
+    const { prisma, bookingUpdateMany } = fakePrisma({
+      initialBooking: {
+        id: 'booking-1', instrument: 'Piano', packagePurchaseId: null,
+        paymentId: null, holdExpiresAt: null, teacherProfileId: 'tp-1',
+        userId: 'student-1', teacherProfile: { userId: 'teacher-1', hourlyRate: 60 },
+      },
+    });
+    await expect(
+      bookingResolvers.Mutation.confirmBooking(null, { bookingId: 'booking-1' }, { prisma, user: teacherUser } as any),
+    ).rejects.toThrow('still awaiting payment');
+    expect(bookingUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('lets the teacher accept a priced booking after payment is attached', async () => {
+    const { prisma, bookingUpdateMany } = fakePrisma({
+      initialBooking: {
+        id: 'booking-1', instrument: null, packagePurchaseId: null,
+        paymentId: 'payment-1', holdExpiresAt: null, teacherProfileId: 'tp-1',
+        userId: 'student-1', teacherProfile: { userId: 'teacher-1', hourlyRate: 60 },
+      },
+    });
+    await bookingResolvers.Mutation.confirmBooking(null, { bookingId: 'booking-1' }, { prisma, user: teacherUser } as any);
+    expect(bookingUpdateMany).toHaveBeenCalledWith({
+      where: { id: 'booking-1', status: 'PENDING' },
+      data: { status: 'CONFIRMED', holdExpiresAt: null },
+    });
   });
 });

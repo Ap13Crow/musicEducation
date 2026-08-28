@@ -39,7 +39,7 @@ type OutboxTx = Pick<Prisma.TransactionClient, 'mailOutboxMessage'>;
 export async function enqueueMail(
   tx: OutboxTx,
   message: {
-    kind: 'BOOKING_CONFIRMATION' | 'BOOKING_CANCELLED' | 'EVENT_CONFIRMATION' | 'EVENT_CANCELLED';
+    kind: 'BOOKING_REQUEST' | 'BOOKING_CONFIRMATION' | 'BOOKING_CANCELLED' | 'EVENT_CONFIRMATION' | 'EVENT_CANCELLED';
     bookingId?: string;
     eventBookingId?: string;
     recipients: string[];

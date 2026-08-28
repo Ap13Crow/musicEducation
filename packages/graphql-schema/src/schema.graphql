@@ -1511,6 +1511,10 @@ type Mutation {
 
   # Bookings
   bookSession(input: BookSessionInput!): Booking!
+  # Idempotent return-page recovery for a delayed/missed Stripe webhook.
+  # The API retrieves the session from Stripe and verifies ownership/payment;
+  # the browser redirect alone is never trusted.
+  reconcileBookingPayment(sessionId: String!): Booking!
   confirmBooking(bookingId: ID!): Booking!
   cancelBooking(bookingId: ID!): Booking!
   createZoomMeeting(bookingId: ID!): ZoomMeetingInfo!

@@ -37,3 +37,4 @@ configMapGenerator:
       - 030-user-status.sql
       - 031-teacher-profile-public.sql
       - 032-event-mail-outbox.sql
+      - 033-booking-request-mail.sql
