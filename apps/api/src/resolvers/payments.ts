@@ -3,9 +3,9 @@ import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
 import { sendPurchaseConfirmedEmail } from '../lib/emails.js';
-import { notifyBookingConfirmed } from './bookings.js';
+import { notifyBookingRequested } from './bookings.js';
 import { notifyEventBookingConfirmed } from './events.js';
-import { reserveInstrumentCapacity } from '../lib/capacity.js';
+import { APPROVAL_HOLD_HOURS } from '../lib/bookingPolicy.js';
 import { isValidSubscriptionTermMonths, computeSubscriptionTotal, currentSubscriptionDiscountPct } from '../lib/pricing.js';
 import { grantCredits } from '../lib/lessonCredits.js';
 import type { GraphQLContext } from '../types.js';
@@ -77,6 +77,66 @@ async function getPayoutDestination(prisma: GraphQLContext['prisma'], type: stri
   return null;
 }
 
+async function recordSucceededCheckoutPayment(
+  prisma: GraphQLContext['prisma'],
+  session: Stripe.Checkout.Session,
+) {
+  const { userId, type, refId } = session.metadata ?? {};
+  if (!userId || !type || !refId) throw new Error('Stripe Checkout metadata is incomplete.');
+  try {
+    return await prisma.payment.create({
+      data: {
+        userId,
+        amount: (session.amount_total ?? 0) / 100,
+        currency: session.currency?.toUpperCase() ?? 'CHF',
+        status: 'SUCCEEDED',
+        provider: 'STRIPE',
+        providerRef: session.id,
+        description: `${type}:${refId}`,
+      },
+    });
+  } catch (error: any) {
+    if (error?.code !== 'P2002') throw error;
+    return prisma.payment.findUniqueOrThrow({
+      where: { provider_providerRef: { provider: 'STRIPE', providerRef: session.id } },
+    });
+  }
+}
+
+// Payment and teacher approval are deliberately separate transitions. A
+// successful Checkout Session proves that the request is paid; only the
+// teacher's confirmBooking action makes it a calendar commitment.
+export async function applyPaidBookingCheckout(
+  prisma: GraphQLContext['prisma'],
+  session: Stripe.Checkout.Session,
+  payment: Awaited<ReturnType<typeof recordSucceededCheckoutPayment>>,
+) {
+  const { userId, refId } = session.metadata ?? {};
+  if (!userId || !refId) throw new Error('Stripe booking metadata is incomplete.');
+  await prisma.$transaction(async (tx) => {
+    const booking = await tx.booking.findUnique({ where: { id: refId } });
+    if (!booking || booking.userId !== userId) throw new Error('Stripe booking does not belong to the Checkout customer.');
+    if (booking.paymentId && booking.paymentId !== payment.id) throw new Error('Booking is already linked to a different payment.');
+    if (booking.status !== 'PENDING') return;
+
+    // Reset the approval hold from the moment payment clears. A student
+    // should not lose most of the teacher's response window merely because
+    // they spent time completing Checkout.
+    await tx.booking.updateMany({
+      where: { id: refId, userId, status: 'PENDING', paymentId: null },
+      data: {
+        paymentId: payment.id,
+        holdExpiresAt: new Date(Date.now() + APPROVAL_HOLD_HOURS * 60 * 60 * 1000),
+      },
+    });
+    const claimed = await tx.payment.updateMany({
+      where: { id: payment.id, confirmationEmailAt: null },
+      data: { confirmationEmailAt: new Date() },
+    });
+    if (claimed.count > 0) await notifyBookingRequested(tx, refId, 'PAID');
+  });
+}
+
 // handleStripeWebhook is exported for use as an Express route, not a GraphQL resolver
 export async function handleStripeWebhook(prisma: import('@my-music-coach/database').PrismaClient, rawBody: Buffer, sig: string): Promise<void> {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -98,28 +158,7 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
     // also what repairs a delivery that created the Payment row but then
     // crashed (process killed, DB hiccup) before reaching them, which an
     // early return would instead leave stuck half-processed forever.
-    // Explicit annotation: claimConfirmationEmail below is a nested async
-    // closure over `payment`, and TS can't apply straight-line control-flow
-    // narrowing for an implicitly-typed `let` across a closure boundary the
-    // way it can for direct references - it fell back to erroring on the
-    // implicit `any` rather than silently inferring it.
-    let payment: Awaited<ReturnType<typeof prisma.payment.create>>;
-    try {
-      payment = await prisma.payment.create({
-        data: {
-          userId: userId!,
-          amount: (session.amount_total ?? 0) / 100,
-          currency: session.currency?.toUpperCase() ?? 'CHF',
-          status: 'SUCCEEDED',
-          provider: 'STRIPE',
-          providerRef: session.id,
-          description: `${type}:${refId}`,
-        },
-      });
-    } catch (error: any) {
-      if (error?.code !== 'P2002') throw error;
-      payment = await prisma.payment.findUniqueOrThrow({ where: { provider_providerRef: { provider: 'STRIPE', providerRef: session.id } } });
-    }
+    const payment = await recordSucceededCheckoutPayment(prisma, session);
     // The confirmation email is gated on this durable marker, not on
     // "did I just create the Payment row" - that heuristic has its own gap:
     // a delivery that creates the row and then crashes before sending the
@@ -144,9 +183,9 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
       });
       return result.count > 0;
     }
-    // Only ever needed for the purchase-confirmation email (course/event) -
-    // not the booking branch (which does its own lookup inside
-    // notifyBookingConfirmed). Lazy so a delivery that doesn't need it
+    // Only ever needed for the direct purchase-confirmation email
+    // (course/event). Booking request mail is queued transactionally by
+    // applyPaidBookingCheckout. Lazy so a delivery that doesn't need it
     // doesn't pay for this DB round-trip on the hottest webhook path.
     async function getBuyerInfo() {
       const buyer = await prisma.user.findUnique({ where: { id: userId! }, include: { profile: true } });
@@ -175,50 +214,7 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
         });
       }
     } else if (type === 'booking') {
-      // Unlike the course/event branches above, notifyBookingConfirmed
-      // doesn't call SMTP itself - it only writes a MailOutboxMessage row
-      // (the worker's mail-dispatch job does the actual send later), so
-      // there's no external round-trip forcing a fire-and-forget/non-atomic
-      // shape here. The booking-status transition and the outbox claim+write
-      // run in one transaction, exactly like every other confirm path in
-      // bookings.ts (bookSession/confirmBooking) - a crash between them rolls
-      // both back, so a Stripe retry re-claims and re-enqueues instead of
-      // silently losing the email (the accepted gap documented on
-      // claimConfirmationEmail above is specific to the course/event
-      // branches' real SMTP call, not this one).
-      await prisma.$transaction(async (tx) => {
-        // This is the true confirmation moment for a paid booking (see
-        // bookSession's requiresPayment comment in bookings.ts - a paid
-        // booking is never created CONFIRMED, so nothing has reserved a
-        // capacity seat for it yet). MUST run before the booking.update
-        // below flips status to CONFIRMED, not after: reserveInstrumentCapacity's
-        // own "already active" check matches on {teacherProfileId, userId,
-        // instrument, status: CONFIRMED|COMPLETED} - if this booking were
-        // CONFIRMED already, it would match itself and short-circuit the
-        // capacity check it exists to enforce, silently admitting a student
-        // past a full cap (Copilot review finding on PR #58). Run
-        // unconditionally on every delivery, not gated on the email claim
-        // below - a Stripe retry redelivering this event finds the booking
-        // already CONFIRMED from the first delivery, which is exactly what
-        // makes that same "already active" check a no-op the second time
-        // (never double-reserves), the same idempotency the claim below
-        // gives the email/notification side.
-        const booking = await tx.booking.findUnique({ where: { id: refId } });
-        if (booking) {
-          await reserveInstrumentCapacity(tx, booking.teacherProfileId, booking.instrument, booking.userId);
-        }
-        // holdExpiresAt cleared here too - a payment-pending booking has one
-        // set (see bookSession), and it's now stale/irrelevant once CONFIRMED
-        // (matches confirmBooking's manual-approval path, which also clears it).
-        await tx.booking.update({ where: { id: refId }, data: { paymentId: payment.id, status: 'CONFIRMED', holdExpiresAt: null } });
-        const claimed = await tx.payment.updateMany({
-          where: { id: payment.id, confirmationEmailAt: null },
-          data: { confirmationEmailAt: new Date() },
-        });
-        if (claimed.count > 0) {
-          await notifyBookingConfirmed(tx, refId!);
-        }
-      });
+      await applyPaidBookingCheckout(prisma, session, payment);
     } else if (type === 'event') {
       await prisma.$transaction(async (tx) => {
         const eventBooking = await tx.eventBooking.upsert({
@@ -371,6 +367,29 @@ export async function handleStripeV2Webhook(prisma: import('@my-music-coach/data
 
 export const paymentResolvers = {
   Mutation: {
+    async reconcileBookingPayment(
+      _: unknown,
+      { sessionId }: { sessionId: string },
+      { prisma, user }: GraphQLContext,
+    ) {
+      requireAuth(user);
+      if (!sessionId.startsWith('cs_')) {
+        throw new GraphQLError('Invalid Checkout Session.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      const session = await getStripe().checkout.sessions.retrieve(sessionId);
+      if (
+        session.payment_status !== 'paid' ||
+        session.metadata?.type !== 'booking' ||
+        session.metadata?.userId !== user.id ||
+        !session.metadata?.refId
+      ) {
+        throw new GraphQLError('This paid booking could not be verified.', { extensions: { code: 'FORBIDDEN' } });
+      }
+      const payment = await recordSucceededCheckoutPayment(prisma, session);
+      await applyPaidBookingCheckout(prisma, session, payment);
+      return prisma.booking.findUniqueOrThrow({ where: { id: session.metadata.refId } });
+    },
+
     async createCheckoutSession(
       _: unknown,
       { type, refId, provider = 'STRIPE' }: any,
@@ -398,8 +417,12 @@ export const paymentResolvers = {
       } else if (type === 'booking') {
         const booking = await prisma.booking.findUnique({ where: { id: refId }, include: { teacherProfile: true } });
         if (!booking) throw new GraphQLError('Booking not found.', { extensions: { code: 'NOT_FOUND' } });
+        if (booking.userId !== user.id) throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
+        if (booking.status !== 'PENDING') throw new GraphQLError('This booking is no longer awaiting payment.', { extensions: { code: 'CONFLICT' } });
+        if (booking.paymentId) throw new GraphQLError('This booking is already paid.', { extensions: { code: 'CONFLICT' } });
         const rate = Number(booking.teacherProfile.hourlyRate ?? 0);
         amount = Math.round(rate * (booking.durationMin / 60) * 100);
+        if (amount <= 0) throw new GraphQLError('This booking does not require payment.', { extensions: { code: 'BAD_USER_INPUT' } });
         currency = booking.teacherProfile.currency.toLowerCase();
         description = `Lesson booking on ${booking.startsAt.toISOString()}`;
       } else if (type === 'event') {

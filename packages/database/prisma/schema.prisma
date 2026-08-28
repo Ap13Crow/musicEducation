@@ -913,9 +913,9 @@ model Payment {
   description String?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
-  // Durable "confirmation dispatched" marker for handleStripeWebhook - a
-  // retried delivery checks this instead of "did I just create the Payment
-  // row," so a delivery that created the row but crashed before setting
+  // Durable "payment-stage notification dispatched" marker for the Stripe
+  // handler. A retried delivery checks this instead of "did I just create
+  // the Payment row," so a delivery that created the row but crashed before setting
   // this still gets a real retry at sending the confirmation, rather than
   // silently never sending one (the gap an isNewPayment-only heuristic had).
   confirmationEmailAt DateTime?
@@ -1078,6 +1078,7 @@ enum MailOutboxStatus {
 }
 
 enum MailOutboxKind {
+  BOOKING_REQUEST
   BOOKING_CONFIRMATION
   BOOKING_CANCELLED
   EVENT_CONFIRMATION

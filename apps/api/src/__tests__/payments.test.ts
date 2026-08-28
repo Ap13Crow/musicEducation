@@ -3,7 +3,7 @@
 process.env.JWT_SECRET = 'test-secret-key-for-unit-tests';
 
 import { requireAuth, requireRole } from '../middleware/auth';
-import { calculateApplicationFee, getFrontendUrl, PLATFORM_FEE_BPS } from '../resolvers/payments';
+import { calculateApplicationFee, getFrontendUrl, paymentResolvers, PLATFORM_FEE_BPS } from '../resolvers/payments';
 
 describe('Stripe Connect onboarding permission checks', () => {
   it('allows TEACHER to start onboarding', () => {
@@ -26,6 +26,24 @@ describe('Stripe Connect onboarding permission checks', () => {
 describe('createCheckoutSession auth', () => {
   it('requires an authenticated user', () => {
     expect(() => requireAuth(null)).toThrow();
+  });
+
+  it('does not let a student create Checkout for another student\'s booking', async () => {
+    const prisma: any = {
+      booking: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'booking-1', userId: 'other-student', status: 'PENDING', paymentId: null,
+          durationMin: 60, startsAt: new Date(), teacherProfile: { hourlyRate: 60, currency: 'CHF' },
+        }),
+      },
+    };
+    await expect(
+      paymentResolvers.Mutation.createCheckoutSession(
+        null,
+        { type: 'booking', refId: 'booking-1' },
+        { prisma, user: { id: 'student-1', role: 'STUDENT' } } as any,
+      ),
+    ).rejects.toThrow('Access denied');
   });
 });
 

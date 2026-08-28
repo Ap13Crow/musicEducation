@@ -61,6 +61,54 @@ export function bookingConfirmedEmailContent(booking: {
   };
 }
 
+// Sent after Stripe has confirmed payment, while the lesson is still
+// waiting for the teacher's explicit approval. Deliberately has no calendar
+// attachment: the lesson is not a calendar commitment until confirmBooking
+// transitions it to CONFIRMED.
+export function bookingRequestEmailContent(booking: {
+  studentName: string;
+  teacherName: string;
+  startsAt: Date;
+  durationMin: number;
+  format: string;
+  instrument: string | null | undefined;
+  teacherWorkspaceUrl: string;
+  paymentStatus: 'PAID' | 'COVERED' | 'NOT_REQUIRED';
+}): { student: { subject: string; html: string }; teacher: { subject: string; html: string } } {
+  const when = formatUtc(booking.startsAt);
+  const details = `${when} · ${booking.durationMin} min · ${booking.format}${booking.instrument ? ` · ${booking.instrument}` : ''}`;
+  const paymentSummary = booking.paymentStatus === 'PAID'
+    ? 'Your payment was successful and your lesson request was sent'
+    : booking.paymentStatus === 'COVERED'
+      ? 'Your lesson credit was accepted and your request was sent'
+      : 'Your lesson request was sent';
+  const teacherPaymentSummary = booking.paymentStatus === 'PAID'
+    ? 'has paid and requested a lesson with you'
+    : booking.paymentStatus === 'COVERED'
+      ? 'used a lesson credit and requested a lesson with you'
+      : 'requested a lesson with you';
+  return {
+    student: {
+      subject: 'Your lesson request was sent',
+      html: wrapper(
+        `<p>Hi ${escapeHtml(booking.studentName)},</p>
+         <p>${escapeHtml(paymentSummary)} to <strong>${escapeHtml(booking.teacherName)}</strong>.</p>
+         <p>${escapeHtml(details)}</p>
+         <p>We will email you again with a calendar invitation as soon as the teacher accepts it.</p>`,
+      ),
+    },
+    teacher: {
+      subject: `New lesson request from ${booking.studentName}`,
+      html: wrapper(
+        `<p>Hi ${escapeHtml(booking.teacherName)},</p>
+         <p><strong>${escapeHtml(booking.studentName)}</strong> ${escapeHtml(teacherPaymentSummary)}.</p>
+         <p>${escapeHtml(details)}</p>
+         <p><a href="${escapeHtml(booking.teacherWorkspaceUrl)}">Review and accept the booking</a></p>`,
+      ),
+    },
+  };
+}
+
 export function bookingCancelledEmailContent(booking: {
   studentName: string;
   teacherName: string;
