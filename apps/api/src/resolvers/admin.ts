@@ -1,6 +1,6 @@
 import { GraphQLError } from 'graphql';
 import { requireRole } from '../middleware/auth.js';
-import { deleteKeycloakUser } from '../lib/keycloakAdmin.js';
+import { deleteKeycloakUser, setKeycloakUserRealmRole, type ApplicationRealmRole } from '../lib/keycloakAdmin.js';
 import type { GraphQLContext } from '../types.js';
 
 export const adminResolvers = {
@@ -146,9 +146,15 @@ export const adminResolvers = {
     // Schema name: adminSetRole
     async adminSetRole(_: unknown, { userId, role }: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'ADMIN');
-      const validRoles = ['STUDENT', 'TEACHER', 'ADMIN'];
+      const validRoles: ApplicationRealmRole[] = ['STUDENT', 'TEACHER', 'ADMIN'];
       if (!validRoles.includes(role)) {
         throw new Error(`Invalid role. Must be one of: ${validRoles.join(', ')}`);
+      }
+      const identity = await prisma.userExternalIdentity.findFirst({
+        where: { userId, provider: 'keycloak' },
+      });
+      if (identity) {
+        await setKeycloakUserRealmRole(identity.externalId, role);
       }
       const updated = await prisma.$transaction(async (tx) => {
         const savedUser = await tx.user.update({
@@ -180,6 +186,12 @@ export const adminResolvers = {
       requireRole(user, 'ADMIN');
       if (userId === user!.id) {
         throw new Error('Cannot ban your own account.');
+      }
+      const identity = await prisma.userExternalIdentity.findFirst({
+        where: { userId, provider: 'keycloak' },
+      });
+      if (identity) {
+        await setKeycloakUserRealmRole(identity.externalId, 'STUDENT');
       }
       return prisma.user.update({ where: { id: userId }, data: { role: 'STUDENT' }, include: { profile: true } });
     },

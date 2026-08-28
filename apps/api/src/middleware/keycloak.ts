@@ -140,6 +140,17 @@ export function mapKeycloakRole(claims: KeycloakClaims): 'STUDENT' | 'TEACHER' |
   return 'STUDENT';
 }
 
+function roleRank(role: string): number {
+  if (role === 'ADMIN') return 3;
+  if (role === 'TEACHER') return 2;
+  if (role === 'STUDENT') return 1;
+  return 0;
+}
+
+function shouldPromoteFromKeycloak(currentRole: string, keycloakRole: 'STUDENT' | 'TEACHER' | 'ADMIN'): boolean {
+  return roleRank(keycloakRole) > roleRank(currentRole);
+}
+
 function displayNameFromClaims(claims: KeycloakClaims): string {
   return (
     claims.name ||
@@ -163,13 +174,17 @@ export async function provisionKeycloakUser(
   const provider = 'keycloak';
   const role = mapKeycloakRole(claims);
 
-  // 1. Already linked? Use the linked account (keep role in sync with Keycloak).
+  // 1. Already linked? Use the linked account. A Keycloak token may promote
+  // a local user (manual realm-role grant or first login after a new role)
+  // but must not demote one: a still-valid old STUDENT token is commonly in
+  // the browser right after an admin approves an application, and treating it
+  // as authoritative would immediately undo the approval in Postgres.
   const identity = await prisma.userExternalIdentity.findUnique({
     where: { provider_externalId: { provider, externalId: claims.sub } },
     include: { user: true },
   });
   if (identity) {
-    if (identity.user.role !== role) {
+    if (shouldPromoteFromKeycloak(identity.user.role, role)) {
       return prisma.user.update({ where: { id: identity.userId }, data: { role } });
     }
     return identity.user;
@@ -182,7 +197,7 @@ export async function provisionKeycloakUser(
       await prisma.userExternalIdentity.create({
         data: { userId: existing.id, provider, externalId: claims.sub },
       });
-      if (existing.role !== role) {
+      if (shouldPromoteFromKeycloak(existing.role, role)) {
         return prisma.user.update({ where: { id: existing.id }, data: { role } });
       }
       return existing;

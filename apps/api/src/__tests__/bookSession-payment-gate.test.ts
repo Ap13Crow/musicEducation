@@ -41,10 +41,12 @@ function fakePrismaForBookSession(overrides: {
   hourlyRate: number | null;
   autoApproveNewStudents: boolean;
   isPublic?: boolean;
+  availabilityHours?: number;
 }) {
   const timezone = 'Europe/Zurich';
   const startsAt = futureLessonStart();
   const { dayOfWeek, hour } = weekdayAndHour(startsAt, timezone);
+  const availabilityHours = overrides.availabilityHours ?? 1;
 
   const bookingCreate = jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'booking-new', ...data }));
   // $queryRaw: reserveInstrumentCapacity's own TeacherInstrumentCapacity
@@ -73,7 +75,7 @@ function fakePrismaForBookSession(overrides: {
     autoApproveRecurringStudents: overrides.autoApproveNewStudents,
     instruments: ['Piano'],
     availability: [
-      { dayOfWeek, startTime: `${String(hour).padStart(2, '0')}:00`, endTime: `${String(hour + 1).padStart(2, '0')}:00`, timezone },
+      { dayOfWeek, startTime: `${String(hour).padStart(2, '0')}:00`, endTime: `${String(hour + availabilityHours).padStart(2, '0')}:00`, timezone },
     ],
     instrumentCapacities: [],
     user: { role: 'TEACHER', status: 'ACTIVE', profile: { timezone } },
@@ -84,7 +86,7 @@ function fakePrismaForBookSession(overrides: {
     teacherProfile: { findUnique: jest.fn().mockResolvedValue(teacherProfile) },
     teacherAvailability: {
       findMany: jest.fn().mockResolvedValue([
-        { dayOfWeek, startTime: `${String(hour).padStart(2, '0')}:00`, endTime: `${String(hour + 1).padStart(2, '0')}:00`, timezone },
+        { dayOfWeek, startTime: `${String(hour).padStart(2, '0')}:00`, endTime: `${String(hour + availabilityHours).padStart(2, '0')}:00`, timezone },
       ]),
     },
     // isRecurringStudent calls findFirst; concrete slot discovery reads the
@@ -164,6 +166,27 @@ describe('bookSession - payment gates confirmation', () => {
 
     expect(bookingCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({ status: 'PENDING' }),
+    });
+  });
+
+  it('allows a longer booking when every adjacent one-hour opening is available', async () => {
+    const { prisma, bookingCreate, startsAt } = fakePrismaForBookSession({
+      hourlyRate: 60,
+      autoApproveNewStudents: false,
+      availabilityHours: 2,
+    });
+
+    await bookingResolvers.Mutation.bookSession(
+      null,
+      { input: { teacherProfileId: 'tp-1', startsAt: startsAt.toISOString(), durationMin: 120, format: 'ONLINE', instrument: 'Piano' } },
+      { prisma, user: studentUser } as any,
+    );
+
+    expect(bookingCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        durationMin: 120,
+        endsAt: new Date(startsAt.getTime() + 120 * 60_000),
+      }),
     });
   });
 });

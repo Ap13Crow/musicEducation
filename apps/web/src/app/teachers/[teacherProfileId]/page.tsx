@@ -1,11 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { gql, useQuery } from '@apollo/client';
+import { gql, useMutation, useQuery } from '@apollo/client';
 import { useParams } from 'next/navigation';
-import { useSession } from 'next-auth/react';
+import { signIn, useSession } from 'next-auth/react';
 import { useMemo, useState } from 'react';
-import { Award, BookOpen, CalendarDays, ChevronLeft, ChevronRight, MapPin, MessageSquare, Music, Star, UserRound, Users as UsersIcon } from 'lucide-react';
+import { Award, BookOpen, CalendarDays, ChevronLeft, ChevronRight, CreditCard, MapPin, MessageSquare, Music, Star, UserRound, Users as UsersIcon } from 'lucide-react';
 import { toYouTubeEmbedUrl } from '@/lib/youtube';
 import { membershipLabel } from '@/lib/membership';
 import WeeklySlotCalendar from '@/components/booking/WeeklySlotCalendar';
@@ -34,6 +34,17 @@ const GET_TEACHER = gql`
       nodes { id rating comment createdAt author { displayName } }
       pageInfo { totalCount }
     }
+    teacherPackageOffers(teacherProfileId: $id) {
+      id instrument lessonCount pricePerPackage pricePerLesson currency isPublished
+    }
+    teacherSubscriptionOffers(teacherProfileId: $id) {
+      id includedHoursPerMonth termMonths monthlyPrice currency upfrontDiscountPct upfrontTotal undiscountedTotal isPublished
+    }
+  }
+`;
+const CREATE_CHECKOUT_SESSION = gql`
+  mutation CreateTeacherOfferCheckoutSession($type: String!, $refId: ID!) {
+    createCheckoutSession(type: $type, refId: $refId) { checkoutUrl }
   }
 `;
 
@@ -44,10 +55,15 @@ function startOfWeek(value: Date): Date {
   return day;
 }
 
+function money(currency: string, amount: number): string {
+  return `${currency} ${Number(amount).toFixed(2)}`;
+}
+
 export default function PublicTeacherPage() {
   const { teacherProfileId } = useParams<{ teacherProfileId: string }>();
   const { data: session } = useSession();
   const [weekOffset, setWeekOffset] = useState(0);
+  const [checkoutError, setCheckoutError] = useState('');
   const weekStart = useMemo(() => {
     const start = startOfWeek(new Date());
     start.setDate(start.getDate() + weekOffset * 7);
@@ -60,8 +76,11 @@ export default function PublicTeacherPage() {
   }, [weekStart]);
   const { data, loading, error } = useQuery(GET_TEACHER, {
     variables: { id: teacherProfileId, courseFilter: { teacherProfileId }, from: weekStart.toISOString(), to: rangeEnd.toISOString() },
+    fetchPolicy: 'cache-and-network',
+    notifyOnNetworkStatusChange: true,
   });
-  if (loading) return <main className="mx-auto max-w-5xl px-6 py-12">Loading teacher profile…</main>;
+  const [createCheckout, { loading: checkingOut }] = useMutation(CREATE_CHECKOUT_SESSION);
+  if (loading && !data?.teacher) return <main className="mx-auto max-w-5xl px-6 py-12">Loading teacher profile…</main>;
   if (error || !data?.teacher) return <main className="mx-auto max-w-5xl px-6 py-12">Teacher profile not found.</main>;
 
   const teacher = data.teacher;
@@ -70,6 +89,27 @@ export default function PublicTeacherPage() {
   const events = (teacher.user?.eventsPublished?.nodes ?? []).filter((event: any) => event.isPublished);
   const recommendations = data.reviews?.nodes ?? [];
   const capacities = new Map((teacher.instrumentCapacities ?? []).map((capacity: any) => [capacity.instrument, capacity]));
+  const packageOffers = (data.teacherPackageOffers ?? []).filter((offer: any) => offer.isPublished);
+  const subscriptionOffers = (data.teacherSubscriptionOffers ?? []).filter((offer: any) => offer.isPublished);
+
+  async function startOfferCheckout(type: 'package' | 'subscription', refId: string) {
+    if (!session) {
+      await signIn('keycloak', { callbackUrl: window.location.href });
+      return;
+    }
+    setCheckoutError('');
+    try {
+      const { data: checkoutData } = await createCheckout({ variables: { type, refId } });
+      const checkoutUrl = checkoutData?.createCheckoutSession?.checkoutUrl;
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
+        return;
+      }
+      setCheckoutError('Could not start checkout for this offer.');
+    } catch (err) {
+      setCheckoutError(err instanceof Error ? err.message : 'Could not start checkout for this offer.');
+    }
+  }
 
   return <main className="min-h-screen bg-gray-50">
     <section className="border-b bg-white">
@@ -122,14 +162,14 @@ export default function PublicTeacherPage() {
               <p className="mt-1 text-sm text-gray-500">Live openings after bookings, holds and time off are applied.</p>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => setWeekOffset((value) => Math.max(0, value - 1))} disabled={weekOffset === 0} className="rounded-lg border p-2 disabled:opacity-30" aria-label="Previous availability week"><ChevronLeft className="h-4 w-4" /></button>
+              <button type="button" onClick={(event) => { event.preventDefault(); setWeekOffset((value) => Math.max(0, value - 1)); }} disabled={weekOffset === 0} className="rounded-lg border p-2 disabled:opacity-30" aria-label="Previous availability week"><ChevronLeft className="h-4 w-4" /></button>
               <span className="min-w-28 text-center text-sm text-gray-600">{weekStart.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – {new Date(rangeEnd.getTime() - 1).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
-              <button onClick={() => setWeekOffset((value) => Math.min(8, value + 1))} disabled={weekOffset >= 8} className="rounded-lg border p-2 disabled:opacity-30" aria-label="Next availability week"><ChevronRight className="h-4 w-4" /></button>
+              <button type="button" onClick={(event) => { event.preventDefault(); setWeekOffset((value) => Math.min(8, value + 1)); }} disabled={weekOffset >= 8} className="rounded-lg border p-2 disabled:opacity-30" aria-label="Next availability week"><ChevronRight className="h-4 w-4" /></button>
             </div>
           </div>
-          <div className="mt-4"><WeeklySlotCalendar weekStart={weekStart} slots={teacher.bookableSlots ?? []} compact /></div>
+          <div className="mt-4" aria-busy={loading}><WeeklySlotCalendar weekStart={weekStart} slots={teacher.bookableSlots ?? []} compact /></div>
           <div className="mt-4 flex items-center justify-between gap-3">
-            <p className="text-xs text-gray-400">Times are shown in your device timezone.</p>
+            <p className="text-xs text-gray-400">{loading ? 'Updating openings… ' : ''}Times are shown in your device timezone.</p>
             {!isOwnProfile && teacher.isAvailable && <Link href={`/book/${teacher.id}`} className="btn-primary rounded-lg px-4 py-2 text-sm">See all booking options</Link>}
           </div>
         </section>
@@ -146,6 +186,34 @@ export default function PublicTeacherPage() {
       </div>
       <aside className="space-y-6">
         <section className="card p-6"><h2 className="flex items-center gap-2 font-semibold"><Music className="h-4 w-4" />Teaching and places</h2><div className="mt-3 space-y-2">{teacher.instruments.map((item:string)=>{const capacity:any=capacities.get(item);return <div key={item} className="rounded-xl bg-primary-50 px-3 py-2"><span className="font-medium text-primary-800">{item}</span><span className="block text-xs text-primary-700">{capacity?.remainingCapacity == null ? 'Accepting new students' : capacity.remainingCapacity === 0 ? 'Currently full' : `${capacity.remainingCapacity} student place${capacity.remainingCapacity === 1 ? '' : 's'} left`}</span></div>})}</div>{teacher.hourlyRate && <p className="mt-4 font-semibold">{teacher.currency} {teacher.hourlyRate}/hour</p>}</section>
+        <section className="card p-6">
+          <h2 className="flex items-center gap-2 font-semibold"><CreditCard className="h-4 w-4" />Packages and subscriptions</h2>
+          {checkoutError && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{checkoutError}</p>}
+          <div className="mt-3 space-y-3">
+            {packageOffers.map((offer: any) => (
+              <div key={offer.id} className="rounded-xl border p-3">
+                <strong>{offer.lessonCount} lesson package</strong>
+                <p className="mt-0.5 text-xs text-gray-500">{offer.instrument || 'Any listed instrument'} · {money(offer.currency, offer.pricePerLesson)} per lesson</p>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold">{money(offer.currency, offer.pricePerPackage)}</span>
+                  {!isOwnProfile && <button type="button" onClick={() => void startOfferCheckout('package', offer.id)} disabled={checkingOut} className="btn-secondary rounded-lg px-3 py-1.5 text-xs disabled:opacity-50">{checkingOut ? 'Starting…' : 'Buy'}</button>}
+                </div>
+              </div>
+            ))}
+            {subscriptionOffers.map((offer: any) => (
+              <div key={offer.id} className="rounded-xl border p-3">
+                <strong>{offer.termMonths} month subscription</strong>
+                <p className="mt-0.5 text-xs text-gray-500">{offer.includedHoursPerMonth} hour{offer.includedHoursPerMonth === 1 ? '' : 's'} per month · paid upfront</p>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold">{money(offer.currency, offer.upfrontTotal)}</span>
+                  {!isOwnProfile && <button type="button" onClick={() => void startOfferCheckout('subscription', offer.id)} disabled={checkingOut} className="btn-secondary rounded-lg px-3 py-1.5 text-xs disabled:opacity-50">{checkingOut ? 'Starting…' : 'Buy'}</button>}
+                </div>
+                {offer.upfrontDiscountPct > 0 && <p className="mt-1 text-xs text-emerald-700">{offer.upfrontDiscountPct}% upfront discount</p>}
+              </div>
+            ))}
+          </div>
+          {packageOffers.length === 0 && subscriptionOffers.length === 0 && <p className="mt-3 text-sm text-gray-500">No prepaid offers are published yet.</p>}
+        </section>
         <section className="card p-6"><h2 className="flex items-center gap-2 font-semibold"><Award className="h-4 w-4" />Qualifications</h2>{teacher.certifications.length ? <ul className="mt-3 space-y-3">{teacher.certifications.map((cert:any)=><li key={cert.id}><strong className="text-sm">{cert.title}</strong><p className="text-xs text-gray-500">{cert.issuingBody}{cert.issuedYear ? ` · ${cert.issuedYear}` : ''}</p></li>)}</ul> : <p className="mt-3 text-sm text-gray-500">No qualifications listed yet.</p>}</section>
       </aside>
     </div>

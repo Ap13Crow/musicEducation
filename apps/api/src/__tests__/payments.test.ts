@@ -1,6 +1,29 @@
 // Unit tests for payment/payout resolver logic (permission checks and pure calculations)
 
 process.env.JWT_SECRET = 'test-secret-key-for-unit-tests';
+process.env.STRIPE_SECRET_KEY = 'sk_test_key';
+
+const mockStripeCreateSession = jest.fn();
+const mockStripeRetrieveAccount = jest.fn();
+
+jest.mock('stripe', () => jest.fn().mockImplementation(() => ({
+  checkout: {
+    sessions: {
+      create: mockStripeCreateSession,
+      retrieve: jest.fn(),
+    },
+  },
+  webhooks: { constructEvent: jest.fn() },
+  v2: {
+    core: {
+      accounts: {
+        retrieve: mockStripeRetrieveAccount,
+        create: jest.fn(),
+      },
+      accountLinks: { create: jest.fn() },
+    },
+  },
+})));
 
 import { requireAuth, requireRole } from '../middleware/auth';
 import { calculateApplicationFee, getFrontendUrl, paymentResolvers, PLATFORM_FEE_BPS } from '../resolvers/payments';
@@ -44,6 +67,81 @@ describe('createCheckoutSession auth', () => {
         { prisma, user: { id: 'student-1', role: 'STUDENT' } } as any,
       ),
     ).rejects.toThrow('Access denied');
+  });
+});
+
+describe('createCheckoutSession Stripe Connect routing', () => {
+  beforeEach(() => {
+    mockStripeCreateSession.mockReset().mockResolvedValue({ id: 'cs_test_1', url: 'https://checkout.stripe.test/session' });
+    mockStripeRetrieveAccount.mockReset().mockResolvedValue({
+      configuration: {
+        recipient: {
+          capabilities: {
+            stripe_balance: {
+              stripe_transfers: { status: 'active' },
+            },
+          },
+        },
+      },
+    });
+    process.env.FRONTEND_URL = 'https://mymusic.test';
+  });
+
+  it('checks a connected teacher account live and creates a destination charge with payment metadata', async () => {
+    const startsAt = new Date('2026-09-02T11:00:00.000Z');
+    const booking = {
+      id: 'booking-1',
+      userId: 'student-1',
+      status: 'PENDING',
+      paymentId: null,
+      durationMin: 60,
+      startsAt,
+      teacherProfile: {
+        id: 'tp-1',
+        userId: 'teacher-1',
+        hourlyRate: 100,
+        currency: 'CHF',
+        stripeAccountId: 'acct_teacher_123',
+        stripePayoutsEnabled: false,
+      },
+    };
+    const prisma: any = {
+      booking: { findUnique: jest.fn().mockResolvedValue(booking) },
+      teacherProfile: { update: jest.fn() },
+    };
+
+    const result = await paymentResolvers.Mutation.createCheckoutSession(
+      null,
+      { type: 'booking', refId: 'booking-1' },
+      { prisma, user: { id: 'student-1', role: 'STUDENT' } } as any,
+    );
+
+    expect(result.checkoutUrl).toBe('https://checkout.stripe.test/session');
+    expect(mockStripeRetrieveAccount).toHaveBeenCalledWith('acct_teacher_123', {
+      include: ['configuration.recipient'],
+    });
+    expect(prisma.teacherProfile.update).toHaveBeenCalledWith({
+      where: { id: 'tp-1' },
+      data: { stripePayoutsEnabled: true },
+    });
+    expect(mockStripeCreateSession).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({
+        userId: 'student-1',
+        type: 'booking',
+        refId: 'booking-1',
+        teacherProfileId: 'tp-1',
+        teacherUserId: 'teacher-1',
+        stripeConnectedAccountId: 'acct_teacher_123',
+      }),
+      payment_intent_data: expect.objectContaining({
+        application_fee_amount: 1500,
+        transfer_data: { destination: 'acct_teacher_123' },
+        metadata: expect.objectContaining({
+          teacherProfileId: 'tp-1',
+          stripeConnectedAccountId: 'acct_teacher_123',
+        }),
+      }),
+    }));
   });
 });
 

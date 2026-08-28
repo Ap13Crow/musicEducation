@@ -1,5 +1,6 @@
 import { GraphQLError } from 'graphql';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { setKeycloakUserRealmRole } from '../lib/keycloakAdmin.js';
 import { isOwnedUploadUrl, type UploadPurpose } from '../lib/storage.js';
 import { isValidYouTubeUrl } from '../lib/youtube.js';
 import type { GraphQLContext } from '../types.js';
@@ -166,8 +167,7 @@ export const teacherApplicationResolvers = {
 
     async teacherApplications(_: unknown, { status, page = 1, limit = 50 }: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'ADMIN');
-      const where: any = {};
-      if (status) where.status = status;
+      const where: any = status ? { status } : { status: { not: 'DRAFT' } };
       return prisma.teacherApplication.findMany({
         where,
         skip: (page - 1) * limit,
@@ -272,6 +272,7 @@ export const teacherApplicationResolvers = {
         where: { userId: user.id },
         create: {
           userId: user.id,
+          status: 'PENDING',
           headline: input.headline ?? null,
           bio: input.bio ?? null,
           instruments: input.instruments ?? [],
@@ -321,6 +322,17 @@ export const teacherApplicationResolvers = {
       requireRole(user, 'ADMIN');
       const application = await prisma.teacherApplication.findUnique({ where: { id } });
       if (!application) throw new GraphQLError('Application not found.', { extensions: { code: 'NOT_FOUND' } });
+      if (application.status === 'DRAFT') {
+        throw new GraphQLError('Draft applications are not ready for review.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      if (approve) {
+        const identity = await prisma.userExternalIdentity.findFirst({
+          where: { userId: application.userId, provider: 'keycloak' },
+        });
+        if (identity) {
+          await setKeycloakUserRealmRole(identity.externalId, 'TEACHER');
+        }
+      }
 
       return prisma.$transaction(async (tx) => {
         const updated = await tx.teacherApplication.update({

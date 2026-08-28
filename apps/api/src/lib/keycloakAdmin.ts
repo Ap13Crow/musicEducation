@@ -1,6 +1,8 @@
-// Minimal Keycloak Admin REST client, used only for reconciling deletions:
-// adminDeactivateUser (../resolvers/admin.ts) deletes one identity
-// synchronously when an admin uses the "Deactivate" action in the app.
+// Minimal Keycloak Admin REST client, used only for reconciling application
+// user state into the MyMusic.Coach realm. adminDeactivateUser deletes one
+// identity synchronously when an admin uses the "Deactivate" action in the
+// app; role changes mirror the application's STUDENT/TEACHER/ADMIN role back
+// into Keycloak so the next login token is stable.
 //
 // Authenticates as a dedicated confidential client in the application realm.
 // It receives only realm-management query/view/manage-users roles; the
@@ -32,6 +34,18 @@ export function keycloakAdminConfigured(): boolean {
 }
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
+
+const APPLICATION_REALM_ROLES = ['STUDENT', 'TEACHER', 'ADMIN'] as const;
+export type ApplicationRealmRole = (typeof APPLICATION_REALM_ROLES)[number];
+
+type KeycloakRoleRepresentation = {
+  id: string;
+  name: string;
+  description?: string;
+  composite?: boolean;
+  clientRole?: boolean;
+  containerId?: string;
+};
 
 async function getAdminToken(baseUrl: string): Promise<string> {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 5_000) return cachedToken.value;
@@ -79,5 +93,81 @@ export async function deleteKeycloakUser(keycloakUserId: string): Promise<void> 
   });
   if (!res.ok && res.status !== 404) {
     throw new Error(`Keycloak admin delete-user failed: ${res.status} ${await res.text()}`);
+  }
+}
+
+async function keycloakAdminJson<T>(
+  baseUrl: string,
+  token: string,
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const res = await fetch(`${baseUrl}${path}`, {
+    ...init,
+    headers: {
+      Accept: 'application/json',
+      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      Authorization: `Bearer ${token}`,
+      ...(init.headers ?? {}),
+    },
+    signal: init.signal ?? AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) {
+    throw new Error(`Keycloak admin request failed: ${res.status} ${await res.text()}`);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
+/**
+ * Makes the Keycloak account carry the same application role that the
+ * Postgres user row now owns. This intentionally removes the other
+ * MyMusic.Coach realm roles first so a user never drifts into
+ * STUDENT+TEACHER or TEACHER+ADMIN ambiguity; Keycloak's own realm-management
+ * roles are unrelated and left untouched.
+ */
+export async function setKeycloakUserRealmRole(
+  keycloakUserId: string,
+  role: ApplicationRealmRole,
+): Promise<void> {
+  if (!APPLICATION_REALM_ROLES.includes(role)) {
+    throw new Error(`Invalid Keycloak application role: ${role}`);
+  }
+
+  const baseUrl = keycloakBaseUrl();
+  const realm = keycloakRealm();
+  if (!baseUrl || !realm) throw new Error('Keycloak admin client is not configured (KEYCLOAK_ISSUER missing).');
+
+  const token = await getAdminToken(baseUrl);
+  const realmPath = encodeURIComponent(realm);
+  const userPath = encodeURIComponent(keycloakUserId);
+  const roleMappingsPath = `/admin/realms/${realmPath}/users/${userPath}/role-mappings/realm`;
+
+  const [currentRoles, targetRole] = await Promise.all([
+    keycloakAdminJson<KeycloakRoleRepresentation[]>(baseUrl, token, roleMappingsPath),
+    keycloakAdminJson<KeycloakRoleRepresentation>(
+      baseUrl,
+      token,
+      `/admin/realms/${realmPath}/roles/${encodeURIComponent(role)}`,
+    ),
+  ]);
+
+  const rolesToRemove = currentRoles.filter(
+    (currentRole) =>
+      APPLICATION_REALM_ROLES.includes(currentRole.name as ApplicationRealmRole) &&
+      currentRole.name !== role,
+  );
+  if (rolesToRemove.length) {
+    await keycloakAdminJson<void>(baseUrl, token, roleMappingsPath, {
+      method: 'DELETE',
+      body: JSON.stringify(rolesToRemove),
+    });
+  }
+
+  if (!currentRoles.some((currentRole) => currentRole.name === role)) {
+    await keycloakAdminJson<void>(baseUrl, token, roleMappingsPath, {
+      method: 'POST',
+      body: JSON.stringify([targetRole]),
+    });
   }
 }

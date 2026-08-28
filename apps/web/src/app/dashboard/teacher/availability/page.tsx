@@ -85,7 +85,8 @@ export default function TeacherAvailabilityPage() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [rulesDraft, setRulesDraft] = useState<Rule[] | null>(null);
   const [repeatDraft, setRepeatDraft] = useState({ days: [1] as number[], startTime: '09:00', endTime: '13:00' });
-  const [blockDraft, setBlockDraft] = useState({ date: '', startTime: '09:00', endTime: '17:00', label: 'UNAVAILABLE', note: '' });
+  const [blockDraft, setBlockDraft] = useState({ startDate: '', endDate: '', startTime: '09:00', endTime: '17:00', label: 'UNAVAILABLE', note: '' });
+  const [blockFormError, setBlockFormError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   const weekStart = useMemo(() => {
@@ -206,9 +207,17 @@ export default function TeacherAvailabilityPage() {
 
   async function addBlock(event: React.FormEvent) {
     event.preventDefault();
-    if (!blockDraft.date) return;
-    const startsAt = new Date(`${blockDraft.date}T${blockDraft.startTime}:00`).toISOString();
-    const endsAt = new Date(`${blockDraft.date}T${blockDraft.endTime}:00`).toISOString();
+    if (!blockDraft.startDate) return;
+    const endDate = blockDraft.endDate || blockDraft.startDate;
+    const start = new Date(`${blockDraft.startDate}T${blockDraft.startTime}:00`);
+    const end = new Date(`${endDate}T${blockDraft.endTime}:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      setBlockFormError('The time off end must be after the start.');
+      return;
+    }
+    setBlockFormError(null);
+    const startsAt = start.toISOString();
+    const endsAt = end.toISOString();
     await createBlock({ variables: { startsAt, endsAt, label: blockDraft.label, note: blockDraft.note.trim() || null } });
     setBlockDraft((draft) => ({ ...draft, note: '' }));
     await Promise.all([refetchUnavailable(), refetch()]);
@@ -226,7 +235,7 @@ export default function TeacherAvailabilityPage() {
         <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="font-serif text-3xl font-bold">Availability and calendar</h1>
-            <p className="mt-2 max-w-3xl text-sm text-gray-600">Publish recurring weekly intervals once. MyMusicCoach turns them into one-hour lessons, then removes bookings, holds, time off and private calendar conflicts automatically.</p>
+            <p className="mt-2 max-w-3xl text-sm text-gray-600">Publish recurring weekly intervals once. MyMusicCoach turns them into bookable openings, then removes bookings, holds, time off and private calendar conflicts automatically.</p>
           </div>
           <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600">Schedule timezone: {timezone}</span>
         </div>
@@ -242,9 +251,9 @@ export default function TeacherAvailabilityPage() {
                   <p className="mt-1 text-sm text-gray-500">Green is bookable; blue is held/booked; amber and violet are blocked.</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setWeekOffset((value) => Math.max(-4, value - 1))} disabled={weekOffset <= -4} className="rounded-lg border p-2 disabled:opacity-30" aria-label="Previous calendar week"><ChevronLeft className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => setWeekOffset((value) => Math.max(-4, value - 1))} disabled={weekOffset <= -4} className="rounded-lg border p-2 disabled:opacity-30" aria-label="Previous calendar week"><ChevronLeft className="h-4 w-4" /></button>
                   <span className="min-w-28 text-center text-sm text-gray-600">{weekStart.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – {new Date(rangeEnd.getTime() - 1).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
-                  <button onClick={() => setWeekOffset((value) => Math.min(12, value + 1))} disabled={weekOffset >= 12} className="rounded-lg border p-2 disabled:opacity-30" aria-label="Next calendar week"><ChevronRight className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => setWeekOffset((value) => Math.min(12, value + 1))} disabled={weekOffset >= 12} className="rounded-lg border p-2 disabled:opacity-30" aria-label="Next calendar week"><ChevronRight className="h-4 w-4" /></button>
                 </div>
               </div>
               <div className="mt-5"><TeacherWeekCalendar weekStart={weekStart} items={scheduleItems} /></div>
@@ -281,16 +290,17 @@ export default function TeacherAvailabilityPage() {
               <h2 className="flex items-center gap-2 text-xl font-semibold"><Clock3 className="h-5 w-5" />Time off and exceptions</h2>
               <p className="mt-1 text-sm text-gray-500">A one-time block overrides the recurring schedule immediately. Private notes are never shown to students.</p>
               <div className="mt-4 space-y-2">
-                {(unavailableData?.teacherUnavailability ?? []).map((block: any) => <div key={block.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm"><span>{new Date(block.startsAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} – {new Date(block.endsAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} · {UNAVAILABILITY_LABELS.find((item) => item.value === block.label)?.label ?? block.label}{block.note ? ` · ${block.note}` : ''}</span><button className="text-red-600" onClick={() => void deleteBlock(block.id)}>Remove</button></div>)}
+                {(unavailableData?.teacherUnavailability ?? []).map((block: any) => <div key={block.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm"><span>{new Date(block.startsAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} – {new Date(block.endsAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} · {UNAVAILABILITY_LABELS.find((item) => item.value === block.label)?.label ?? block.label}{block.note ? ` · ${block.note}` : ''}</span><button type="button" className="text-red-600" onClick={() => void deleteBlock(block.id)}>Remove</button></div>)}
                 {(unavailableData?.teacherUnavailability ?? []).length === 0 && <p className="text-sm text-gray-500">No blocks in this displayed week.</p>}
               </div>
-              <form onSubmit={addBlock} className="mt-5 grid gap-3 rounded-xl bg-gray-50 p-4 sm:grid-cols-5">
-                <label className="text-sm font-medium">Date<input type="date" required className="input mt-1 w-full" value={blockDraft.date} onChange={(event) => setBlockDraft({ ...blockDraft, date: event.target.value })} /></label>
+              <form onSubmit={addBlock} className="mt-5 grid gap-3 rounded-xl bg-gray-50 p-4 sm:grid-cols-6">
+                <label className="text-sm font-medium">Start date<input type="date" required className="input mt-1 w-full" value={blockDraft.startDate} onChange={(event) => setBlockDraft({ ...blockDraft, startDate: event.target.value, endDate: blockDraft.endDate || event.target.value })} /></label>
+                <label className="text-sm font-medium">End date<input type="date" required className="input mt-1 w-full" value={blockDraft.endDate || blockDraft.startDate} min={blockDraft.startDate || undefined} onChange={(event) => setBlockDraft({ ...blockDraft, endDate: event.target.value })} /></label>
                 <label className="text-sm font-medium">From<input type="time" step="900" className="input mt-1 w-full" value={blockDraft.startTime} onChange={(event) => setBlockDraft({ ...blockDraft, startTime: event.target.value })} /></label>
                 <label className="text-sm font-medium">To<input type="time" step="900" className="input mt-1 w-full" value={blockDraft.endTime} onChange={(event) => setBlockDraft({ ...blockDraft, endTime: event.target.value })} /></label>
                 <label className="text-sm font-medium">Label<select className="input mt-1 w-full" value={blockDraft.label} onChange={(event) => setBlockDraft({ ...blockDraft, label: event.target.value })}>{UNAVAILABILITY_LABELS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
                 <label className="text-sm font-medium">Private note<input className="input mt-1 w-full" value={blockDraft.note} onChange={(event) => setBlockDraft({ ...blockDraft, note: event.target.value })} placeholder="Optional" /></label>
-                <div className="sm:col-span-5">{blockError && <p className="mb-2 text-sm text-red-600">{blockError.message}</p>}<button disabled={creatingBlock} className="btn-secondary rounded-lg px-4 py-2 text-sm">{creatingBlock ? 'Adding…' : 'Add time off'}</button></div>
+                <div className="sm:col-span-6">{(blockFormError || blockError) && <p className="mb-2 text-sm text-red-600">{blockFormError ?? blockError?.message}</p>}<button disabled={creatingBlock} className="btn-secondary rounded-lg px-4 py-2 text-sm">{creatingBlock ? 'Adding…' : 'Add time off'}</button></div>
               </form>
             </section>
           </>

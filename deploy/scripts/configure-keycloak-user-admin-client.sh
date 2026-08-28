@@ -105,7 +105,7 @@ assigned_roles="$(kubectl -n "$NAMESPACE" exec "$keycloak_pod" -- \
   /opt/keycloak/bin/kcadm.sh get \
   "users/$service_user_id/role-mappings/clients/$realm_management_uuid" \
   --config "$admin_config" -r "$REALM")"
-for role in query-users view-users manage-users; do
+for role in query-users view-users manage-users view-realm; do
   if ! jq -e --arg role "$role" 'any(.name == $role)' <<<"$assigned_roles" >/dev/null; then
     kubectl -n "$NAMESPACE" exec "$keycloak_pod" -- \
       /opt/keycloak/bin/kcadm.sh add-roles --config "$admin_config" -r "$REALM" \

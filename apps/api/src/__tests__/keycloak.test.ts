@@ -109,7 +109,7 @@ describe('provisionKeycloakUser', () => {
     expect(result.role).toBe('TEACHER');
   });
 
-  it('keeps a linked user role in sync with Keycloak', async () => {
+  it('promotes a linked user role from Keycloak', async () => {
     const prisma = makePrismaStub({
       users: [{ id: 'user-1', email: 'student@example.com', role: 'STUDENT' }],
       identities: [{ userId: 'user-1', provider: 'keycloak', externalId: 'kc-123' }],
@@ -118,5 +118,20 @@ describe('provisionKeycloakUser', () => {
 
     expect(result.role).toBe('TEACHER');
     expect(prisma.user.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let a stale lower-privilege token demote the local application role', async () => {
+    const prisma = makePrismaStub({
+      users: [{ id: 'user-1', email: 'student@example.com', role: 'TEACHER' }],
+      identities: [{ userId: 'user-1', provider: 'keycloak', externalId: 'kc-456' }],
+    });
+    const result = await provisionKeycloakUser(prisma, {
+      ...claims,
+      sub: 'kc-456',
+      realm_access: { roles: ['student'] },
+    });
+
+    expect(result.role).toBe('TEACHER');
+    expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });

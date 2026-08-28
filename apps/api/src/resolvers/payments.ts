@@ -77,6 +77,33 @@ async function getPayoutDestination(prisma: GraphQLContext['prisma'], type: stri
   return null;
 }
 
+async function refreshStripePayoutReadiness(
+  prisma: GraphQLContext['prisma'],
+  destination: NonNullable<Awaited<ReturnType<typeof getPayoutDestination>>>,
+): Promise<boolean> {
+  if (!destination.stripeAccountId) return false;
+  try {
+    const account = await getStripe().v2.core.accounts.retrieve(destination.stripeAccountId, {
+      include: ['configuration.recipient'],
+    });
+    const ready =
+      account.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status === 'active';
+    if (ready !== destination.stripePayoutsEnabled) {
+      await prisma.teacherProfile.update({
+        where: { id: destination.id },
+        data: { stripePayoutsEnabled: ready },
+      });
+    }
+    return ready;
+  } catch {
+    // Never block a valid student checkout just because Stripe's live
+    // readiness check failed transiently. The cached flag is still safe:
+    // false keeps funds on-platform; true means the last webhook/live status
+    // already confirmed transfers were active.
+    return Boolean(destination.stripePayoutsEnabled);
+  }
+}
+
 async function recordSucceededCheckoutPayment(
   prisma: GraphQLContext['prisma'],
   session: Stripe.Checkout.Session,
@@ -474,7 +501,23 @@ export const paymentResolvers = {
         // Stripe Connect onboarding; otherwise the full amount settles in the
         // platform account as before (never block a purchase on payouts setup).
         const destination = await getPayoutDestination(prisma, type, refId);
-        const payoutReady = destination?.stripeAccountId && destination.stripePayoutsEnabled;
+        const payoutReady = destination
+          ? await refreshStripePayoutReadiness(prisma, destination)
+          : false;
+        const destinationMetadata: Record<string, string> = {};
+        if (destination?.id) destinationMetadata.teacherProfileId = destination.id;
+        if (destination?.userId) destinationMetadata.teacherUserId = destination.userId;
+        if (destination?.stripeAccountId) destinationMetadata.stripeConnectedAccountId = destination.stripeAccountId;
+        const metadata = { userId: user.id, type, refId, ...destinationMetadata, ...extraMetadata };
+        const paymentIntentData: Stripe.Checkout.SessionCreateParams.PaymentIntentData = {
+          metadata,
+          ...(payoutReady && destination?.stripeAccountId && amount > 0
+            ? {
+                ...(calculateApplicationFee(amount) > 0 ? { application_fee_amount: calculateApplicationFee(amount) } : {}),
+                transfer_data: { destination: destination.stripeAccountId },
+              }
+            : {}),
+        };
 
         const frontendUrl = getFrontendUrl();
         const session = await getStripe().checkout.sessions.create({
@@ -483,15 +526,8 @@ export const paymentResolvers = {
           mode: 'payment',
           success_url: `${frontendUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}&type=${type}&ref=${refId}`,
           cancel_url: `${frontendUrl}/payment/cancel?type=${type}&ref=${refId}`,
-          metadata: { userId: user.id, type, refId, ...extraMetadata },
-          ...(payoutReady && amount > 0
-            ? {
-                payment_intent_data: {
-                  application_fee_amount: calculateApplicationFee(amount),
-                  transfer_data: { destination: destination!.stripeAccountId! },
-                },
-              }
-            : {}),
+          metadata,
+          payment_intent_data: paymentIntentData,
         });
         return { sessionId: session.id, checkoutUrl: session.url! };
       }

@@ -2,11 +2,14 @@
 
 process.env.JWT_SECRET = 'test-secret-key-for-unit-tests';
 
-jest.mock('../lib/keycloakAdmin', () => ({ deleteKeycloakUser: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('../lib/keycloakAdmin', () => ({
+  deleteKeycloakUser: jest.fn().mockResolvedValue(undefined),
+  setKeycloakUserRealmRole: jest.fn().mockResolvedValue(undefined),
+}));
 
 import { requireRole } from '../middleware/auth';
 import { adminResolvers } from '../resolvers/admin';
-import { deleteKeycloakUser } from '../lib/keycloakAdmin';
+import { deleteKeycloakUser, setKeycloakUserRealmRole } from '../lib/keycloakAdmin';
 
 const adminUser = { id: 'admin-1', role: 'ADMIN' } as const;
 
@@ -154,6 +157,64 @@ describe('adminDeactivateUser', () => {
     await expect(
       adminResolvers.Mutation.adminDeactivateUser(null, { userId: 'user-1' }, { prisma, user: { id: 's-1', role: 'STUDENT' } } as any),
     ).rejects.toThrow('FORBIDDEN');
+  });
+});
+
+describe('adminSetRole', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('mirrors an admin role change into Keycloak before updating Postgres', async () => {
+    const findFirst = jest.fn().mockResolvedValue({ provider: 'keycloak', externalId: 'kc-user-1' });
+    const savedUser = {
+      id: 'user-1',
+      role: 'TEACHER',
+      profile: { instruments: ['Piano'], musicStyles: ['Classical'] },
+    };
+    const userUpdate = jest.fn().mockResolvedValue(savedUser);
+    const teacherProfileUpsert = jest.fn().mockResolvedValue({ id: 'tp-1' });
+    const prisma = fakePrisma({
+      userExternalIdentity: { findFirst },
+      $transaction: jest.fn(async (callback: any) => callback({
+        user: { update: userUpdate },
+        teacherProfile: { upsert: teacherProfileUpsert },
+      })),
+    });
+
+    const result = await adminResolvers.Mutation.adminSetRole(
+      null,
+      { userId: 'user-1', role: 'TEACHER' },
+      { prisma, user: adminUser } as any,
+    );
+
+    expect(setKeycloakUserRealmRole).toHaveBeenCalledWith('kc-user-1', 'TEACHER');
+    expect(userUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'user-1' },
+      data: { role: 'TEACHER' },
+    }));
+    expect(teacherProfileUpsert).toHaveBeenCalled();
+    expect(result).toBe(savedUser);
+  });
+
+  it('still supports local seed users that have no Keycloak identity', async () => {
+    const userUpdate = jest.fn().mockResolvedValue({ id: 'seed-user', role: 'ADMIN' });
+    const prisma = fakePrisma({
+      userExternalIdentity: { findFirst: jest.fn().mockResolvedValue(null) },
+      $transaction: jest.fn(async (callback: any) => callback({
+        user: { update: userUpdate },
+        teacherProfile: { upsert: jest.fn() },
+      })),
+    });
+
+    await adminResolvers.Mutation.adminSetRole(
+      null,
+      { userId: 'seed-user', role: 'ADMIN' },
+      { prisma, user: adminUser } as any,
+    );
+
+    expect(setKeycloakUserRealmRole).not.toHaveBeenCalled();
+    expect(userUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: { role: 'ADMIN' } }));
   });
 });
 
