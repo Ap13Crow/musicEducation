@@ -18,7 +18,7 @@ describe('Review.comment field resolver', () => {
 });
 
 describe('Query.reviews', () => {
-  it('filters to public reviews for exactly the given courseId/eventId/bookingId, paginating like the nested Course.reviews/Event.reviews resolvers', async () => {
+  it('filters to public reviews for the requested target, paginating like the nested Course.reviews/Event.reviews resolvers', async () => {
     const findMany = jest.fn().mockResolvedValue([{ id: 'review-1' }]);
     const count = jest.fn().mockResolvedValue(1);
     const prisma = fakePrisma({ review: { findMany, count } });
@@ -30,6 +30,17 @@ describe('Query.reviews', () => {
     );
     expect(result.nodes).toEqual([{ id: 'review-1' }]);
     expect(result.pageInfo.totalCount).toBe(1);
+  });
+
+  it('returns public booking recommendations for a teacher profile', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = fakePrisma({ review: { findMany, count: jest.fn().mockResolvedValue(0) } });
+
+    await (reviewResolvers as any).Query.reviews(null, { teacherProfileId: 'teacher-1' }, { prisma } as any);
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { isPublic: true, booking: { teacherProfileId: 'teacher-1' } },
+    }));
   });
 
   it('works unauthenticated (no requireAuth call) - it is a public browsing query, same as Course.reviews', async () => {

@@ -7,6 +7,7 @@ import {
   isValidLeadDays, isValidCancellationDays, isValidPolicyPair,
   LEAD_DAYS_MIN, LEAD_DAYS_MAX, CANCELLATION_DAYS_MIN, CANCELLATION_DAYS_MAX,
 } from '../lib/bookingPolicy.js';
+import { getBookableSlots, validateBookableRange } from '../lib/bookableSlots.js';
 import type { GraphQLContext } from '../types.js';
 
 const PROFILE_COMPLETED_XP = 50;
@@ -36,8 +37,33 @@ function validateAvailabilitySlots(slots: AvailabilitySlot[]) {
     if (!TIME_PATTERN.test(slot.startTime) || !TIME_PATTERN.test(slot.endTime) || slot.startTime >= slot.endTime) {
       throw new Error('Availability times must use HH:MM and end after start.');
     }
+    const startMinutes = Number(slot.startTime.slice(0, 2)) * 60 + Number(slot.startTime.slice(3));
+    const endMinutes = Number(slot.endTime.slice(0, 2)) * 60 + Number(slot.endTime.slice(3));
+    if (startMinutes % 15 !== 0 || endMinutes % 15 !== 0 || endMinutes - startMinutes < 60) {
+      throw new Error('Availability must use 15-minute increments and last at least 60 minutes.');
+    }
     if (slot.timezone && slot.timezone.length > 64) {
       throw new Error('Availability timezone is invalid.');
+    }
+    if (slot.timezone) {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: slot.timezone }).format(new Date());
+      } catch {
+        throw new Error('Availability timezone is invalid.');
+      }
+    }
+  }
+
+  const ordered = [...slots].sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime));
+  for (let index = 1; index < ordered.length; index += 1) {
+    const previous = ordered[index - 1];
+    const current = ordered[index];
+    if (
+      previous.dayOfWeek === current.dayOfWeek &&
+      (previous.timezone ?? 'Europe/Zurich') === (current.timezone ?? 'Europe/Zurich') &&
+      current.startTime < previous.endTime
+    ) {
+      throw new Error('Availability intervals on the same day cannot overlap.');
     }
   }
 }
@@ -113,16 +139,69 @@ export const userResolvers = {
       };
       if (filter) {
         if (filter.instrument) where.instruments = { has: filter.instrument };
+        if (filter.specialization) where.musicStyles = { has: filter.specialization };
+        if (filter.format) where.teachingFormats = { has: filter.format };
         if (filter.maxHourlyRate !== undefined) where.hourlyRate = { lte: filter.maxHourlyRate };
         if (filter.minRating !== undefined) where.avgRating = { gte: filter.minRating };
+        if (filter.minExperience !== undefined) where.experienceYears = { gte: filter.minExperience };
         if (filter.isAvailable !== undefined) where.isAvailable = filter.isAvailable;
+        if (filter.city || filter.country) {
+          where.user.profile = {
+            is: {
+              ...(filter.city ? { city: { equals: filter.city, mode: 'insensitive' } } : {}),
+              ...(filter.country ? { country: { equals: filter.country, mode: 'insensitive' } } : {}),
+            },
+          };
+        }
         if (filter.search) {
           where.OR = [
             { bio: { contains: filter.search, mode: 'insensitive' } },
+            { instruments: { has: filter.search } },
+            { musicStyles: { has: filter.search } },
+            { user: { profile: { is: { displayName: { contains: filter.search, mode: 'insensitive' } } } } },
           ];
         }
       }
       const skip = (page - 1) * limit;
+      const availabilityFrom = filter?.availableFrom ? new Date(filter.availableFrom) : null;
+      const availabilityTo = filter?.availableTo ? new Date(filter.availableTo) : null;
+      if (Boolean(availabilityFrom) !== Boolean(availabilityTo)) {
+        throw new GraphQLError('Choose both the start and end of the availability range.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      if (availabilityFrom && availabilityTo) {
+        try {
+          validateBookableRange(availabilityFrom, availabilityTo);
+        } catch (error) {
+          throw new GraphQLError(error instanceof Error ? error.message : 'Invalid availability range.', { extensions: { code: 'BAD_USER_INPUT' } });
+        }
+        // Availability is derived state: recurring rules alone are not
+        // enough because bookings, live holds, time off and private/external
+        // busy intervals can remove every opening. Resolve the real slots
+        // before pagination so the result count and subsequent pages stay
+        // honest instead of filtering only whichever 20 rows happened to
+        // be fetched first.
+        const candidates = await prisma.teacherProfile.findMany({
+          where,
+          orderBy: { avgRating: 'desc' },
+          include: { user: { include: { profile: true } }, certifications: true, availability: true },
+        });
+        const matching = (await Promise.all(candidates.map(async (candidate) => ({
+          candidate,
+          hasOpening: (await getBookableSlots(prisma, candidate.id, availabilityFrom, availabilityTo, {
+            instrument: filter?.instrument,
+            limit: 1,
+          })).length > 0,
+        })))).filter((result) => result.hasOpening).map((result) => result.candidate);
+        const nodes = matching.slice(skip, skip + limit);
+        return {
+          nodes,
+          pageInfo: {
+            hasNextPage: skip + nodes.length < matching.length,
+            hasPreviousPage: page > 1,
+            totalCount: matching.length,
+          },
+        };
+      }
       const [nodes, totalCount] = await Promise.all([
         prisma.teacherProfile.findMany({
           where,
@@ -373,9 +452,13 @@ export const userResolvers = {
       validateAvailabilitySlots(slots);
       const teacherProfile = await prisma.teacherProfile.findUnique({ where: { userId: user!.id } });
       if (!teacherProfile) throw new Error('Teacher profile not found.');
-      await prisma.teacherAvailability.deleteMany({ where: { teacherProfileId: teacherProfile.id } });
-      await prisma.teacherAvailability.createMany({
-        data: slots.map((s: any) => ({ dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, timezone: s.timezone ?? 'Europe/Zurich', teacherProfileId: teacherProfile.id })),
+      await prisma.$transaction(async (tx) => {
+        await tx.teacherAvailability.deleteMany({ where: { teacherProfileId: teacherProfile.id } });
+        if (slots.length > 0) {
+          await tx.teacherAvailability.createMany({
+            data: slots.map((s: any) => ({ dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, timezone: s.timezone ?? 'Europe/Zurich', teacherProfileId: teacherProfile.id })),
+          });
+        }
       });
       return prisma.teacherAvailability.findMany({ where: { teacherProfileId: teacherProfile.id } });
     },
@@ -589,6 +672,19 @@ export const userResolvers = {
         where: { teacherProfileId: profile.id },
         orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
       });
+    },
+    async bookableSlots(profile: any, { from, to, instrument, limit = 200 }: any, { prisma }: GraphQLContext) {
+      try {
+        return await getBookableSlots(prisma, profile.id, new Date(from), new Date(to), { instrument, limit });
+      } catch (error) {
+        throw new GraphQLError(error instanceof Error ? error.message : 'Invalid availability range.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+    },
+    async nextBookableSlot(profile: any, { instrument }: any, { prisma }: GraphQLContext) {
+      const from = new Date();
+      const to = new Date(from.getTime() + 28 * 24 * 60 * 60 * 1000);
+      const [slot] = await getBookableSlots(prisma, profile.id, from, to, { instrument, limit: 1 });
+      return slot ?? null;
     },
   },
   GamificationProfile: {

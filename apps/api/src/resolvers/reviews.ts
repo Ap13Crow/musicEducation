@@ -11,8 +11,8 @@ const EVENT_ATTENDED_XP = 40;
 
 export const reviewResolvers = {
   Query: {
-    // Root-level browsing query, filtered by exactly one of courseId/
-    // eventId/bookingId (schema.graphql) - same shape and same
+    // Root-level browsing query, filtered by a course, event, booking or
+    // teacher profile (schema.graphql) - same shape and same
     // isPublic-only visibility as the nested Course.reviews/Event.reviews
     // field resolvers (courses.ts/events.ts), just reachable without
     // already holding a Course/Event object. Found orphaned (declared
@@ -20,11 +20,12 @@ export const reviewResolvers = {
     // schema/resolver audit - unused by the current frontend (which reads
     // through the nested fields instead), but a real
     // "Cannot return null for non-nullable field" trap for any other client.
-    async reviews(_: unknown, { courseId, eventId, bookingId, page = 1, limit = 10 }: any, { prisma }: GraphQLContext) {
+    async reviews(_: unknown, { courseId, eventId, bookingId, teacherProfileId, page = 1, limit = 10 }: any, { prisma }: GraphQLContext) {
       const where: any = { isPublic: true };
       if (courseId) where.courseId = courseId;
       if (eventId) where.eventId = eventId;
       if (bookingId) where.bookingId = bookingId;
+      if (teacherProfileId) where.booking = { teacherProfileId };
       const skip = (page - 1) * limit;
       const [nodes, totalCount] = await Promise.all([
         prisma.review.findMany({ where, skip, take: limit, orderBy: { createdAt: 'desc' } }),
