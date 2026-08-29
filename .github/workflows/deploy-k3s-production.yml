@@ -89,6 +89,9 @@ jobs:
             test -s "$output"
             manifests+=("$output")
           done
+          database_manifest="$RUNNER_TEMP/deploy-overlays-prod-application-database.yaml"
+          grep -Fq '035-booking-cart-entitlements.sql:' "$database_manifest"
+          grep -Fq 'for migration in /schema/[0-9][0-9][0-9]-*.sql; do' "$database_manifest"
           if grep -Eq '^[[:space:]]*kind:[[:space:]]+Secret[[:space:]]*$' "${manifests[@]}"; then
             echo 'Rendered manifests must not contain Secret resources.' >&2
             exit 1

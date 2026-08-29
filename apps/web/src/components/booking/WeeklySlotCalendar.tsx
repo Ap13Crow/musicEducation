@@ -72,7 +72,7 @@ export default function WeeklySlotCalendar({
   }
 
   return (
-    <div className="overflow-x-auto pb-2">
+    <div className="max-w-full overflow-x-auto overscroll-x-contain pb-2" data-testid="weekly-slot-calendar-scroll">
       <div className={`grid min-w-[720px] grid-cols-7 gap-2 ${compact ? 'text-xs' : 'text-sm'}`}>
         {days.map((day) => {
           const key = dayKey(day);

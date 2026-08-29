@@ -111,17 +111,17 @@ export default function PublicTeacherPage() {
     }
   }
 
-  return <main className="min-h-screen bg-gray-50">
+  return <main className="min-h-screen overflow-x-hidden bg-gray-50">
     <section className="border-b bg-white">
-      <div className="mx-auto max-w-5xl px-6 py-10">
+      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
         <Link href="/teachers" className="text-sm font-medium text-primary-700">← All teachers</Link>
         <div className="mt-6 flex flex-wrap items-start justify-between gap-6">
-          <div className="flex gap-5">
-            <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl bg-primary-100 text-primary-700">
+          <div className="flex min-w-0 gap-4 sm:gap-5">
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-primary-100 text-primary-700 sm:h-24 sm:w-24">
               {teacher.publicImageUrl ? <img src={teacher.publicImageUrl} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-10 w-10" />}
             </div>
-            <div>
-              <h1 className="font-serif text-3xl font-bold">{teacher.user?.displayName}</h1>
+            <div className="min-w-0">
+              <h1 className="break-words font-serif text-2xl font-bold sm:text-3xl">{teacher.user?.displayName}</h1>
               <p className="mt-1 text-primary-700">{teacher.headline ?? 'Music teacher'}</p>
               <div className="mt-3 flex flex-wrap gap-3 text-sm text-gray-600">
                 {teacher.locationCity && <span className="flex items-center gap-1"><MapPin className="h-4 w-4" />{teacher.locationCity}{teacher.locationCountry ? `, ${teacher.locationCountry}` : ''}</span>}
@@ -139,13 +139,13 @@ export default function PublicTeacherPage() {
       </div>
     </section>
 
-    <div className="mx-auto grid max-w-5xl gap-6 px-6 py-8 lg:grid-cols-[2fr_1fr]">
-      <div className="space-y-6">
+    <div className="mx-auto grid min-w-0 max-w-5xl gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      <div className="min-w-0 space-y-6">
         {teacher.introVideoUrl && toYouTubeEmbedUrl(teacher.introVideoUrl) && (
-          <section className="card overflow-hidden p-0">
-            <div className="aspect-video bg-gray-900">
+          <section className="card min-w-0 p-0">
+            <div className="aspect-video w-full bg-gray-900">
               <iframe
-                className="h-full w-full"
+                className="block h-full w-full max-w-full border-0"
                 src={toYouTubeEmbedUrl(teacher.introVideoUrl)!}
                 title={`${teacher.user?.displayName ?? 'Teacher'} — presentation video`}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -155,7 +155,7 @@ export default function PublicTeacherPage() {
           </section>
         )}
         <section className="card p-6"><h2 className="text-xl font-semibold">About</h2><p className="mt-3 whitespace-pre-line text-gray-700">{teacher.teachingBio ?? 'This teacher is preparing their profile.'}</p></section>
-        <section className="card p-6">
+        <section className="card min-w-0 p-4 sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="flex items-center gap-2 text-xl font-semibold"><CalendarDays className="h-5 w-5" />Upcoming availability</h2>
@@ -184,7 +184,7 @@ export default function PublicTeacherPage() {
           {events.length ? <div className="mt-4 space-y-3">{events.map((event:any)=><Link key={event.id} href={`/events/${event.slug}`} className="block rounded-xl border p-4 hover:border-primary-300"><strong>{event.title}</strong><p className="mt-1 text-sm text-gray-600">{new Date(event.startsAt).toLocaleDateString()} · {event.city ?? event.format}</p></Link>)}</div> : <p className="mt-3 text-sm text-gray-500">No published events yet.</p>}
         </section>
       </div>
-      <aside className="space-y-6">
+      <aside className="min-w-0 space-y-6">
         <section className="card p-6"><h2 className="flex items-center gap-2 font-semibold"><Music className="h-4 w-4" />Teaching and places</h2><div className="mt-3 space-y-2">{teacher.instruments.map((item:string)=>{const capacity:any=capacities.get(item);return <div key={item} className="rounded-xl bg-primary-50 px-3 py-2"><span className="font-medium text-primary-800">{item}</span><span className="block text-xs text-primary-700">{capacity?.remainingCapacity == null ? 'Accepting new students' : capacity.remainingCapacity === 0 ? 'Currently full' : `${capacity.remainingCapacity} student place${capacity.remainingCapacity === 1 ? '' : 's'} left`}</span></div>})}</div>{teacher.hourlyRate && <p className="mt-4 font-semibold">{teacher.currency} {teacher.hourlyRate}/hour</p>}</section>
         <section className="card p-6">
           <h2 className="flex items-center gap-2 font-semibold"><CreditCard className="h-4 w-4" />Packages and subscriptions</h2>

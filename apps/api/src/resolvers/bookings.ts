@@ -37,10 +37,10 @@ function getStripe(): Stripe {
   return new Stripe(process.env.STRIPE_SECRET_KEY);
 }
 
-async function refundStripePaymentForBooking(prisma: PrismaClient, bookingId: string): Promise<void> {
+export async function refundStripePaymentForBooking(prisma: PrismaClient, bookingId: string): Promise<void> {
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
-    include: { teacherProfile: true, checkoutOrder: { include: { bookings: true } } },
+    include: { checkoutOrder: { include: { bookings: true, items: true } } },
   });
   const payment = booking?.paymentId ? await prisma.payment.findUnique({ where: { id: booking.paymentId } }) : null;
   if (!booking || !payment || payment.provider !== 'STRIPE' || payment.status === 'REFUNDED') return;
@@ -55,13 +55,15 @@ async function refundStripePaymentForBooking(prisma: PrismaClient, bookingId: st
   if (!paymentIntentId) throw new GraphQLError('This Stripe payment could not be refunded automatically.', { extensions: { code: 'CONFLICT' } });
 
   const order = (booking as any).checkoutOrder;
-  const refundAmountCents = order
-    ? Math.round(Number(booking.teacherProfile.hourlyRate ?? 0) * (booking.durationMin / 60) * 100)
-    : undefined;
+  const orderItem = order?.items.find((item: any) => item.type === 'BOOKING' && item.refId === booking.id);
+  if (order && !orderItem) {
+    throw new GraphQLError('This booking is missing its checkout order item.', { extensions: { code: 'CONFLICT' } });
+  }
+  const refundAmountCents = orderItem ? Math.round(Number(orderItem.totalAmount) * 100) : undefined;
   await getStripe().refunds.create({
     payment_intent: paymentIntentId,
     ...(refundAmountCents && refundAmountCents > 0 ? { amount: refundAmountCents } : {}),
-  });
+  }, { idempotencyKey: `booking-cancellation-${booking.id}` });
   const allCancelled = order ? order.bookings.every((item: any) => item.id === bookingId || item.status === 'CANCELLED') : true;
   await prisma.payment.update({
     where: { id: payment.id },
@@ -72,7 +74,7 @@ async function refundStripePaymentForBooking(prisma: PrismaClient, bookingId: st
       where: { id: order.id },
       data: {
         status: allCancelled ? 'REFUNDED' : 'PARTIALLY_REFUNDED',
-        teacherTransferStatus: 'REVERSED',
+        ...(allCancelled ? { teacherTransferStatus: 'REVERSED' } : {}),
         refundedAt: new Date(),
         cancellationReason: 'on_time_booking_cancellation',
       },
