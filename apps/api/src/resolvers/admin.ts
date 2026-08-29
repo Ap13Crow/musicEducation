@@ -1,4 +1,5 @@
 import { GraphQLError } from 'graphql';
+import { classicticConfigurationSource, isClassicticConfigured, runClassicticIngest } from '@my-music-coach/external-events';
 import { requireRole } from '../middleware/auth.js';
 import { deleteKeycloakUser, setKeycloakUserRealmRole, type ApplicationRealmRole } from '../lib/keycloakAdmin.js';
 import type { GraphQLContext } from '../types.js';
@@ -44,6 +45,40 @@ export const adminResolvers = {
         orderBy: { createdAt: 'desc' },
         take: safeLimit,
       });
+    },
+
+    async externalEventProviderStatus(_: unknown, { provider }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'ADMIN');
+      const now = new Date();
+      const [totalEvents, activeEvents, latest, classicticSetting] = await Promise.all([
+        prisma.externalEventProjection.count({ where: { provider } }),
+        prisma.externalEventProjection.count({
+          where: {
+            provider,
+            startsAt: { gte: now },
+            OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
+          },
+        }),
+        prisma.externalEventProjection.findFirst({
+          where: { provider },
+          orderBy: { fetchedAt: 'desc' },
+          select: { fetchedAt: true },
+        }),
+        provider === 'CLASSICTIC'
+          ? prisma.adminSetting.findUnique({ where: { key: 'classictic_discovery_enabled' } })
+          : Promise.resolve(null),
+      ]);
+      const isClassictic = provider === 'CLASSICTIC';
+      const isTicketmaster = provider === 'TICKETMASTER';
+      return {
+        provider,
+        configured: isClassictic ? isClassicticConfigured() : isTicketmaster ? Boolean(process.env.TICKETMASTER_API_KEY) : false,
+        enabled: isClassictic ? classicticSetting?.value !== 'false' : true,
+        totalEvents,
+        activeEvents,
+        lastFetchedAt: latest?.fetchedAt ?? null,
+        source: isClassictic ? classicticConfigurationSource() : isTicketmaster && process.env.TICKETMASTER_API_KEY ? 'api' : 'none',
+      };
     },
 
     async adminStats(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
@@ -141,6 +176,22 @@ export const adminResolvers = {
         throw new GraphQLError('Only a FAILED or DEAD_LETTER message can be retried.', { extensions: { code: 'BAD_USER_INPUT' } });
       }
       return prisma.mailOutboxMessage.findUniqueOrThrow({ where: { id } });
+    },
+
+    async runExternalEventIngest(_: unknown, { provider }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'ADMIN');
+      if (provider !== 'CLASSICTIC') {
+        throw new GraphQLError('Manual sync is currently available for Classictic only.', {
+          extensions: { code: 'BAD_USER_INPUT' },
+        });
+      }
+      try {
+        return await runClassicticIngest(prisma);
+      } catch (error) {
+        throw new GraphQLError(error instanceof Error ? error.message : 'Classictic sync failed.', {
+          extensions: { code: 'INTERNAL_SERVER_ERROR' },
+        });
+      }
     },
 
     // Schema name: adminSetRole

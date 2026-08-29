@@ -8,7 +8,7 @@ import { useSession, signIn } from 'next-auth/react';
 import { hasRole } from '@/lib/roles';
 import {
   Users, BookOpen, Calendar, DollarSign, Settings, Shield,
-  Key, Video, CreditCard, BarChart3, UserCog, ChevronRight, UserCheck, Mail,
+  Key, Video, CreditCard, BarChart3, UserCog, ChevronRight, UserCheck, Mail, RefreshCw,
 } from 'lucide-react';
 
 type Tab = 'overview' | 'users' | 'applications' | 'content' | 'mail' | 'settings';
@@ -476,6 +476,120 @@ function ApplicationCard({ app, reviewing, onReview }: { app: any; reviewing: bo
   );
 }
 
+const GET_CLASSICTIC_STATUS = gql`
+  query ClassicticProviderStatus {
+    externalEventProviderStatus(provider: CLASSICTIC) {
+      provider
+      configured
+      enabled
+      totalEvents
+      activeEvents
+      lastFetchedAt
+      source
+    }
+  }
+`;
+
+const RUN_CLASSICTIC_INGEST = gql`
+  mutation RunClassicticIngest {
+    runExternalEventIngest(provider: CLASSICTIC) {
+      provider
+      configured
+      enabled
+      source
+      fetched
+      upserted
+      withdrawn
+      message
+    }
+  }
+`;
+
+function ExternalEventsCard() {
+  const { data, loading, error, refetch } = useQuery(GET_CLASSICTIC_STATUS, { fetchPolicy: 'cache-and-network' });
+  const [lastResult, setLastResult] = useState<any | null>(null);
+  const [runIngest, { loading: syncing, error: syncError }] = useMutation(RUN_CLASSICTIC_INGEST);
+  const status = data?.externalEventProviderStatus;
+
+  async function handleSync() {
+    const result = await runIngest();
+    setLastResult(result.data?.runExternalEventIngest ?? null);
+    await refetch();
+  }
+
+  return (
+    <div className="card p-5 space-y-4" data-testid="classictic-sync-card">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="flex items-center gap-2 font-semibold">
+            <Calendar className="h-4 w-4 text-amber-600" /> Classictic discovery
+          </h3>
+          <p className="mt-1 text-sm text-gray-600">
+            Pull affiliate event listings into the public Events page. The worker also syncs this automatically every six hours.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={syncing || loading || status?.configured === false || status?.enabled === false}
+          onClick={() => void handleSync()}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+          {syncing ? 'Syncing…' : 'Sync now'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Failed to load Classictic status: {error.message}
+        </div>
+      )}
+      {syncError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Classictic sync failed: {syncError.message}
+        </div>
+      )}
+
+      <div className="grid gap-3 text-sm sm:grid-cols-4">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-gray-400">Token</p>
+          <p className={status?.configured ? 'font-medium text-green-700' : 'font-medium text-red-700'}>
+            {loading && !status ? 'Checking…' : status?.configured ? 'Configured' : 'Missing'}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs uppercase tracking-wide text-gray-400">Source</p>
+          <p className="font-medium text-gray-800">{status?.source ?? 'none'}</p>
+        </div>
+        <div>
+          <p className="text-xs uppercase tracking-wide text-gray-400">Active events</p>
+          <p className="font-medium text-gray-800">{status?.activeEvents?.toLocaleString() ?? 0}</p>
+        </div>
+        <div>
+          <p className="text-xs uppercase tracking-wide text-gray-400">Last fetched</p>
+          <p className="font-medium text-gray-800">{status?.lastFetchedAt ? new Date(status.lastFetchedAt).toLocaleString() : 'Never'}</p>
+        </div>
+      </div>
+
+      {status?.configured === false && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Add the GitHub secret <code>CLASSICTIC_API_TOKEN</code>, then run the deployment again so both API and worker pods receive it.
+        </p>
+      )}
+      {status?.enabled === false && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Classictic is configured but disabled by the <code>classictic_discovery_enabled</code> admin setting.
+        </p>
+      )}
+      {lastResult && (
+        <p className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          {lastResult.message} Fetched {lastResult.fetched.toLocaleString()}, upserted {lastResult.upserted.toLocaleString()}, withdrew {lastResult.withdrawn.toLocaleString()}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ContentTab() {
   return (
     <div className="space-y-4">
@@ -522,6 +636,8 @@ function ContentTab() {
           <ChevronRight className="ml-auto h-4 w-4 text-gray-400 shrink-0" />
         </a>
       </div>
+
+      <ExternalEventsCard />
     </div>
   );
 }

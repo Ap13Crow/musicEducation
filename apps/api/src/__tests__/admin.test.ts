@@ -7,9 +7,25 @@ jest.mock('../lib/keycloakAdmin', () => ({
   setKeycloakUserRealmRole: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('@my-music-coach/external-events', () => ({
+  classicticConfigurationSource: jest.fn(() => 'api'),
+  isClassicticConfigured: jest.fn(() => true),
+  runClassicticIngest: jest.fn().mockResolvedValue({
+    provider: 'CLASSICTIC',
+    configured: true,
+    enabled: true,
+    source: 'api',
+    fetched: 2,
+    upserted: 2,
+    withdrawn: 0,
+    message: 'Classictic api ingest completed.',
+  }),
+}));
+
 import { requireRole } from '../middleware/auth';
 import { adminResolvers } from '../resolvers/admin';
 import { deleteKeycloakUser, setKeycloakUserRealmRole } from '../lib/keycloakAdmin';
+import { runClassicticIngest } from '@my-music-coach/external-events';
 
 const adminUser = { id: 'admin-1', role: 'ADMIN' } as const;
 
@@ -93,6 +109,66 @@ describe('adminUsers', () => {
     await adminResolvers.Query.adminUsers(null, { includeDeactivated: true }, { prisma, user: adminUser } as any);
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: {} }));
+  });
+});
+
+describe('externalEventProviderStatus', () => {
+  it('reports Classictic configuration and cached event counts to admins', async () => {
+    const prisma = fakePrisma({
+      externalEventProjection: {
+        count: jest.fn().mockResolvedValueOnce(8).mockResolvedValueOnce(5),
+        findFirst: jest.fn().mockResolvedValue({ fetchedAt: new Date('2026-08-29T12:00:00Z') }),
+      },
+      adminSetting: { findUnique: jest.fn().mockResolvedValue(null) },
+    });
+
+    const result = await adminResolvers.Query.externalEventProviderStatus(
+      null,
+      { provider: 'CLASSICTIC' },
+      { prisma, user: adminUser } as any,
+    );
+
+    expect(result).toMatchObject({
+      provider: 'CLASSICTIC',
+      configured: true,
+      enabled: true,
+      totalEvents: 8,
+      activeEvents: 5,
+      source: 'api',
+    });
+    expect(result.lastFetchedAt).toBeInstanceOf(Date);
+    expect((result.lastFetchedAt as Date).toISOString()).toBe('2026-08-29T12:00:00.000Z');
+  });
+
+  it('still requires ADMIN', async () => {
+    const prisma = fakePrisma();
+    await expect(
+      adminResolvers.Query.externalEventProviderStatus(null, { provider: 'CLASSICTIC' }, { prisma, user: { id: 's-1', role: 'STUDENT' } } as any),
+    ).rejects.toThrow('FORBIDDEN');
+  });
+});
+
+describe('runExternalEventIngest', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('runs the shared Classictic ingest runner for admins', async () => {
+    const prisma = fakePrisma();
+    const result = await adminResolvers.Mutation.runExternalEventIngest(
+      null,
+      { provider: 'CLASSICTIC' },
+      { prisma, user: adminUser } as any,
+    );
+
+    expect(runClassicticIngest).toHaveBeenCalledWith(prisma);
+    expect(result.fetched).toBe(2);
+  });
+
+  it('does not expose a fake manual Ticketmaster sync', async () => {
+    await expect(
+      adminResolvers.Mutation.runExternalEventIngest(null, { provider: 'TICKETMASTER' }, { prisma: fakePrisma(), user: adminUser } as any),
+    ).rejects.toThrow('Manual sync is currently available for Classictic only.');
   });
 });
 

@@ -2,9 +2,12 @@ import pino from 'pino';
 import { classicticIngestJob } from '../jobs/classictic-ingest.js';
 
 describe('classicticIngestJob', () => {
+  const originalToken = process.env.CLASSICTIC_API_TOKEN;
   const originalId = process.env.CLASSICTIC_AFFILIATE_ID;
 
   afterEach(() => {
+    if (originalToken === undefined) delete process.env.CLASSICTIC_API_TOKEN;
+    else process.env.CLASSICTIC_API_TOKEN = originalToken;
     if (originalId === undefined) delete process.env.CLASSICTIC_AFFILIATE_ID;
     else process.env.CLASSICTIC_AFFILIATE_ID = originalId;
   });
@@ -14,7 +17,8 @@ describe('classicticIngestJob', () => {
     expect(classicticIngestJob.schedule).toMatch(/^[\d*/,\- ]+$/);
   });
 
-  it('disables itself silently — no crash, no DB call — when the affiliate id is missing', async () => {
+  it('disables itself silently — no crash, no DB call — when credentials are missing', async () => {
+    delete process.env.CLASSICTIC_API_TOKEN;
     delete process.env.CLASSICTIC_AFFILIATE_ID;
     const upsert = jest.fn();
     const adminSettingFindUnique = jest.fn();
@@ -29,7 +33,8 @@ describe('classicticIngestJob', () => {
   });
 
   it('respects the classictic_discovery_enabled=false feature flag even when configured', async () => {
-    process.env.CLASSICTIC_AFFILIATE_ID = 'test-affiliate-id';
+    process.env.CLASSICTIC_API_TOKEN = 'test-token';
+    delete process.env.CLASSICTIC_AFFILIATE_ID;
     const upsert = jest.fn();
     const prisma = {
       externalEventProjection: { upsert, updateMany: jest.fn() },

@@ -25,7 +25,7 @@ never a second source of truth for platform state:
 | **Google Workspace SMTP relay** | Transactional email | `apps/api/src/lib/mailer.ts`, `apps/worker/src/lib/mailer.ts` + `mail-dispatch.ts` |
 | **DeepSeek / OpenAI** | Advisory-only AI text (assessment feedback, event classification) | `apps/api/src/lib/ai.ts`, `apps/worker/src/lib/ai.ts` |
 | **Ticketmaster** | External event discovery ingestion | `apps/worker/src/discovery/ticketmaster.ts`, `apps/worker/src/jobs/ticketmaster-ingest.ts` |
-| **Classictic** | External affiliate event discovery (official "event list widget") | `apps/worker/src/discovery/classictic.ts`, `apps/worker/src/jobs/classictic-ingest.ts` |
+| **Classictic** | External affiliate event discovery | `@my-music-coach/external-events`, `apps/worker/src/jobs/classictic-ingest.ts`, `Mutation.runExternalEventIngest` |
 | **Europeana** | Planned cultural-heritage content for learning — not yet implemented | — |
 | **Calendar subscription feed (ICS)** | Outbound-only — Apple Calendar/Google Calendar/Outlook "subscribe from URL" | `apps/api/src/lib/calendarFeed.ts`, `GET /calendar/feed/:token` |
 | **Google/Microsoft Calendar sync** | Schema/adapter contract only, deliberately not implemented — see below | `apps/api/src/lib/externalCalendar.ts` |
@@ -154,39 +154,27 @@ part of the product and has no code yet.
 
 ### Classictic
 
-`apps/worker/src/discovery/classictic.ts` calls Classictic's **affiliate "event list
-widget"** — documented in the Classictic affiliate portal's marketing-materials
-section, alongside a separate banner widget. This is not a general-purpose REST API:
-`?format=json` on the widget's own endpoint returns the same event data the
-embeddable iframe renders, keyed by the caller's own `affiliate_id` so every returned
-event's `link` already carries the affiliate tracking parameter.
+`@my-music-coach/external-events` calls Classictic's official API Web Services using
+the affiliate API token from the Classictic manual. The scheduled worker imports that
+same package, and the admin dashboard exposes an ADMIN-only manual sync mutation for
+production checks.
 
-- **Endpoint**: `GET https://account.classictic.com/en/whitelabel/customized/search/result/`
-- **Documented query parameters** (the only ones used — no other parameter is assumed
-  or guessed, no scraping, no reverse-engineered contract): `affiliate_id`,
-  `link_on_image=true`, `format=json`, `range` (result count).
-- **Credential**: `CLASSICTIC_AFFILIATE_ID` (worker-only — the API never calls
-  Classictic directly, so it's wired into `worker.yaml` and not `api.yaml`). Missing
-  → `isConfigured()` is `false` → the ingest job silently no-ops (no crash, no partial
-  sync), same pattern as a missing `TICKETMASTER_API_KEY`.
-- **`range` (event volume)**: the widget has no documented pagination/offset
-  parameter — each sync only ever sees "the widget's first N events" in its own
-  default ordering, never a way to page through the full catalog. `range=20` is the
-  documented example; `range=300` was confirmed to work in ~3s during integration
-  testing, `range=1000` timed out. The adapter uses `300` as "as much as possible"
-  without pushing into untested territory or hammering an endpoint that offers no
-  pagination contract to hammer politely with.
-- **Field shape** (from the live JSON response, not assumed): `event_id`, `event`
-  (title), `start_time`, `sale_end_time` (last purchasable moment — reused as this
-  row's `expiresAt`, the same "withdrawn" signal `externalEvents`/`platformStats`
-  already use), `link` (the affiliate tracking URL), `venue`, `city`, `pictures.
-  {desktop,mobile}[].url`, `description`. No price, currency, category, or performer
-  field is present anywhere in this widget's payload (confirmed across a sampled
-  batch) — normalized to `null`/`[]` rather than guessed.
+- **Endpoint**: `GET https://www.classictic.com/en/api/search/json/<token>/`
+- **Documented query parameters**: `from_timestamp`, `until_timestamp`, `page`,
+  `range` (`range` is capped by Classictic at 50 rows/page).
+- **Credential**: `CLASSICTIC_API_TOKEN`, synced into both API and worker pods from
+  the `application-integrations` Secret. Missing → `isConfigured()` is `false` → the
+  ingest job and manual mutation report a disabled/no-op state cleanly. The legacy
+  `CLASSICTIC_AFFILIATE_ID` widget endpoint remains as a fallback only.
+- **Automatic sync**: `classictic-ingest` runs every six hours and once immediately
+  when the worker starts, so a newly deployed token hydrates the event catalog without
+  waiting for the next cron boundary.
+- **Manual sync**: `Mutation.runExternalEventIngest(provider: CLASSICTIC)` lets an
+  admin pull immediately from the Admin Dashboard's Content tab and see
+  fetched/upserted/withdrawn counts.
 - **Outbound link validation**: `isSafeClassicticUrl()` independently re-validates
-  every `link` is `https://classictic.com` or a subdomain of it before it's ever
-  normalized or rendered — a future bad/compromised payload, or a redirect to an
-  unrelated domain, is rejected rather than silently sent to a student.
+  every rendered link is an HTTPS `classictic.com` URL and rejects API URLs so the
+  private token can never be leaked through a student-facing event link.
 - **Attribution**: every normalized row's `attribution` field states events are sold
   by Classictic and the listing links out to complete purchase — same disclosure
   requirement as Ticketmaster, rendered by `ExternalEventCard` on `/events`.
