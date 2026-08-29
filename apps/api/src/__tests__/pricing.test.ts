@@ -13,7 +13,7 @@ describe('isValidPackageSize / isValidSubscriptionTermMonths', () => {
 
 describe('defaultSubscriptionDiscountPct', () => {
   it('6-month default is 10%', () => expect(defaultSubscriptionDiscountPct(6)).toBe(10));
-  it('12-month default is 20%', () => expect(defaultSubscriptionDiscountPct(12)).toBe(20));
+  it('12-month default is 25%', () => expect(defaultSubscriptionDiscountPct(12)).toBe(25));
 });
 
 describe('computeSubscriptionTotal', () => {

@@ -107,6 +107,8 @@ enum PaymentStatus {
   SUCCEEDED
   FAILED
   REFUNDED
+  PARTIALLY_REFUNDED
+  CANCELLED
 }
 
 enum PaymentProvider {
@@ -127,6 +129,32 @@ enum TeacherApplicationStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+enum CheckoutOrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  COMPLETED
+}
+
+enum CheckoutOrderItemType {
+  BOOKING
+  PACKAGE
+  SUBSCRIPTION
+  COURSE
+  EVENT
+}
+
+enum TeacherTransferStatus {
+  NOT_REQUIRED
+  HELD
+  READY
+  TRANSFERRED
+  FAILED
+  REVERSED
 }
 
 # ── Pagination ──────────
@@ -677,6 +705,7 @@ type Booking {
   notes: String
   status: BookingStatus!
   paymentId: ID
+  checkoutOrderId: ID
   zoomMeetingId: String
   zoomJoinUrl: String
   zoomStartUrl: String
@@ -690,10 +719,64 @@ type Booking {
   # Set when this booking was made against a prepaid LessonPackagePurchase
   # credit instead of a one-off charge.
   packagePurchaseId: ID
+  subscriptionPurchaseId: ID
   student: User
   teacher: TeacherProfile
   payment: Payment
+  checkoutOrder: CheckoutOrder
   review: Review
+}
+
+type BookingCart {
+  id: ID!
+  teacherProfileId: ID!
+  currency: String!
+  expiresAt: DateTime!
+  items: [BookingCartItem!]!
+  checkoutOrder: CheckoutOrder
+}
+
+type BookingCartItem {
+  id: ID!
+  startsAt: DateTime!
+  endsAt: DateTime!
+  durationMin: Int!
+  format: BookingFormat!
+  instrument: String
+  notes: String
+  bookingId: ID
+  booking: Booking
+}
+
+type CheckoutOrder {
+  id: ID!
+  userId: ID!
+  teacherProfileId: ID
+  status: CheckoutOrderStatus!
+  amount: Float!
+  currency: String!
+  stripeCheckoutSessionId: String
+  stripePaymentIntentId: String
+  stripeChargeId: String
+  teacherTransferStatus: TeacherTransferStatus!
+  teacherTransferDueAt: DateTime
+  refundedAt: DateTime
+  cancellationReason: String
+  items: [CheckoutOrderItem!]!
+  bookings: [Booking!]!
+  payment: Payment
+  createdAt: DateTime!
+}
+
+type CheckoutOrderItem {
+  id: ID!
+  type: CheckoutOrderItemType!
+  refId: String
+  description: String!
+  quantity: Int!
+  unitAmount: Float!
+  totalAmount: Float!
+  metadata: JSON
 }
 
 type BookingConnection {
@@ -816,6 +899,8 @@ type Payment {
   status: PaymentStatus!
   provider: PaymentProvider!
   providerRef: String
+  providerPaymentIntentId: String
+  providerChargeId: String
   description: String
   createdAt: DateTime!
 }
@@ -851,6 +936,11 @@ type LessonPackagePurchase {
   lessonCount: Int!
   pricePaid: Float!
   currency: String!
+  status: String!
+  refundableUntil: DateTime
+  firstUsedAt: DateTime
+  includedCourseCredits: Int!
+  usedCourseCredits: Int!
   policyLeadDays: Int!
   policyCancellationDays: Int!
   # SUM of the ledger - never a mutable counter. See
@@ -886,16 +976,23 @@ type SubscriptionPurchase {
   totalPricePaid: Float!
   currency: String!
   includedCourseIds: [ID!]!
+  includedCourseCredits: Int!
+  usedCourseCredits: Int!
+  includedEventCredits: Int!
+  usedEventCredits: Int!
   policyLeadDays: Int!
   policyCancellationDays: Int!
   status: SubscriptionPurchaseStatus!
   startsAt: DateTime!
   endsAt: DateTime!
   cancelledAt: DateTime
+  cancellationEffectiveAt: DateTime
+  monthlyCapHours: Int!
 }
 
 enum SubscriptionPurchaseStatus {
   ACTIVE
+  CANCELLED_AT_PERIOD_END
   CANCELLED
   EXPIRED
 }
@@ -1184,6 +1281,19 @@ input BookSessionInput {
   packagePurchaseId: ID
 }
 
+input BookingCartItemInput {
+  startsAt: DateTime!
+  durationMin: Int!
+  format: BookingFormat!
+  instrument: String
+  notes: String
+}
+
+input CreateBookingCartCheckoutInput {
+  teacherProfileId: ID!
+  items: [BookingCartItemInput!]!
+}
+
 input CreateEventInput {
   title: String!
   description: String
@@ -1387,6 +1497,7 @@ type Query {
   teacherSubscriptionOffers(teacherProfileId: ID!): [SubscriptionOffer!]!
   myPackagePurchases: [LessonPackagePurchase!]!
   mySubscriptionPurchases: [SubscriptionPurchase!]!
+  checkoutOrder(id: ID!): CheckoutOrder!
 
   # Admin
   adminStats: AdminStats!
@@ -1512,6 +1623,7 @@ type Mutation {
 
   # Bookings
   bookSession(input: BookSessionInput!): Booking!
+  createBookingCartCheckoutSession(input: CreateBookingCartCheckoutInput!): CheckoutSession!
   # Idempotent return-page recovery for a delayed/missed Stripe webhook.
   # The API retrieves the session from Stripe and verifies ownership/payment;
   # the browser redirect alone is never trusted.
@@ -1563,10 +1675,14 @@ type Mutation {
   # Refuses to delete an offer with existing purchases - unpublish instead;
   # existing purchases keep their snapshotted terms regardless either way.
   deletePackageOffer(id: ID!): Boolean!
+  # EU-style withdrawal path: only an unused package inside its refund window
+  # can be cancelled/refunded.
+  cancelPackagePurchase(id: ID!): LessonPackagePurchase!
   createSubscriptionOffer(includedHoursPerMonth: Int!, termMonths: Int!, monthlyPrice: Float!, currency: String, includedCourseIds: [ID!]): SubscriptionOffer!
   updateSubscriptionOffer(id: ID!, monthlyPrice: Float, includedCourseIds: [ID!], isPublished: Boolean): SubscriptionOffer!
   deleteSubscriptionOffer(id: ID!): Boolean!
-  # Takes effect immediately (no proration - see apps/api/src/lib/pricing.ts).
+  # Cancels renewal/access at the paid period end. There is no prorated
+  # refund for a prepaid season.
   cancelSubscription(id: ID!): SubscriptionPurchase!
 
   # Admin

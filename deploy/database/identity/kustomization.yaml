@@ -39,3 +39,4 @@ configMapGenerator:
       - 032-event-mail-outbox.sql
       - 033-booking-request-mail.sql
       - 034-teacher-application-drafts.sql
+      - 035-booking-cart-entitlements.sql

@@ -32,6 +32,10 @@ export async function consumeCredit(tx: Prisma.TransactionClient, purchaseId: st
   if (balance <= 0) {
     throw new GraphQLError('This lesson package has no remaining credits.', { extensions: { code: 'CONFLICT' } });
   }
+  await tx.lessonPackagePurchase.updateMany({
+    where: { id: purchaseId, firstUsedAt: null },
+    data: { firstUsedAt: new Date() },
+  });
   await tx.lessonCreditLedgerEntry.create({ data: { purchaseId, type: 'CONSUME', amount: -1, bookingId } });
 }
 

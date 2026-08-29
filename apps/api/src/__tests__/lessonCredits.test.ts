@@ -7,6 +7,9 @@ function fakeTx(sumAmount: number | null) {
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: sumAmount } }),
       create: jest.fn().mockResolvedValue({}),
     },
+    lessonPackagePurchase: {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
   } as any;
 }
 
@@ -35,6 +38,10 @@ describe('consumeCredit', () => {
   it('writes a -1 CONSUME entry when a credit is available', async () => {
     const tx = fakeTx(3);
     await consumeCredit(tx, 'purchase-1', 'booking-1');
+    expect(tx.lessonPackagePurchase.updateMany).toHaveBeenCalledWith({
+      where: { id: 'purchase-1', firstUsedAt: null },
+      data: { firstUsedAt: expect.any(Date) },
+    });
     expect(tx.lessonCreditLedgerEntry.create).toHaveBeenCalledWith({
       data: { purchaseId: 'purchase-1', type: 'CONSUME', amount: -1, bookingId: 'booking-1' },
     });

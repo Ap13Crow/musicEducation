@@ -49,6 +49,14 @@ const GET_PROFILE = gql`
     myAssessments {
       id completedAt skillLevel xpAwarded
     }
+    myPackagePurchases {
+      id lessonCount creditBalance pricePaid currency status refundableUntil firstUsedAt includedCourseCredits usedCourseCredits
+      teacherProfile { id user { displayName } }
+    }
+    mySubscriptionPurchases {
+      id termMonths includedHoursPerMonth monthlyPrice discountPct totalPricePaid currency status startsAt endsAt cancelledAt cancellationEffectiveAt monthlyCapHours includedCourseCredits usedCourseCredits includedEventCredits usedEventCredits
+      teacherProfile { id user { displayName } }
+    }
   }
 `;
 
@@ -71,6 +79,18 @@ const UPDATE_PROFILE = gql`
 const CANCEL_BOOKING = gql`
   mutation CancelBooking($bookingId: ID!) {
     cancelBooking(bookingId: $bookingId) { id status lateCancellation }
+  }
+`;
+
+const CANCEL_SUBSCRIPTION = gql`
+  mutation CancelSubscription($id: ID!) {
+    cancelSubscription(id: $id) { id status cancelledAt cancellationEffectiveAt }
+  }
+`;
+
+const CANCEL_PACKAGE_PURCHASE = gql`
+  mutation CancelPackagePurchase($id: ID!) {
+    cancelPackagePurchase(id: $id) { id status creditBalance refundableUntil firstUsedAt }
   }
 `;
 
@@ -165,7 +185,11 @@ export default function ProfilePage() {
   const [confirmAttendance, { loading: confirming }] = useMutation(CONFIRM_EXTERNAL_EVENT_ATTENDANCE);
   const [evaluateEvent, { loading: evaluating }] = useMutation(EVALUATE_EXTERNAL_EVENT);
   const [cancelBooking, { loading: cancelling }] = useMutation(CANCEL_BOOKING);
+  const [cancelSubscription, { loading: cancellingSubscription }] = useMutation(CANCEL_SUBSCRIPTION);
+  const [cancelPackagePurchase, { loading: cancellingPackage }] = useMutation(CANCEL_PACKAGE_PURCHASE);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [cancellingSubscriptionId, setCancellingSubscriptionId] = useState<string | null>(null);
+  const [cancellingPackageId, setCancellingPackageId] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState('');
 
   const { data: feedTokenData, refetch: refetchFeedToken } = useQuery(GET_CALENDAR_FEED_TOKEN, { skip: !liveApiEnabled });
@@ -192,6 +216,8 @@ export default function ProfilePage() {
 
   const me = data?.me;
   const bookings = data?.myBookings ?? [];
+  const packagePurchases = data?.myPackagePurchases ?? [];
+  const subscriptionPurchases = data?.mySubscriptionPurchases ?? [];
   const enrollments = me?.enrollments?.nodes ?? [];
   const recentlyViewedEvents = recentlyViewedData?.myRecentlyViewedExternalEvents ?? [];
   const latestAssessment = [...(data?.myAssessments ?? [])]
@@ -266,6 +292,34 @@ export default function ProfilePage() {
       setCancelError(err instanceof Error ? err.message : 'Could not cancel this lesson.');
     } finally {
       setCancellingId(null);
+    }
+  }
+
+  async function handleCancelSubscription(id: string) {
+    if (!confirm('Cancel this subscription at the end of the paid season? You keep access until the end date and no refund is issued.')) return;
+    setCancelError('');
+    setCancellingSubscriptionId(id);
+    try {
+      await cancelSubscription({ variables: { id } });
+      await refetch();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : 'Could not cancel this subscription.');
+    } finally {
+      setCancellingSubscriptionId(null);
+    }
+  }
+
+  async function handleCancelPackagePurchase(id: string) {
+    if (!confirm('Cancel and refund this unused package? This is only possible during the withdrawal period and before the first lesson or course use.')) return;
+    setCancelError('');
+    setCancellingPackageId(id);
+    try {
+      await cancelPackagePurchase({ variables: { id } });
+      await refetch();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : 'Could not refund this package.');
+    } finally {
+      setCancellingPackageId(null);
     }
   }
 
@@ -639,6 +693,75 @@ export default function ProfilePage() {
                 </ul>
               )}
             </section>
+
+            {(packagePurchases.length > 0 || subscriptionPurchases.length > 0) && (
+              <section className="card p-6">
+                <h2 className="mb-4 flex items-center gap-2 font-semibold text-gray-900">
+                  <Ticket className="h-4 w-4 text-primary-600" /> Packages & subscriptions
+                </h2>
+                {cancelError && <p className="mb-3 text-sm text-red-600">{cancelError}</p>}
+                <div className="space-y-3">
+                  {packagePurchases.map((purchase: any) => {
+                    const refundable = purchase.status === 'ACTIVE' && !purchase.firstUsedAt && purchase.refundableUntil && new Date(purchase.refundableUntil) > new Date();
+                    return (
+                      <div key={purchase.id} className="rounded-xl border border-gray-100 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">{purchase.lessonCount}-hour package with {purchase.teacherProfile?.user?.displayName ?? 'your teacher'}</p>
+                            <p className="mt-1 text-xs text-gray-500">
+                              {purchase.creditBalance} lesson credit{purchase.creditBalance === 1 ? '' : 's'} left
+                              {purchase.includedCourseCredits ? ` · ${purchase.includedCourseCredits - purchase.usedCourseCredits} course credit${purchase.includedCourseCredits - purchase.usedCourseCredits === 1 ? '' : 's'} left` : ''}
+                            </p>
+                            <p className="mt-1 text-xs text-gray-500">
+                              {refundable
+                                ? `Refundable until ${new Date(purchase.refundableUntil).toLocaleDateString()} if unused.`
+                                : purchase.firstUsedAt
+                                  ? 'Already used — no withdrawal refund available.'
+                                  : 'Withdrawal period ended.'}
+                            </p>
+                          </div>
+                          {refundable ? (
+                            <button type="button" disabled={cancellingPackage && cancellingPackageId === purchase.id} onClick={() => void handleCancelPackagePurchase(purchase.id)} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-red-300 hover:text-red-600 disabled:opacity-50">
+                              {cancellingPackage && cancellingPackageId === purchase.id ? 'Refunding…' : 'Cancel & refund'}
+                            </button>
+                          ) : (
+                            <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">{purchase.status}</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {subscriptionPurchases.map((purchase: any) => {
+                    const monthlyEquivalent = Number(purchase.totalPricePaid) / purchase.termMonths;
+                    const active = purchase.status === 'ACTIVE';
+                    return (
+                      <div key={purchase.id} className="rounded-xl border border-primary-100 bg-primary-50/30 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">{purchase.termMonths}-month subscription with {purchase.teacherProfile?.user?.displayName ?? 'your teacher'}</p>
+                            <p className="mt-1 text-sm font-bold text-primary-700">{purchase.currency} {monthlyEquivalent.toFixed(2)} / month equivalent</p>
+                            <p className="mt-1 text-xs text-gray-600">
+                              {purchase.currency} {Number(purchase.totalPricePaid).toFixed(2)} total · {purchase.includedHoursPerMonth}h/month included · up to {purchase.monthlyCapHours}h/month usable
+                            </p>
+                            <p className="mt-1 text-xs text-gray-500">
+                              Runs until {new Date(purchase.endsAt).toLocaleDateString()}
+                              {purchase.status === 'CANCELLED_AT_PERIOD_END' ? ` · cancelled, access ends ${new Date(purchase.cancellationEffectiveAt ?? purchase.endsAt).toLocaleDateString()}` : ''}
+                            </p>
+                          </div>
+                          {active ? (
+                            <button type="button" disabled={cancellingSubscription && cancellingSubscriptionId === purchase.id} onClick={() => void handleCancelSubscription(purchase.id)} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-red-300 hover:text-red-600 disabled:opacity-50">
+                              {cancellingSubscription && cancellingSubscriptionId === purchase.id ? 'Cancelling…' : 'Cancel at period end'}
+                            </button>
+                          ) : (
+                            <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">{purchase.status}</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             {/* My courses */}
             <section className="card p-6">

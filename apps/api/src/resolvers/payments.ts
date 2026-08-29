@@ -5,8 +5,15 @@ import { awardXpOnce } from './xp.js';
 import { sendPurchaseConfirmedEmail } from '../lib/emails.js';
 import { notifyBookingRequested } from './bookings.js';
 import { notifyEventBookingConfirmed } from './events.js';
-import { APPROVAL_HOLD_HOURS } from '../lib/bookingPolicy.js';
-import { isValidSubscriptionTermMonths, computeSubscriptionTotal, currentSubscriptionDiscountPct } from '../lib/pricing.js';
+import { APPROVAL_HOLD_HOURS, isWithinBookingWindow } from '../lib/bookingPolicy.js';
+import { getBookableSlots, LESSON_DURATION_MINUTES } from '../lib/bookableSlots.js';
+import {
+  DEFAULT_PACKAGE_DISCOUNT_PCT,
+  PACKAGE_WITHDRAWAL_DAYS,
+  isValidSubscriptionTermMonths,
+  computeSubscriptionTotal,
+  currentSubscriptionDiscountPct,
+} from '../lib/pricing.js';
 import { grantCredits } from '../lib/lessonCredits.js';
 import type { GraphQLContext } from '../types.js';
 
@@ -37,8 +44,14 @@ export function getFrontendUrl(): string {
 }
 
 // Platform's cut of a Connect destination charge, in basis points. The rest
-// transfers straight to the teacher's connected account at settlement.
+// transfers straight to the teacher's connected account only for products that
+// are immediately fulfilled. Lessons, packages and fixed-term subscriptions
+// are deliberately held on the platform first because they remain refundable,
+// cancellable, or unearned at checkout time.
 export const PLATFORM_FEE_BPS = 1500;
+const MAX_CART_ITEMS = 20;
+const MAX_CART_ITEM_DURATION_MINUTES = 4 * LESSON_DURATION_MINUTES;
+const HELD_TEACHER_REVENUE_TYPES = new Set(['booking', 'package', 'subscription']);
 
 export function calculateApplicationFee(amountCents: number): number {
   return Math.round((amountCents * PLATFORM_FEE_BPS) / 10000);
@@ -119,6 +132,7 @@ async function recordSucceededCheckoutPayment(
         status: 'SUCCEEDED',
         provider: 'STRIPE',
         providerRef: session.id,
+        providerPaymentIntentId: typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id ?? null,
         description: `${type}:${refId}`,
       },
     });
@@ -128,6 +142,13 @@ async function recordSucceededCheckoutPayment(
       where: { provider_providerRef: { provider: 'STRIPE', providerRef: session.id } },
     });
   }
+}
+
+function extractLatestChargeId(session: Stripe.Checkout.Session): string | null {
+  const paymentIntent: any = session.payment_intent;
+  if (!paymentIntent || typeof paymentIntent === 'string') return null;
+  const latestCharge = paymentIntent.latest_charge;
+  return typeof latestCharge === 'string' ? latestCharge : latestCharge?.id ?? null;
 }
 
 // Payment and teacher approval are deliberately separate transitions. A
@@ -161,6 +182,57 @@ export async function applyPaidBookingCheckout(
       data: { confirmationEmailAt: new Date() },
     });
     if (claimed.count > 0) await notifyBookingRequested(tx, refId, 'PAID');
+  });
+}
+
+async function applyPaidBookingCartCheckout(
+  prisma: GraphQLContext['prisma'],
+  session: Stripe.Checkout.Session,
+  payment: Awaited<ReturnType<typeof recordSucceededCheckoutPayment>>,
+) {
+  const { userId, refId } = session.metadata ?? {};
+  if (!userId || !refId) throw new Error('Stripe booking cart metadata is incomplete.');
+  const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id ?? null;
+  const chargeId = extractLatestChargeId(session);
+  await prisma.$transaction(async (tx) => {
+    const order = await tx.checkoutOrder.findUnique({
+      where: { id: refId },
+      include: { bookings: true },
+    });
+    if (!order || order.userId !== userId) throw new Error('Stripe order does not belong to the Checkout customer.');
+    if (order.paymentId && order.paymentId !== payment.id) throw new Error('Order is already linked to a different payment.');
+    if (order.status !== 'PENDING') return;
+
+    await tx.checkoutOrder.update({
+      where: { id: order.id },
+      data: {
+        status: 'PAID',
+        paymentId: payment.id,
+        stripeCheckoutSessionId: session.id,
+        stripePaymentIntentId: paymentIntentId,
+        stripeChargeId: chargeId,
+        teacherTransferStatus: 'HELD',
+      },
+    });
+    await tx.payment.update({
+      where: { id: payment.id },
+      data: {
+        providerPaymentIntentId: paymentIntentId,
+        providerChargeId: chargeId,
+      },
+    });
+    for (const booking of order.bookings) {
+      if (booking.status === 'PENDING' && !booking.paymentId) {
+        await tx.booking.update({
+          where: { id: booking.id },
+          data: {
+            paymentId: payment.id,
+            holdExpiresAt: new Date(Date.now() + APPROVAL_HOLD_HOURS * 60 * 60 * 1000),
+          },
+        });
+        await notifyBookingRequested(tx, booking.id, 'PAID');
+      }
+    }
   });
 }
 
@@ -242,6 +314,8 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
       }
     } else if (type === 'booking') {
       await applyPaidBookingCheckout(prisma, session, payment);
+    } else if (type === 'booking_cart') {
+      await applyPaidBookingCartCheckout(prisma, session, payment);
     } else if (type === 'event') {
       await prisma.$transaction(async (tx) => {
         const eventBooking = await tx.eventBooking.upsert({
@@ -279,6 +353,9 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
             currency: payment.currency,
             policyLeadDays: Number(meta.policyLeadDays),
             policyCancellationDays: Number(meta.policyCancellationDays),
+            offerId: refId!,
+            refundableUntil: new Date(Date.now() + PACKAGE_WITHDRAWAL_DAYS * 24 * 60 * 60 * 1000),
+            includedCourseCredits: Number(meta.includedCourseCredits ?? 0),
             paymentId: payment.id,
           },
         });
@@ -313,11 +390,15 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
             totalPricePaid: payment.amount,
             currency: payment.currency,
             includedCourseIds,
+            includedCourseCredits: Number(meta.includedCourseCredits ?? includedCourseIds.length),
+            includedEventCredits: Number(meta.includedEventCredits ?? 0),
             policyLeadDays: Number(meta.policyLeadDays),
             policyCancellationDays: Number(meta.policyCancellationDays),
             paymentId: payment.id,
             startsAt,
             endsAt,
+            cancellationEffectiveAt: endsAt,
+            monthlyCapHours: Number(meta.monthlyCapHours ?? 10),
           },
         });
         // Course bundling: grant an Enrollment for every included course,
@@ -394,6 +475,187 @@ export async function handleStripeV2Webhook(prisma: import('@my-music-coach/data
 
 export const paymentResolvers = {
   Mutation: {
+    async createBookingCartCheckoutSession(
+      _: unknown,
+      { input }: any,
+      { prisma, user }: GraphQLContext,
+    ) {
+      requireAuth(user);
+      const { teacherProfileId, items } = input;
+      if (!Array.isArray(items) || items.length === 0 || items.length > MAX_CART_ITEMS) {
+        throw new GraphQLError(`Choose between 1 and ${MAX_CART_ITEMS} lesson slots.`, { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+
+      const teacherProfile = await prisma.teacherProfile.findUnique({
+        where: { id: teacherProfileId },
+        include: { user: { select: { role: true, status: true, profile: { select: { timezone: true } } } } },
+      });
+      if (!teacherProfile) throw new GraphQLError('Teacher not found.', { extensions: { code: 'NOT_FOUND' } });
+      if (teacherProfile.userId === user.id) throw new GraphQLError('You cannot book yourself.', { extensions: { code: 'BAD_USER_INPUT' } });
+      if (
+        teacherProfile.user.status !== 'ACTIVE' ||
+        (teacherProfile.user.role !== 'TEACHER' && teacherProfile.user.role !== 'ADMIN') ||
+        !teacherProfile.isAvailable
+      ) {
+        throw new GraphQLError('Teacher is not available.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      const rate = Number(teacherProfile.hourlyRate ?? 0);
+      if (rate <= 0) throw new GraphQLError('This teacher does not require checkout for lessons.', { extensions: { code: 'BAD_USER_INPUT' } });
+
+      const teacherTimezone = teacherProfile.user.profile?.timezone ?? 'Europe/Zurich';
+      const normalizedItems = [] as Array<{
+        startsAt: Date;
+        endsAt: Date;
+        durationMin: number;
+        format: string;
+        instrument: string | null;
+        notes: string | null;
+        amount: number;
+      }>;
+      for (const item of items) {
+        const durationMin = Number(item.durationMin);
+        if (
+          !Number.isInteger(durationMin) ||
+          durationMin < LESSON_DURATION_MINUTES ||
+          durationMin > MAX_CART_ITEM_DURATION_MINUTES ||
+          durationMin % LESSON_DURATION_MINUTES !== 0
+        ) {
+          throw new GraphQLError('Each cart item must be 1, 2, 3 or 4 contiguous one-hour slots.', { extensions: { code: 'BAD_USER_INPUT' } });
+        }
+        const startsAt = new Date(item.startsAt);
+        if (Number.isNaN(startsAt.getTime()) || startsAt <= new Date()) {
+          throw new GraphQLError('Choose future lesson slots.', { extensions: { code: 'BAD_USER_INPUT' } });
+        }
+        if (!isWithinBookingWindow(startsAt, teacherProfile.leadDays, teacherTimezone)) {
+          throw new GraphQLError('One or more selected lessons is outside the teacher booking window.', { extensions: { code: 'BAD_USER_INPUT' } });
+        }
+        const endsAt = new Date(startsAt.getTime() + durationMin * 60_000);
+        const offered = await getBookableSlots(prisma, teacherProfileId, startsAt, endsAt, {
+          instrument: item.instrument ?? undefined,
+          limit: durationMin / LESSON_DURATION_MINUTES,
+          now: new Date(),
+        });
+        const offeredStarts = new Set(offered.map((slot) => slot.startsAt.getTime()));
+        const everyHourIsOpen = Array.from({ length: durationMin / LESSON_DURATION_MINUTES }, (_, index) =>
+          startsAt.getTime() + index * LESSON_DURATION_MINUTES * 60_000,
+        ).every((expectedStart) => offeredStarts.has(expectedStart));
+        if (!everyHourIsOpen) throw new GraphQLError('One or more selected slots is no longer available.', { extensions: { code: 'BAD_USER_INPUT' } });
+        normalizedItems.push({
+          startsAt,
+          endsAt,
+          durationMin,
+          format: item.format,
+          instrument: item.instrument?.trim() || null,
+          notes: item.notes?.trim() || null,
+          amount: Math.round(rate * (durationMin / 60) * 100) / 100,
+        });
+      }
+
+      const sorted = [...normalizedItems].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+      for (let index = 1; index < sorted.length; index += 1) {
+        if (sorted[index].startsAt < sorted[index - 1].endsAt) {
+          throw new GraphQLError('Selected cart slots cannot overlap.', { extensions: { code: 'BAD_USER_INPUT' } });
+        }
+      }
+
+      const totalAmount = Math.round(normalizedItems.reduce((sum, item) => sum + item.amount, 0) * 100) / 100;
+      const currency = teacherProfile.currency;
+      const order = await prisma.$transaction(async (tx) => {
+        const cart = await tx.bookingCart.create({
+          data: {
+            userId: user.id,
+            teacherProfileId,
+            currency,
+            expiresAt: new Date(Date.now() + APPROVAL_HOLD_HOURS * 60 * 60 * 1000),
+          },
+        });
+        const createdOrder = await tx.checkoutOrder.create({
+          data: {
+            userId: user.id,
+            teacherProfileId,
+            cartId: cart.id,
+            amount: totalAmount,
+            currency,
+            status: 'PENDING',
+            teacherTransferStatus: 'HELD',
+          },
+        });
+        for (const item of normalizedItems) {
+          const booking = await tx.booking.create({
+            data: {
+              userId: user.id,
+              teacherProfileId,
+              startsAt: item.startsAt,
+              endsAt: item.endsAt,
+              durationMin: item.durationMin,
+              format: item.format as any,
+              instrument: item.instrument,
+              notes: item.notes,
+              status: 'PENDING',
+              holdExpiresAt: cart.expiresAt,
+              checkoutOrderId: createdOrder.id,
+            },
+          });
+          await tx.bookingCartItem.create({
+            data: {
+              cartId: cart.id,
+              startsAt: item.startsAt,
+              endsAt: item.endsAt,
+              durationMin: item.durationMin,
+              format: item.format as any,
+              instrument: item.instrument,
+              notes: item.notes,
+              bookingId: booking.id,
+            },
+          });
+          await tx.checkoutOrderItem.create({
+            data: {
+              orderId: createdOrder.id,
+              type: 'BOOKING',
+              refId: booking.id,
+              description: `Lesson booking on ${item.startsAt.toISOString()}`,
+              quantity: 1,
+              unitAmount: item.amount,
+              totalAmount: item.amount,
+              metadata: { startsAt: item.startsAt.toISOString(), durationMin: item.durationMin, instrument: item.instrument },
+            },
+          });
+        }
+        return createdOrder;
+      });
+
+      const metadata = {
+        userId: user.id,
+        type: 'booking_cart',
+        refId: order.id,
+        teacherProfileId,
+        teacherUserId: teacherProfile.userId,
+        lessonCount: String(normalizedItems.reduce((sum, item) => sum + item.durationMin / 60, 0)),
+      };
+      const frontendUrl = getFrontendUrl();
+      const session = await getStripe().checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: normalizedItems.map((item) => ({
+          price_data: {
+            currency: currency.toLowerCase(),
+            product_data: { name: `Lesson booking on ${item.startsAt.toISOString()}` },
+            unit_amount: Math.round(item.amount * 100),
+          },
+          quantity: 1,
+        })),
+        mode: 'payment',
+        success_url: `${frontendUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}&type=booking_cart&ref=${order.id}`,
+        cancel_url: `${frontendUrl}/payment/cancel?type=booking_cart&ref=${order.id}`,
+        metadata,
+        payment_intent_data: { metadata },
+      });
+      await prisma.checkoutOrder.update({
+        where: { id: order.id },
+        data: { stripeCheckoutSessionId: session.id },
+      });
+      return { sessionId: session.id, checkoutUrl: session.url! };
+    },
+
     async reconcileBookingPayment(
       _: unknown,
       { sessionId }: { sessionId: string },
@@ -461,6 +723,7 @@ export const paymentResolvers = {
       } else if (type === 'package') {
         const offer = await prisma.lessonPackageOffer.findUnique({ where: { id: refId }, include: { teacherProfile: true } });
         if (!offer || !offer.isPublished) throw new GraphQLError('Package offer not found.', { extensions: { code: 'NOT_FOUND' } });
+        const includedCourseCredits = offer.lessonCount >= 10 ? 2 : offer.lessonCount >= 5 ? 1 : 0;
         amount = Math.round(Number(offer.pricePerPackage) * 100);
         currency = offer.currency.toLowerCase();
         description = `${offer.lessonCount}-lesson package${offer.instrument ? ` (${offer.instrument})` : ''}`;
@@ -470,6 +733,8 @@ export const paymentResolvers = {
           teacherProfileId: offer.teacherProfileId,
           policyLeadDays: String(offer.teacherProfile.leadDays),
           policyCancellationDays: String(offer.teacherProfile.cancellationDays),
+          includedCourseCredits: String(includedCourseCredits),
+          packageDiscountPct: String(DEFAULT_PACKAGE_DISCOUNT_PCT),
         };
       } else if (type === 'subscription') {
         const offer = await prisma.subscriptionOffer.findUnique({ where: { id: refId }, include: { teacherProfile: true } });
@@ -488,6 +753,9 @@ export const paymentResolvers = {
           includedHoursPerMonth: String(offer.includedHoursPerMonth),
           monthlyPrice: String(offer.monthlyPrice),
           discountPct: String(discountPct),
+          includedCourseCredits: String(offer.termMonths === 12 ? 12 : 6),
+          includedEventCredits: String(offer.termMonths === 12 ? 4 : 0),
+          monthlyCapHours: '10',
           includedCourseIds: offer.includedCourseIds.join(','),
           policyLeadDays: String(offer.teacherProfile.leadDays),
           policyCancellationDays: String(offer.teacherProfile.cancellationDays),
@@ -497,9 +765,10 @@ export const paymentResolvers = {
       }
 
       if (provider === 'STRIPE') {
-        // Split to the teacher's connected account when they've finished
-        // Stripe Connect onboarding; otherwise the full amount settles in the
-        // platform account as before (never block a purchase on payouts setup).
+        // Split to the teacher's connected account only for immediately
+        // fulfilled purchases. Lesson bookings, lesson packages and fixed-term
+        // subscriptions are held first so cancellation/refund and delayed
+        // payout policy can be enforced inside MyMusic.Coach.
         const destination = await getPayoutDestination(prisma, type, refId);
         const payoutReady = destination
           ? await refreshStripePayoutReadiness(prisma, destination)
@@ -509,9 +778,10 @@ export const paymentResolvers = {
         if (destination?.userId) destinationMetadata.teacherUserId = destination.userId;
         if (destination?.stripeAccountId) destinationMetadata.stripeConnectedAccountId = destination.stripeAccountId;
         const metadata = { userId: user.id, type, refId, ...destinationMetadata, ...extraMetadata };
+        const holdTeacherFunds = HELD_TEACHER_REVENUE_TYPES.has(type);
         const paymentIntentData: Stripe.Checkout.SessionCreateParams.PaymentIntentData = {
           metadata,
-          ...(payoutReady && destination?.stripeAccountId && amount > 0
+          ...(payoutReady && destination?.stripeAccountId && amount > 0 && !holdTeacherFunds
             ? {
                 ...(calculateApplicationFee(amount) > 0 ? { application_fee_amount: calculateApplicationFee(amount) } : {}),
                 transfer_data: { destination: destination.stripeAccountId },
@@ -599,6 +869,22 @@ export const paymentResolvers = {
   },
 
   Query: {
+    async checkoutOrder(_: unknown, { id }: { id: string }, { prisma, user }: GraphQLContext) {
+      requireAuth(user);
+      const order = await prisma.checkoutOrder.findUnique({
+        where: { id },
+        include: { items: true, bookings: true, payment: true },
+      });
+      if (!order) throw new GraphQLError('Order not found.', { extensions: { code: 'NOT_FOUND' } });
+      const isTeacher = order.teacherProfileId
+        ? await prisma.teacherProfile.findUnique({ where: { id: order.teacherProfileId } }).then((profile) => profile?.userId === user.id)
+        : false;
+      if (order.userId !== user.id && user.role !== 'ADMIN' && !isTeacher) {
+        throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
+      }
+      return order;
+    },
+
     async stripeConnectStatus(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
       requireRole(user, 'TEACHER', 'ADMIN');
       const profile = await prisma.teacherProfile.findUnique({ where: { userId: user!.id } });

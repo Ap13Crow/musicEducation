@@ -25,6 +25,14 @@ const GET_BOOKING = gql`
     }
   }
 `;
+const GET_CHECKOUT_ORDER = gql`
+  query PaymentSuccessOrder($id: ID!) {
+    checkoutOrder(id: $id) {
+      id status amount currency
+      bookings { id status paymentId }
+    }
+  }
+`;
 const RECONCILE_BOOKING_PAYMENT = gql`
   mutation ReconcileBookingPayment($sessionId: String!) {
     reconcileBookingPayment(sessionId: $sessionId) { id status paymentId }
@@ -126,6 +134,43 @@ function BookingConfirmation({ bookingId, sessionId }: { bookingId: string; sess
   );
 }
 
+function BookingCartConfirmation({ orderId }: { orderId: string }) {
+  const { data, startPolling, stopPolling } = useQuery(GET_CHECKOUT_ORDER, { variables: { id: orderId } });
+  const [attempts, setAttempts] = useState(0);
+  const order = data?.checkoutOrder;
+  const requestRecorded = order?.status === 'PAID' || order?.bookings?.some((booking: any) => booking.paymentId);
+  useEffect(() => {
+    if (requestRecorded || attempts >= MAX_POLLS) {
+      stopPolling();
+      return;
+    }
+    startPolling(POLL_INTERVAL_MS);
+    const t = setTimeout(() => setAttempts((a) => a + 1), POLL_INTERVAL_MS);
+    return () => clearTimeout(t);
+  }, [requestRecorded, attempts, startPolling, stopPolling]);
+
+  return (
+    <div className="card mx-auto max-w-md p-8 text-center">
+      {requestRecorded ? (
+        <CheckCircle className="mx-auto mb-4 h-14 w-14 text-green-600" />
+      ) : (
+        <Loader2 className="mx-auto mb-4 h-14 w-14 animate-spin text-primary-600" />
+      )}
+      <h1 className="text-2xl font-bold">{requestRecorded ? 'Payment successful' : 'Verifying payment'}</h1>
+      <p className="mt-3 text-gray-600">
+        {requestRecorded
+          ? `${order.bookings?.length ?? 0} booking request${(order.bookings?.length ?? 0) === 1 ? '' : 's'} sent to the teacher. We will email you again once accepted.`
+          : attempts < MAX_POLLS
+            ? 'Stripe is confirming your cart and sending the lesson requests to the teacher…'
+            : 'Your payment was received, but verification is taking longer than expected. Your bookings remain visible in your profile while we finish processing.'}
+      </p>
+      <Link href="/profile" className="btn-primary mt-6 inline-block rounded-lg px-6 py-3">
+        View my bookings
+      </Link>
+    </div>
+  );
+}
+
 function EventConfirmation({ eventId }: { eventId: string }) {
   const { data, startPolling, stopPolling } = useQuery(GET_EVENT_BOOKINGS, { variables: { eventId } });
   const [attempts, setAttempts] = useState(0);
@@ -202,6 +247,8 @@ export default function PaymentSuccessPage() {
         <CourseConfirmation courseId={ref} />
       ) : type === 'booking' ? (
         <BookingConfirmation bookingId={ref} sessionId={sessionId} />
+      ) : type === 'booking_cart' ? (
+        <BookingCartConfirmation orderId={ref} />
       ) : type === 'event' ? (
         <EventConfirmation eventId={ref} />
       ) : (

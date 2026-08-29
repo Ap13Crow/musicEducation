@@ -1,4 +1,5 @@
 import { GraphQLError } from 'graphql';
+import Stripe from 'stripe';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import {
   isValidPackageSize, isValidSubscriptionTermMonths,
@@ -6,6 +7,13 @@ import {
 } from '../lib/pricing.js';
 import { creditBalance } from '../lib/lessonCredits.js';
 import type { GraphQLContext } from '../types.js';
+
+function getStripe(): Stripe {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error('STRIPE_SECRET_KEY environment variable is required but was not set.');
+  }
+  return new Stripe(process.env.STRIPE_SECRET_KEY);
+}
 
 async function requireOwnTeacherProfile(prisma: GraphQLContext['prisma'], userId: string) {
   const teacherProfile = await prisma.teacherProfile.findUnique({ where: { userId } });
@@ -83,6 +91,50 @@ export const commerceResolvers = {
       return true;
     },
 
+    async cancelPackagePurchase(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
+      requireAuth(user);
+      const purchase = await prisma.lessonPackagePurchase.findUnique({ where: { id } });
+      if (!purchase) throw new GraphQLError('Package purchase not found.', { extensions: { code: 'NOT_FOUND' } });
+      if (purchase.userId !== user.id && user.role !== 'ADMIN') throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
+      if (purchase.status !== 'ACTIVE') return purchase;
+      if (purchase.firstUsedAt || purchase.usedCourseCredits > 0) {
+        throw new GraphQLError('This package has already been used and can no longer be refunded.', { extensions: { code: 'CONFLICT' } });
+      }
+      if (!purchase.refundableUntil || purchase.refundableUntil <= new Date()) {
+        throw new GraphQLError('The withdrawal period for this package has ended.', { extensions: { code: 'CONFLICT' } });
+      }
+      const balance = await creditBalance(prisma as any, purchase.id);
+      if (balance !== purchase.lessonCount) {
+        throw new GraphQLError('This package has already been used and can no longer be refunded.', { extensions: { code: 'CONFLICT' } });
+      }
+      const payment = purchase.paymentId ? await prisma.payment.findUnique({ where: { id: purchase.paymentId } }) : null;
+      if (!payment || payment.provider !== 'STRIPE' || payment.status === 'REFUNDED') {
+        throw new GraphQLError('This package payment cannot be refunded automatically.', { extensions: { code: 'CONFLICT' } });
+      }
+      let paymentIntentId = payment.providerPaymentIntentId;
+      if (!paymentIntentId && payment.providerRef) {
+        const session = await getStripe().checkout.sessions.retrieve(payment.providerRef);
+        paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id ?? null;
+      }
+      if (!paymentIntentId) {
+        throw new GraphQLError('This Stripe payment is missing refund identifiers.', { extensions: { code: 'CONFLICT' } });
+      }
+
+      await getStripe().refunds.create({ payment_intent: paymentIntentId });
+      return prisma.$transaction(async (tx) => {
+        if (balance > 0) {
+          await tx.lessonCreditLedgerEntry.create({
+            data: { purchaseId: purchase.id, type: 'EXPIRE', amount: -balance, note: 'Package refunded during withdrawal period.' },
+          });
+        }
+        await tx.payment.update({ where: { id: payment.id }, data: { status: 'REFUNDED' } });
+        return tx.lessonPackagePurchase.update({
+          where: { id: purchase.id },
+          data: { status: 'REFUNDED' },
+        });
+      });
+    },
+
     async createSubscriptionOffer(_: unknown, { includedHoursPerMonth, termMonths, monthlyPrice, currency, includedCourseIds }: any, { prisma, user }: GraphQLContext) {
       requireRole(user, 'TEACHER', 'ADMIN');
       if (!isValidSubscriptionTermMonths(termMonths)) {
@@ -152,9 +204,17 @@ export const commerceResolvers = {
       if (!purchase) throw new GraphQLError('Subscription not found.', { extensions: { code: 'NOT_FOUND' } });
       if (purchase.userId !== user.id && user.role !== 'ADMIN') throw new GraphQLError('Access denied.', { extensions: { code: 'FORBIDDEN' } });
       if (purchase.status !== 'ACTIVE') return purchase;
-      // Immediate cancellation, no proration/refund - see the decision
-      // list in apps/api/src/lib/pricing.ts.
-      return prisma.subscriptionPurchase.update({ where: { id }, data: { status: 'CANCELLED', cancelledAt: new Date() } });
+      // Prepaid season cancellation: access remains until the already-paid
+      // term ends, with no prorated refund. A future Stripe Subscription
+      // object should mirror this as cancel_at_period_end=true.
+      return prisma.subscriptionPurchase.update({
+        where: { id },
+        data: {
+          status: 'CANCELLED_AT_PERIOD_END',
+          cancelledAt: new Date(),
+          cancellationEffectiveAt: purchase.endsAt,
+        },
+      });
     },
   },
 
