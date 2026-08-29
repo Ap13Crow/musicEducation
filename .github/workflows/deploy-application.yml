@@ -63,6 +63,8 @@ jobs:
           grep -Fq 'image: mymusiccoach/api:dev' "$RUNNER_TEMP/application.yaml"
           grep -Fq 'image: mymusiccoach/worker:dev' "$RUNNER_TEMP/application.yaml"
           grep -Fq 'kind: Job' "$RUNNER_TEMP/application-database.yaml"
+          grep -Fq '035-booking-cart-entitlements.sql:' "$RUNNER_TEMP/application-database.yaml"
+          grep -Fq 'for migration in /schema/[0-9][0-9][0-9]-*.sql; do' "$RUNNER_TEMP/application-database.yaml"
           if grep -Eq '^[[:space:]]*kind:[[:space:]]+Secret[[:space:]]*$' "$RUNNER_TEMP/application.yaml" "$RUNNER_TEMP/application-database.yaml"; then
             echo 'Rendered manifests must not contain Secret resources.' >&2
             exit 1

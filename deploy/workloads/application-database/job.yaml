@@ -43,40 +43,17 @@ spec:
                 sleep 2
               done
 
-              psql --set=ON_ERROR_STOP=1 --file=/schema/001-identity.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/002-practice.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/003-profile-contract.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/004-native-pillars.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/005-external-events.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/006-community-commerce.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/007-stripe-connect.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/008-teacher-applications.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/009-lesson-content-type.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/010-lesson-quizzes.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/011-xp-awards.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/012-assessment-answer-unique.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/013-assessment-question-seed.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/014-external-event-classification.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/015-teacher-application-address-birthdate.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/016-object-storage-uploads.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/017-teacher-application-richer.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/018-payment-provider-ref-unique.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/019-payment-confirmation-email-marker.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/020-teacher-profile-public-image.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/021-mail-outbox.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/022-teacher-teaching-formats.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/023-calendar-unavailability-appointments-ics.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/024-booking-governance.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/025-lesson-packages-subscriptions.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/026-external-event-engagement.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/027-external-calendar-sync-and-feed-token.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/028-teacher-application-structured-address.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/029-drop-user-credential.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/030-user-status.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/031-teacher-profile-public.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/032-event-mail-outbox.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/033-booking-request-mail.sql
-              psql --set=ON_ERROR_STOP=1 --file=/schema/034-teacher-application-drafts.sql
+              migration_count=0
+              for migration in /schema/[0-9][0-9][0-9]-*.sql; do
+                if [ ! -f "$migration" ]; then
+                  echo 'No numbered application schema migrations were mounted.' >&2
+                  exit 1
+                fi
+                echo "Applying $(basename "$migration")..."
+                psql --set=ON_ERROR_STOP=1 --file="$migration"
+                migration_count=$((migration_count + 1))
+              done
+              echo "Applied $migration_count application schema migrations."
           envFrom:
             - secretRef:
                 name: postgres-mymusiccoach
