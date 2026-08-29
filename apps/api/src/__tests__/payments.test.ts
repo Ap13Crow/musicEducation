@@ -87,7 +87,7 @@ describe('createCheckoutSession Stripe Connect routing', () => {
     process.env.FRONTEND_URL = 'https://mymusic.test';
   });
 
-  it('checks a connected teacher account live and creates a destination charge with payment metadata', async () => {
+  it('checks a connected teacher account live but holds booking revenue on the platform', async () => {
     const startsAt = new Date('2026-09-02T11:00:00.000Z');
     const booking = {
       id: 'booking-1',
@@ -134,14 +134,14 @@ describe('createCheckoutSession Stripe Connect routing', () => {
         stripeConnectedAccountId: 'acct_teacher_123',
       }),
       payment_intent_data: expect.objectContaining({
-        application_fee_amount: 1500,
-        transfer_data: { destination: 'acct_teacher_123' },
         metadata: expect.objectContaining({
           teacherProfileId: 'tp-1',
           stripeConnectedAccountId: 'acct_teacher_123',
         }),
       }),
     }));
+    expect(mockStripeCreateSession.mock.calls[0][0].payment_intent_data).not.toHaveProperty('transfer_data');
+    expect(mockStripeCreateSession.mock.calls[0][0].payment_intent_data).not.toHaveProperty('application_fee_amount');
   });
 });
 

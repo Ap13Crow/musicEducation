@@ -1,4 +1,5 @@
 import { GraphQLError } from 'graphql';
+import Stripe from 'stripe';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
 import { bookingConfirmedEmailContent, bookingCancelledEmailContent, bookingRequestEmailContent } from '../lib/emails.js';
@@ -28,6 +29,56 @@ const TEACHER_FOUND_XP = 30;
 const MAX_CONTIGUOUS_LESSON_DURATION_MINUTES = 4 * LESSON_DURATION_MINUTES;
 
 const PLATFORM_ORGANIZER = { name: 'MyMusic.Coach', email: process.env.SMTP_FROM ?? 'no-reply@mymusic.coach' };
+
+function getStripe(): Stripe {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error('STRIPE_SECRET_KEY environment variable is required but was not set.');
+  }
+  return new Stripe(process.env.STRIPE_SECRET_KEY);
+}
+
+async function refundStripePaymentForBooking(prisma: PrismaClient, bookingId: string): Promise<void> {
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    include: { teacherProfile: true, checkoutOrder: { include: { bookings: true } } },
+  });
+  const payment = booking?.paymentId ? await prisma.payment.findUnique({ where: { id: booking.paymentId } }) : null;
+  if (!booking || !payment || payment.provider !== 'STRIPE' || payment.status === 'REFUNDED') return;
+  if (!payment.providerRef && !payment.providerPaymentIntentId) {
+    throw new GraphQLError('This Stripe payment is missing refund identifiers.', { extensions: { code: 'CONFLICT' } });
+  }
+  let paymentIntentId = payment.providerPaymentIntentId as string | null;
+  if (!paymentIntentId && payment.providerRef) {
+    const session = await getStripe().checkout.sessions.retrieve(payment.providerRef);
+    paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id ?? null;
+  }
+  if (!paymentIntentId) throw new GraphQLError('This Stripe payment could not be refunded automatically.', { extensions: { code: 'CONFLICT' } });
+
+  const order = (booking as any).checkoutOrder;
+  const refundAmountCents = order
+    ? Math.round(Number(booking.teacherProfile.hourlyRate ?? 0) * (booking.durationMin / 60) * 100)
+    : undefined;
+  await getStripe().refunds.create({
+    payment_intent: paymentIntentId,
+    ...(refundAmountCents && refundAmountCents > 0 ? { amount: refundAmountCents } : {}),
+  });
+  const allCancelled = order ? order.bookings.every((item: any) => item.id === bookingId || item.status === 'CANCELLED') : true;
+  await prisma.payment.update({
+    where: { id: payment.id },
+    data: { status: allCancelled ? 'REFUNDED' : 'PARTIALLY_REFUNDED' },
+  });
+  if (order) {
+    await prisma.checkoutOrder.update({
+      where: { id: order.id },
+      data: {
+        status: allCancelled ? 'REFUNDED' : 'PARTIALLY_REFUNDED',
+        teacherTransferStatus: 'REVERSED',
+        refundedAt: new Date(),
+        cancellationReason: 'on_time_booking_cancellation',
+      },
+    });
+  }
+}
 
 function bookingLocation(format: string, meetingUrl: string | null | undefined): string | null {
   if (format === 'ONLINE') return meetingUrl || 'Online';
@@ -248,6 +299,9 @@ export const bookingResolvers = {
         if (!packagePurchase || packagePurchase.userId !== user.id) {
           throw new GraphQLError('Package not found.', { extensions: { code: 'NOT_FOUND' } });
         }
+        if (packagePurchase.status !== 'ACTIVE') {
+          throw new GraphQLError('This package is no longer active.', { extensions: { code: 'CONFLICT' } });
+        }
         if (packagePurchase.teacherProfileId !== teacherProfileId) {
           throw new GraphQLError('This package is not for this teacher.', { extensions: { code: 'BAD_USER_INPUT' } });
         }
@@ -449,6 +503,9 @@ export const bookingResolvers = {
       const lateCancellation = wasConfirmed
         ? isLateCancellation(booking.startsAt, booking.teacherProfile.cancellationDays)
         : null;
+      if (wasConfirmed && lateCancellation === false && booking.paymentId) {
+        await refundStripePaymentForBooking(prisma, bookingId);
+      }
       return prisma.$transaction(async (tx) => {
         const updated = await tx.booking.update({ where: { id: bookingId }, data: { status: 'CANCELLED', lateCancellation } });
         // Package credit: on-time restores the credit the confirmation
@@ -585,6 +642,10 @@ export const bookingResolvers = {
     async payment(booking: any, _: unknown, { prisma }: GraphQLContext) {
       if (!booking.paymentId) return null;
       return prisma.payment.findUnique({ where: { id: booking.paymentId } });
+    },
+    async checkoutOrder(booking: any, _: unknown, { prisma }: GraphQLContext) {
+      if (!booking.checkoutOrderId) return null;
+      return prisma.checkoutOrder.findUnique({ where: { id: booking.checkoutOrderId } });
     },
     async review(booking: any, _: unknown, { prisma }: GraphQLContext) {
       return prisma.review.findUnique({ where: { bookingId: booking.id } });
