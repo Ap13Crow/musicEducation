@@ -93,6 +93,12 @@ spec:
                   name: application-integrations
                   key: TICKETMASTER_API_KEY
                   optional: true
+            - name: CLASSICTIC_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: application-integrations
+                  key: CLASSICTIC_API_TOKEN
+                  optional: true
             # DeepSeek (preferred) / OpenAI fallback for AI-generated assessment
             # reports (see apps/api/src/lib/ai.ts) - absent, aiChat() returns
             # null and callers fall back to deterministic text.

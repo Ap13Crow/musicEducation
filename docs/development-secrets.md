@@ -44,9 +44,10 @@ These are not required for the native Theory, Practice, or Performance workflows
 ### External event discovery
 
 - `TICKETMASTER_API_KEY` (the Discovery API Consumer Key; the Consumer Secret is unused)
+- `CLASSICTIC_API_TOKEN` (Classictic API Web Services affiliate token)
 
-Missing this secret disables Ticketmaster ingestion cleanly — the worker job logs that
-it's skipped and the events page simply shows no external listings.
+Missing these secrets disables the matching provider cleanly — the worker job logs that
+it's skipped and the events page simply shows whichever external listings are available.
 
 ### Google Calendar synchronization
 

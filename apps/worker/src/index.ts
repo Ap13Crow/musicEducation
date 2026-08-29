@@ -68,6 +68,10 @@ async function main() {
   // the five-minute schedule. This makes already-deleted identities disappear
   // from the application user list without waiting for the first cron tick.
   await registry.runNow('keycloak-user-sync');
+  // Also run Classictic once on rollout. Adding the token in GitHub Secrets
+  // should hydrate the public event catalog immediately after deploy, not
+  // wait until the next six-hour cron boundary.
+  await registry.runNow('classictic-ingest');
   logger.info({ jobs: registry.registeredJobKeys }, 'Worker started');
 
   let shuttingDown = false;

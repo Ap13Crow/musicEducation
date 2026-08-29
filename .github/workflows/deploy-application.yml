@@ -8,6 +8,7 @@ on:
       - 'apps/web/**'
       - 'apps/worker/**'
       - 'packages/database/**'
+      - 'packages/external-events/**'
       - 'packages/graphql-schema/**'
       - 'deploy/workloads/application/**'
       - 'deploy/database/identity/**'
@@ -62,6 +63,7 @@ jobs:
           grep -Fq 'image: mymusiccoach/web:dev' "$RUNNER_TEMP/application.yaml"
           grep -Fq 'image: mymusiccoach/api:dev' "$RUNNER_TEMP/application.yaml"
           grep -Fq 'image: mymusiccoach/worker:dev' "$RUNNER_TEMP/application.yaml"
+          grep -Fq 'CLASSICTIC_API_TOKEN' "$RUNNER_TEMP/application.yaml"
           grep -Fq 'kind: Job' "$RUNNER_TEMP/application-database.yaml"
           grep -Fq '035-booking-cart-entitlements.sql:' "$RUNNER_TEMP/application-database.yaml"
           grep -Fq 'for migration in /schema/[0-9][0-9][0-9]-*.sql; do' "$RUNNER_TEMP/application-database.yaml"
@@ -329,6 +331,7 @@ jobs:
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           STRIPE_WEBHOOK_SECRET_V2: ${{ secrets.STRIPE_WEBHOOK_SECRET_V2 }}
           TICKETMASTER_API_KEY: ${{ secrets.TICKETMASTER_API_KEY }}
+          CLASSICTIC_API_TOKEN: ${{ secrets.CLASSICTIC_API_TOKEN }}
           CLASSICTIC_AFFILIATE_ID: ${{ secrets.CLASSICTIC_AFFILIATE_ID }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DEEPSEEK_API_URL: ${{ secrets.DEEPSEEK_API_URL }}
@@ -358,6 +361,7 @@ jobs:
           effective_stripe_webhook_secret="${STRIPE_WEBHOOK_SECRET:-$(existing_value STRIPE_WEBHOOK_SECRET)}"
           effective_stripe_webhook_secret_v2="${STRIPE_WEBHOOK_SECRET_V2:-$(existing_value STRIPE_WEBHOOK_SECRET_V2)}"
           effective_ticketmaster_key="${TICKETMASTER_API_KEY:-$(existing_value TICKETMASTER_API_KEY)}"
+          effective_classictic_api_token="${CLASSICTIC_API_TOKEN:-$(existing_value CLASSICTIC_API_TOKEN)}"
           effective_classictic_affiliate_id="${CLASSICTIC_AFFILIATE_ID:-$(existing_value CLASSICTIC_AFFILIATE_ID)}"
           effective_deepseek_key="${DEEPSEEK_API_KEY:-$(existing_value DEEPSEEK_API_KEY)}"
           effective_deepseek_url="${DEEPSEEK_API_URL:-$(existing_value DEEPSEEK_API_URL)}"
@@ -394,11 +398,16 @@ jobs:
           else
             echo 'Ticketmaster discovery remains disabled because TICKETMASTER_API_KEY is absent.'
           fi
+          if [[ -n "$effective_classictic_api_token" ]]; then
+            args+=(--from-literal=CLASSICTIC_API_TOKEN="$effective_classictic_api_token")
+            echo 'Classictic API token discovery configured.'
+          fi
           if [[ -n "$effective_classictic_affiliate_id" ]]; then
             args+=(--from-literal=CLASSICTIC_AFFILIATE_ID="$effective_classictic_affiliate_id")
-            echo 'Classictic discovery configured.'
-          else
-            echo 'Classictic discovery remains disabled because CLASSICTIC_AFFILIATE_ID is absent.'
+            echo 'Legacy Classictic affiliate widget discovery configured.'
+          fi
+          if [[ -z "$effective_classictic_api_token" && -z "$effective_classictic_affiliate_id" ]]; then
+            echo 'Classictic discovery remains disabled because CLASSICTIC_API_TOKEN is absent.'
           fi
           if [[ -n "$effective_deepseek_key" ]]; then
             args+=(--from-literal=DEEPSEEK_API_KEY="$effective_deepseek_key")
@@ -532,7 +541,7 @@ jobs:
             || true
           echo 'API environment contract (values are not printed):'
           kubectl -n "$NAMESPACE" exec "$db_pod" -- node -e \
-            "for (const key of ['PGHOST','PGPORT','PGDATABASE','PGUSER','PGPASSWORD','PGSSLROOTCERT','KEYCLOAK_ISSUER','KEYCLOAK_CLIENT_ID','DEEPSEEK_API_KEY','DEEPSEEK_API_URL','OPENAI_API_KEY','S3_ENDPOINT','S3_REGION','S3_BUCKET','S3_ACCESS_KEY_ID','S3_SECRET_ACCESS_KEY','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','SMTP_FROM']) console.log(key + '=' + (process.env[key] ? 'configured' : 'missing'))"
+            "for (const key of ['PGHOST','PGPORT','PGDATABASE','PGUSER','PGPASSWORD','PGSSLROOTCERT','KEYCLOAK_ISSUER','KEYCLOAK_CLIENT_ID','CLASSICTIC_API_TOKEN','DEEPSEEK_API_KEY','DEEPSEEK_API_URL','OPENAI_API_KEY','S3_ENDPOINT','S3_REGION','S3_BUCKET','S3_ACCESS_KEY_ID','S3_SECRET_ACCESS_KEY','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','SMTP_FROM']) console.log(key + '=' + (process.env[key] ? 'configured' : 'missing'))"
           echo 'Google Workspace SMTP relay reachability from the worker Pod:'
           worker_pod="$(kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name=worker -o json | jq -r '.items[] | select(.status.phase == "Running") | .metadata.name' | head -n 1)"
           if [[ -z "$worker_pod" ]]; then
@@ -579,10 +588,10 @@ jobs:
             echo 'No running worker Pod was found.' >&2
           else
             kubectl -n "$NAMESPACE" exec "$worker_pod" -- node -e \
-              "console.log('TICKETMASTER_API_KEY=' + (process.env.TICKETMASTER_API_KEY ? 'configured' : 'missing')); console.log('CLASSICTIC_AFFILIATE_ID=' + (process.env.CLASSICTIC_AFFILIATE_ID ? 'configured' : 'missing'))"
-            echo 'Recent worker logs (bearer tokens and apikey query params redacted):'
+              "console.log('TICKETMASTER_API_KEY=' + (process.env.TICKETMASTER_API_KEY ? 'configured' : 'missing')); console.log('CLASSICTIC_API_TOKEN=' + (process.env.CLASSICTIC_API_TOKEN ? 'configured' : 'missing')); console.log('CLASSICTIC_AFFILIATE_ID=' + (process.env.CLASSICTIC_AFFILIATE_ID ? 'configured' : 'missing'))"
+            echo 'Recent worker logs (bearer tokens and provider query params redacted):'
             kubectl -n "$NAMESPACE" logs "$worker_pod" --since=24h --tail=300 \
-              | sed -E 's/Bearer[[:space:]]+[A-Za-z0-9._~-]+/Bearer [REDACTED]/g; s/apikey=[A-Za-z0-9]+/apikey=[REDACTED]/g' \
+              | sed -E 's/Bearer[[:space:]]+[A-Za-z0-9._~-]+/Bearer [REDACTED]/g; s/apikey=[A-Za-z0-9]+/apikey=[REDACTED]/g; s#/api/search/json/[^/]+/#/api/search/json/[REDACTED]/#g; s/affiliate_id=[^&[:space:]]+/affiliate_id=[REDACTED]/g' \
               || true
           fi
           # `kubectl exec` spawns a fresh `node -e` process that only inherits the

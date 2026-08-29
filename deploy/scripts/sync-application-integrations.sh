@@ -29,6 +29,7 @@ stripe_secret_key="$(effective_value STRIPE_SECRET_KEY)"
 stripe_webhook_secret="$(effective_value STRIPE_WEBHOOK_SECRET)"
 stripe_webhook_secret_v2="$(effective_value STRIPE_WEBHOOK_SECRET_V2)"
 ticketmaster_api_key="$(effective_value TICKETMASTER_API_KEY)"
+classictic_api_token="$(effective_value CLASSICTIC_API_TOKEN)"
 classictic_affiliate_id="$(effective_value CLASSICTIC_AFFILIATE_ID)"
 deepseek_api_key="$(effective_value DEEPSEEK_API_KEY)"
 deepseek_api_url="$(effective_value DEEPSEEK_API_URL)"
@@ -54,9 +55,13 @@ if [[ -n "$ticketmaster_api_key" ]]; then
   args+=(--from-literal=TICKETMASTER_API_KEY="$ticketmaster_api_key")
   echo 'Ticketmaster configured.'
 fi
+if [[ -n "$classictic_api_token" ]]; then
+  args+=(--from-literal=CLASSICTIC_API_TOKEN="$classictic_api_token")
+  echo 'Classictic API token configured.'
+fi
 if [[ -n "$classictic_affiliate_id" ]]; then
   args+=(--from-literal=CLASSICTIC_AFFILIATE_ID="$classictic_affiliate_id")
-  echo 'Classictic configured.'
+  echo 'Legacy Classictic affiliate widget configured.'
 fi
 if [[ -n "$deepseek_api_key" ]]; then
   args+=(--from-literal=DEEPSEEK_API_KEY="$deepseek_api_key")
@@ -95,7 +100,7 @@ kubectl -n "$NAMESPACE" create secret generic "$SECRET_NAME" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 unset existing_json stripe_secret_key stripe_webhook_secret stripe_webhook_secret_v2
-unset ticketmaster_api_key classictic_affiliate_id deepseek_api_key deepseek_api_url
+unset ticketmaster_api_key classictic_api_token classictic_affiliate_id deepseek_api_key deepseek_api_url
 unset openai_api_key s3_endpoint s3_region s3_bucket s3_access_key_id
 unset s3_secret_access_key smtp_password args
 echo "Synchronized $SECRET_NAME without printing secret values."

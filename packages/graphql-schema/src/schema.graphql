@@ -1127,6 +1127,27 @@ type AdminStats {
   totalRevenue: Float!
 }
 
+type ExternalEventProviderStatus {
+  provider: ExternalEventProvider!
+  configured: Boolean!
+  enabled: Boolean!
+  totalEvents: Int!
+  activeEvents: Int!
+  lastFetchedAt: DateTime
+  source: String!
+}
+
+type ExternalEventIngestResult {
+  provider: ExternalEventProvider!
+  configured: Boolean!
+  enabled: Boolean!
+  source: String!
+  fetched: Int!
+  upserted: Int!
+  withdrawn: Int!
+  message: String!
+}
+
 # Public headline counters for the homepage - unlike AdminStats, scoped to
 # what's actually live/visible (published courses, upcoming events) rather
 # than raw row counts, and open to signed-out visitors.
@@ -1508,6 +1529,9 @@ type Query {
   # non-empty DEAD_LETTER filter is the "notifications are silently
   # failing" signal this exists for.
   mailOutbox(status: MailOutboxStatus, limit: Int): [MailOutboxMessage!]!
+  # ADMIN-only integration view used by the admin dashboard to show whether
+  # event provider credentials reached the running API/worker environment.
+  externalEventProviderStatus(provider: ExternalEventProvider!): ExternalEventProviderStatus!
 
   # Object storage - false when S3_* isn't configured, so callers can hide
   # upload UI rather than let requestUploadUrl fail.
@@ -1700,4 +1724,7 @@ type Mutation {
   # tick picks it up. Use once the underlying cause (e.g. SMTP_PASSWORD) is
   # actually fixed; retrying blindly just repeats the same failure.
   retryMailOutboxMessage(id: ID!): MailOutboxMessage!
+  # ADMIN-only manual provider sync. The worker still owns the scheduled
+  # six-hour sync; this is the "pull it now" control for production checks.
+  runExternalEventIngest(provider: ExternalEventProvider!): ExternalEventIngestResult!
 }

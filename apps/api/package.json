@@ -16,6 +16,7 @@
     "@graphql-tools/merge": "^9.0.4",
     "@graphql-tools/schema": "^10.0.5",
     "@my-music-coach/database": "*",
+    "@my-music-coach/external-events": "*",
     "@my-music-coach/graphql-schema": "*",
     "axios": "^1.7.2",
     "cors": "^2.8.5",
