@@ -22,7 +22,7 @@ const GET_PROFILE = gql`
     me {
       id email username displayName role avatarUrl
       profile {
-        bio city country timezone
+        bio city country timezone weeklyDigestEmailEnabled
         instruments musicStyles onboardingDone
       }
       gamification {
@@ -44,7 +44,7 @@ const UPDATE_PROFILE = gql`
     updateProfile(input: $input) {
       id displayName
       profile {
-        bio city country timezone instruments musicStyles
+        bio city country timezone instruments musicStyles weeklyDigestEmailEnabled
       }
     }
   }
@@ -58,6 +58,7 @@ type EditState = {
   timezone: string;
   instruments: string[];
   musicStyles: string;
+  weeklyDigestEmailEnabled: boolean;
 };
 
 const SKILL_LABELS: Record<string, string> = {
@@ -93,7 +94,7 @@ export default function ProfilePage() {
   const [cropZoom, setCropZoom] = useState(1);
   const [edit, setEdit] = useState<EditState>({
     displayName: '', bio: '', city: '', country: '', timezone: 'Europe/Zurich',
-    instruments: [], musicStyles: '',
+    instruments: [], musicStyles: '', weeklyDigestEmailEnabled: true,
   });
 
   const me = data?.me;
@@ -114,6 +115,7 @@ export default function ProfilePage() {
       timezone: me?.profile?.timezone ?? 'Europe/Zurich',
       instruments: me?.profile?.instruments ?? [],
       musicStyles: (me?.profile?.musicStyles ?? []).join(', '),
+      weeklyDigestEmailEnabled: me?.profile?.weeklyDigestEmailEnabled ?? true,
     });
     setEditing(true);
     setSaved(false);
@@ -194,6 +196,7 @@ export default function ProfilePage() {
             timezone: edit.timezone,
             instruments: edit.instruments,
             musicStyles,
+            weeklyDigestEmailEnabled: edit.weeklyDigestEmailEnabled,
           },
         },
       });
@@ -353,6 +356,33 @@ export default function ProfilePage() {
                   value={email} editing={false}
                   editNode={<span className="text-sm text-gray-500">{email}</span>}
                   hint="Managed by your identity provider" />
+
+                <div className="flex items-start gap-3 rounded-lg border border-gray-100 p-3">
+                  <Mail className="mt-0.5 h-4 w-4 text-gray-400" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-700">Weekly learning digest</p>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      XP progress, active courses, lesson counts, event reminders, and recommendations.
+                    </p>
+                  </div>
+                  {editing ? (
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={edit.weeklyDigestEmailEnabled}
+                        onChange={e => setEdit(p => ({ ...p, weeklyDigestEmailEnabled: e.target.checked }))}
+                        className="h-4 w-4 rounded border-gray-300 text-primary-600"
+                      />
+                      Send
+                    </label>
+                  ) : (
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                      me?.profile?.weeklyDigestEmailEnabled === false ? 'bg-gray-100 text-gray-600' : 'bg-green-50 text-green-700'
+                    }`}>
+                      {me?.profile?.weeklyDigestEmailEnabled === false ? 'Off' : 'On'}
+                    </span>
+                  )}
+                </div>
 
                 <Field label="Biography" icon={<Edit3 className="h-4 w-4" />}
                   editing={editing} value={me?.profile?.bio ?? '—'}

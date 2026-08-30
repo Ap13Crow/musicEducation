@@ -1,13 +1,10 @@
 import { requireAuth } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
 import type { GraphQLContext } from '../types.js';
+import { EXTERNAL_EVENT_ATTENDANCE_XP } from '@my-music-coach/external-events';
 
-// Matches the same reason/amount used for a native ticketed event in
-// payments.ts's handleStripeWebhook - one shared "attended and reviewed an
-// event" award regardless of whether the event was native or external.
 // refId is namespaced ("external:<id>") so it can never collide with a
 // native Event.id under the same (userId, reason, refId) idempotency key.
-const EVENT_ATTENDED_XP = 40;
 
 export const reviewResolvers = {
   Query: {
@@ -73,7 +70,7 @@ export const reviewResolvers = {
       // own (userId, reason, refId) uniqueness makes this safe even if the
       // review mutation is somehow retried.
       if (externalEventProjectionId) {
-        await awardXpOnce(prisma, user.id, 'EVENT_ATTENDED', `external:${externalEventProjectionId}`, EVENT_ATTENDED_XP);
+        await awardXpOnce(prisma, user.id, 'EVENT_ATTENDED', `external:${externalEventProjectionId}`, EXTERNAL_EVENT_ATTENDANCE_XP);
         await prisma.externalEventEngagement.update({
           where: { userId_externalEventProjectionId: { userId: user.id, externalEventProjectionId } },
           data: { xpAwardedAt: new Date() },

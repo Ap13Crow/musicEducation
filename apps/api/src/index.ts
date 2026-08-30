@@ -106,14 +106,14 @@ async function main() {
   // body a prior middleware already consumed) - Copilot review finding on
   // PR #53: the original version applied '10mb' globally, widening the
   // blast radius of an oversized-body request against every route.
-  app.use(['/teacher-application', '/teacher/photo'], express.json({ limit: '10mb' }));
+  app.use(['/profile/avatar', '/teacher-application', '/teacher/photo'], express.json({ limit: '10mb' }));
   app.use(express.json({ limit: '1mb' }));
 
   app.post('/profile/avatar', async (req, res) => {
     const auth = await resolveRequestUser(req, prisma);
     if (!auth) return res.status(401).json({ error: 'Authentication required.' });
-    const avatarUrl = typeof req.body?.avatarUrl === 'string' ? req.body.avatarUrl : '';
-    if (!/^data:image\/(?:jpeg|png|webp);base64,/.test(avatarUrl) || avatarUrl.length > 750_000) {
+    const avatarUrl = parseInlineDataUrl(req.body?.avatarUrl, TEACHER_PHOTO_MIME_TYPES, TEACHER_PHOTO_MAX_BYTES);
+    if (!avatarUrl) {
       return res.status(400).json({ error: 'Use a JPEG, PNG, or WebP image smaller than 500 KB.' });
     }
     await prisma.userProfile.upsert({

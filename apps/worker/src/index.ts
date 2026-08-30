@@ -9,6 +9,7 @@ import { eventClassificationJob } from './jobs/event-classification.js';
 import { mailDispatchJob } from './jobs/mail-dispatch.js';
 import { classicticIngestJob } from './jobs/classictic-ingest.js';
 import { keycloakUserSyncJob } from './jobs/keycloak-user-sync.js';
+import { studentWeeklyDigestJob } from './jobs/student-weekly-digest.js';
 
 // Mirrors apps/api's DATABASE_URL construction: the postgres-mymusiccoach
 // Kubernetes Secret provides PG* pieces (via envFrom), not a single DSN.
@@ -42,6 +43,7 @@ registry.register(eventClassificationJob);
 registry.register(mailDispatchJob);
 registry.register(classicticIngestJob);
 registry.register(keycloakUserSyncJob);
+registry.register(studentWeeklyDigestJob);
 
 async function main() {
   const app = express();
@@ -68,10 +70,6 @@ async function main() {
   // the five-minute schedule. This makes already-deleted identities disappear
   // from the application user list without waiting for the first cron tick.
   await registry.runNow('keycloak-user-sync');
-  // Also run Classictic once on rollout. Adding the token in GitHub Secrets
-  // should hydrate the public event catalog immediately after deploy, not
-  // wait until the next six-hour cron boundary.
-  await registry.runNow('classictic-ingest');
   logger.info({ jobs: registry.registeredJobKeys }, 'Worker started');
 
   let shuttingDown = false;

@@ -1,4 +1,5 @@
 import { GraphQLError } from 'graphql';
+import { EXTERNAL_EVENT_ATTENDANCE_XP, externalEventRecommendationScore } from '@my-music-coach/external-events';
 import { requireAuth } from '../middleware/auth.js';
 import type { GraphQLContext } from '../types.js';
 
@@ -67,7 +68,7 @@ export const discoveryResolvers = {
       if (instruments.length === 0 && musicStyles.length === 0) return [];
 
       const safeLimit = Math.max(1, Math.min(limit, 20));
-      return prisma.externalEventProjection.findMany({
+      const candidates = await prisma.externalEventProjection.findMany({
         where: {
           startsAt: { gte: new Date() },
           OR: [{ expiresAt: null }, { expiresAt: { gte: new Date() } }],
@@ -80,9 +81,14 @@ export const discoveryResolvers = {
             },
           ],
         },
-        take: safeLimit,
+        take: Math.min(100, safeLimit * 5),
         orderBy: { startsAt: 'asc' },
       });
+      return candidates
+        .map((event) => ({ event, score: externalEventRecommendationScore(event, profile) ?? 0 }))
+        .sort((a, b) => b.score - a.score || a.event.startsAt.getTime() - b.event.startsAt.getTime())
+        .slice(0, safeLimit)
+        .map((item) => item.event);
     },
 
     async myRecentlyViewedExternalEvents(_: unknown, { limit = 10 }: any, { prisma, user }: GraphQLContext) {
@@ -126,8 +132,43 @@ export const discoveryResolvers = {
       return prisma.externalEventEngagement.upsert({
         where: { userId_externalEventProjectionId: { userId: user.id, externalEventProjectionId: id } },
         create: { userId: user.id, externalEventProjectionId: id, attendanceConfirmedAt: new Date() },
-        update: { attendanceConfirmedAt: new Date() },
+        update: { attendanceConfirmedAt: new Date(), attendanceDeclinedAt: null },
       });
+    },
+
+    // Lets a student clear a post-event reminder when they clicked through
+    // but did not actually attend. Once XP has been awarded, the event is
+    // part of the learning ledger and cannot be reversed from this lightweight
+    // self-service action.
+    async declineExternalEventAttendance(_: unknown, { id }: any, { prisma, user }: GraphQLContext) {
+      requireAuth(user);
+      const projection = await prisma.externalEventProjection.findUnique({ where: { id } });
+      if (!projection) throw new GraphQLError('Event not found.', { extensions: { code: 'NOT_FOUND' } });
+      if (projection.startsAt > new Date()) {
+        throw new GraphQLError('You can decline participation once the event has started.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      const engagement = await prisma.externalEventEngagement.findUnique({
+        where: { userId_externalEventProjectionId: { userId: user.id, externalEventProjectionId: id } },
+      });
+      if (engagement?.xpAwardedAt) {
+        throw new GraphQLError('This event has already been evaluated and credited.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      return prisma.externalEventEngagement.upsert({
+        where: { userId_externalEventProjectionId: { userId: user.id, externalEventProjectionId: id } },
+        create: { userId: user.id, externalEventProjectionId: id, attendanceDeclinedAt: new Date() },
+        update: { attendanceDeclinedAt: new Date(), attendanceConfirmedAt: null },
+      });
+    },
+  },
+
+  ExternalEventProjection: {
+    async recommendationScore(event: any, _: unknown, { prisma, user }: GraphQLContext) {
+      if (!user) return null;
+      const profile = await prisma.userProfile.findUnique({ where: { userId: user.id } });
+      return externalEventRecommendationScore(event, profile);
+    },
+    attendanceXp() {
+      return EXTERNAL_EVENT_ATTENDANCE_XP;
     },
   },
 

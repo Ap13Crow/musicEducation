@@ -1,4 +1,5 @@
 import { ClassicticAdapter, normalizeEvent, isSafeClassicticUrl } from '../discovery/classictic.js';
+import { classicticIngestJob } from '../jobs/classictic-ingest.js';
 
 // Sanitized fixture matching the real shape returned by Classictic's
 // official affiliate "event list widget" (?format=json) - recorded during
@@ -322,5 +323,11 @@ describe('ClassicticAdapter', () => {
       endDateTime: new Date('2027-02-25T00:00:00Z'),
       size: 50,
     })).rejects.toThrow('Sample keys: unexpected_id, unexpected_date');
+  });
+});
+
+describe('classicticIngestJob', () => {
+  it('runs once daily to stay within Classictic paging/rate limits', () => {
+    expect(classicticIngestJob.schedule).toBe('15 2 * * *');
   });
 });

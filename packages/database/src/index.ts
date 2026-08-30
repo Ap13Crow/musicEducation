@@ -16,6 +16,7 @@ export type {
   Assessment,
   AssessmentQuestion,
   AssessmentAnswer,
+  StudentWeeklyDigestDelivery,
   Booking,
   Event,
   EventBooking,

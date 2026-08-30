@@ -242,7 +242,7 @@ export const userResolvers = {
   Mutation: {
     async updateProfile(_: unknown, { input }: any, { prisma, user }: GraphQLContext) {
       requireAuth(user);
-      const { displayName, bio, city, country, timezone, instruments, musicStyles, notificationEmail } = input;
+      const { displayName, bio, city, country, timezone, instruments, musicStyles, notificationEmail, weeklyDigestEmailEnabled } = input;
       // Empty string clears a previously-set value; anything else must be a
       // real email - this feeds straight into an SMTP "to" address
       // (mailOutbox.ts's recipientAddresses), so a typo here would silently
@@ -267,8 +267,9 @@ export const userResolvers = {
                 instruments: instruments ?? [],
                 musicStyles: musicStyles ?? [],
                 notificationEmail: normalizedNotificationEmail,
+                weeklyDigestEmailEnabled: weeklyDigestEmailEnabled ?? true,
               },
-              update: { displayName, bio, city, country, timezone, instruments, musicStyles, notificationEmail: normalizedNotificationEmail },
+              update: { displayName, bio, city, country, timezone, instruments, musicStyles, notificationEmail: normalizedNotificationEmail, weeklyDigestEmailEnabled },
             },
           },
         },

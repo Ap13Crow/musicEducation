@@ -121,7 +121,11 @@ export async function runClassicticIngest(prisma: PrismaClient, logger?: IngestL
     }
   }
 
-  const withdrawn = events.length > 0 ? await markMissingAsWithdrawn(prisma, seenProviderIds, new Date()) : 0;
+  const reachedResultCap = events.length >= TOTAL_RANGE;
+  // A capped Classictic response is only a partial view of the provider's
+  // catalog. Do not expire rows missing from a partial page; the provider
+  // may simply have returned the first 1000 upcoming listings.
+  const withdrawn = events.length > 0 && !reachedResultCap ? await markMissingAsWithdrawn(prisma, seenProviderIds, new Date()) : 0;
   return {
     provider: 'CLASSICTIC',
     configured: true,
@@ -130,6 +134,8 @@ export async function runClassicticIngest(prisma: PrismaClient, logger?: IngestL
     fetched: events.length,
     upserted,
     withdrawn,
-    message: `Classictic ${source} ingest completed.`,
+    message: reachedResultCap
+      ? `Classictic ${source} ingest completed at the ${TOTAL_RANGE}-event result cap; withdrawal skipped.`
+      : `Classictic ${source} ingest completed.`,
   };
 }

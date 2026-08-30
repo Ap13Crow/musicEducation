@@ -16,10 +16,10 @@ const SKILL_LEVEL_VOCAB = ['BEGINNER', 'ELEMENTARY', 'INTERMEDIATE', 'ADVANCED',
 // with when instrument/style signals are thin in a single listing.
 const BATCH_SIZE = 10;
 // Cap on unclassified rows processed per run (a handful of batches) so one
-// cron tick has a bounded, predictable duration; the rest pick up next run -
-// classifiedAt is per-row, so this backfills gradually without ever
-// reprocessing an already-classified row.
-const MAX_ROWS_PER_RUN = 100;
+// cron tick has a bounded, predictable duration; the rest pick up next run.
+// Classictic can add up to 1000 rows in one daily ingest, so four six-hourly
+// classifier ticks can now keep pace without making one run enormous.
+const MAX_ROWS_PER_RUN = 250;
 
 interface ClassificationResult {
   instruments: string[];

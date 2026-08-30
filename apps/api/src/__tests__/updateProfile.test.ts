@@ -80,4 +80,29 @@ describe('updateProfile - notificationEmail', () => {
     const call = update.mock.calls[0][0];
     expect(call.data.profile.upsert.update.notificationEmail).toBeUndefined();
   });
+
+  it('persists the weekly digest opt-out while preserving omission as no-op', async () => {
+    const update = jest.fn().mockResolvedValue({ profile: { displayName: 'Ada', bio: null, instruments: [] } });
+    const prisma = fakePrisma({ user: { update } });
+
+    await userResolvers.Mutation.updateProfile(
+      null,
+      { input: { weeklyDigestEmailEnabled: false } },
+      { prisma, user: studentUser } as any,
+    );
+
+    let call = update.mock.calls[0][0];
+    expect(call.data.profile.upsert.update.weeklyDigestEmailEnabled).toBe(false);
+    expect(call.data.profile.upsert.create.weeklyDigestEmailEnabled).toBe(false);
+
+    update.mockClear();
+    await userResolvers.Mutation.updateProfile(
+      null,
+      { input: { displayName: 'Ada' } },
+      { prisma, user: studentUser } as any,
+    );
+
+    call = update.mock.calls[0][0];
+    expect(call.data.profile.upsert.update.weeklyDigestEmailEnabled).toBeUndefined();
+  });
 });

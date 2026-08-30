@@ -209,6 +209,9 @@ type UserProfile {
   # confirmations/cancellations) alongside the account/login email - see
   # apps/api/src/lib/mailOutbox.ts's recipientAddresses.
   notificationEmail: String
+  # Weekly learning digest opt-in. Defaults to true, but the student can
+  # turn it off from Profile.
+  weeklyDigestEmailEnabled: Boolean!
 }
 
 type TeacherProfile {
@@ -870,6 +873,12 @@ type ExternalEventProjection {
   musicStyles: [String!]!
   skillLevels: [String!]!
   classifiedAt: DateTime
+  # Viewer-specific 1-10 match score, based on profile interests and the
+  # DeepSeek-classified event tags. Null for guests or profiles without
+  # enough interests to score.
+  recommendationScore: Int
+  # XP credited after the user confirms attendance and evaluates the event.
+  attendanceXp: Int!
 }
 
 type ExternalEventConnection {
@@ -1069,6 +1078,7 @@ type ExternalEventEngagement {
   firstViewedAt: DateTime!
   lastViewedAt: DateTime!
   attendanceConfirmedAt: DateTime
+  attendanceDeclinedAt: DateTime
   xpAwardedAt: DateTime
 }
 
@@ -1093,10 +1103,12 @@ enum MailOutboxStatus {
 }
 
 enum MailOutboxKind {
+  BOOKING_REQUEST
   BOOKING_CONFIRMATION
   BOOKING_CANCELLED
   EVENT_CONFIRMATION
   EVENT_CANCELLED
+  STUDENT_WEEKLY_DIGEST
 }
 
 # A queued/delivered/failed transactional-email attempt (see
@@ -1170,6 +1182,7 @@ input UpdateProfileInput {
   musicStyles: [String!]
   # Pass an empty string to clear a previously-set notification email.
   notificationEmail: String
+  weeklyDigestEmailEnabled: Boolean
 }
 
 input ApplyAsTeacherInput {
@@ -1684,6 +1697,7 @@ type Mutation {
   # evaluate via createReview -> XP credited). See discovery.ts.
   recordExternalEventView(id: ID!): ExternalEventEngagement!
   confirmExternalEventAttendance(id: ID!): ExternalEventEngagement!
+  declineExternalEventAttendance(id: ID!): ExternalEventEngagement!
 
   # Payments
   # type also accepts "package" and "subscription" (refId = the offer id) -
