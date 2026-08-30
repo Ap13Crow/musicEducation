@@ -29,7 +29,7 @@ const GET_EVENTS = gql`
       nodes {
         id provider title url imageUrl startsAt venueName city country
         minPrice maxPrice currency classifications attribution
-        instruments musicStyles skillLevels
+        instruments musicStyles skillLevels recommendationScore attendanceXp
       }
     }
   }
@@ -40,7 +40,7 @@ const GET_RECOMMENDED = gql`
     recommendedExternalEvents(limit: 4) {
       id provider title url imageUrl startsAt venueName city country
       minPrice maxPrice currency classifications attribution
-      instruments musicStyles skillLevels
+      instruments musicStyles skillLevels recommendationScore attendanceXp
     }
   }
 `;
@@ -127,6 +127,18 @@ function ExternalEventCard({ ext, onView }: { ext: any; onView?: (id: string) =>
         <span className="mb-1 inline-block w-fit rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
           via {PROVIDER_LABELS[ext.provider] ?? ext.provider}
         </span>
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {typeof ext.recommendationScore === 'number' && (
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
+              {ext.recommendationScore}/10 match
+            </span>
+          )}
+          {typeof ext.attendanceXp === 'number' && (
+            <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs font-semibold text-primary-700">
+              +{ext.attendanceXp} XP after evaluation
+            </span>
+          )}
+        </div>
         <h3 className="font-semibold leading-snug">{ext.title}</h3>
         <p className="mt-1 text-sm text-gray-600">
           {[ext.city ?? ext.venueName, formatDate(ext.startsAt)].filter(Boolean).join(' · ')}

@@ -525,7 +525,7 @@ function ExternalEventsCard() {
             <Calendar className="h-4 w-4 text-amber-600" /> Classictic discovery
           </h3>
           <p className="mt-1 text-sm text-gray-600">
-            Pull affiliate event listings into the public Events page. The worker also syncs this automatically every six hours.
+            Pull affiliate event listings into the public Events page. The worker also syncs this automatically once a day.
           </p>
         </div>
         <button

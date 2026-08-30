@@ -3,10 +3,10 @@ import type { Job } from './types.js';
 
 export const classicticIngestJob: Job = {
   key: 'classictic-ingest',
-  // Every 6 hours, same cadence as ticketmaster-ingest. The official
-  // Classictic API is paginated at 50 rows/page, so the shared runner keeps
-  // each sync bounded and idempotent.
-  schedule: '0 */6 * * *',
+  // Daily: Classictic caps the useful search window around 1000 results per
+  // pull, so this behaves like a rolling "new/changed events" refresh instead
+  // of hammering the same capped page four times a day.
+  schedule: '15 2 * * *',
   async run(ctx) {
     if (!isClassicticConfigured()) {
       ctx.logger.info('CLASSICTIC_API_TOKEN not configured; classictic-ingest is disabled.');

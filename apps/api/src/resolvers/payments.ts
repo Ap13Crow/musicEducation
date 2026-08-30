@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
 import { GraphQLError } from 'graphql';
+import { EXTERNAL_EVENT_ATTENDANCE_XP } from '@my-music-coach/external-events';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { awardXpOnce } from './xp.js';
 import { sendPurchaseConfirmedEmail } from '../lib/emails.js';
@@ -16,8 +17,6 @@ import {
 } from '../lib/pricing.js';
 import { grantCredits } from '../lib/lessonCredits.js';
 import type { GraphQLContext } from '../types.js';
-
-const EVENT_ATTENDED_XP = 40;
 
 // No explicit apiVersion - the SDK pins and sends its own default (the
 // installed stripe package version determines it), per the integration
@@ -333,7 +332,7 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
       });
       // Mirrors the free-event award in events.ts bookEvent - refId=eventId
       // keeps it one-time even if Stripe retries this webhook.
-      await awardXpOnce(prisma, userId!, 'EVENT_ATTENDED', refId!, EVENT_ATTENDED_XP);
+      await awardXpOnce(prisma, userId!, 'EVENT_ATTENDED', refId!, EXTERNAL_EVENT_ATTENDANCE_XP);
     } else if (type === 'package') {
       const meta = session.metadata ?? {};
       // create() (not update, unlike the booking branch above) - a package

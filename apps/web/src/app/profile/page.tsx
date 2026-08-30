@@ -10,6 +10,7 @@ import {
   Ticket, Copy, RefreshCw,
 } from 'lucide-react';
 import { externalLinks, keycloakAccountUrl, keycloakAdminUrl, keycloakSigningInUrl } from '@/lib/external-links';
+import { resizeImageToDataUrl } from '@/lib/upload';
 
 const INSTRUMENTS = [
   'Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute',
@@ -23,7 +24,7 @@ const GET_PROFILE = gql`
       id email username displayName role avatarUrl
       profile {
         bio city country timezone notificationEmail
-        instruments musicStyles onboardingDone
+        instruments musicStyles onboardingDone weeklyDigestEmailEnabled
       }
       teacherProfile {
         headline teachingBio hourlyRate currency
@@ -65,7 +66,7 @@ const UPDATE_PROFILE = gql`
     updateProfile(input: $input) {
       id displayName
       profile {
-        bio city country timezone instruments musicStyles notificationEmail
+        bio city country timezone instruments musicStyles notificationEmail weeklyDigestEmailEnabled
       }
     }
   }
@@ -102,9 +103,10 @@ const GET_RECENTLY_VIEWED_EVENTS = gql`
       id
       lastViewedAt
       attendanceConfirmedAt
+      attendanceDeclinedAt
       xpAwardedAt
       externalEventProjection {
-        id title url provider startsAt venueName city
+        id title url provider startsAt venueName city recommendationScore attendanceXp
       }
     }
   }
@@ -130,6 +132,17 @@ const CONFIRM_EXTERNAL_EVENT_ATTENDANCE = gql`
     confirmExternalEventAttendance(id: $id) {
       id
       attendanceConfirmedAt
+      attendanceDeclinedAt
+    }
+  }
+`;
+
+const DECLINE_EXTERNAL_EVENT_ATTENDANCE = gql`
+  mutation DeclineExternalEventAttendance($id: ID!) {
+    declineExternalEventAttendance(id: $id) {
+      id
+      attendanceDeclinedAt
+      attendanceConfirmedAt
     }
   }
 `;
@@ -151,6 +164,7 @@ type EditState = {
   instruments: string[];
   musicStyles: string;
   notificationEmail: string;
+  weeklyDigestEmailEnabled: boolean;
 };
 
 const SKILL_LABELS: Record<string, string> = {
@@ -183,6 +197,7 @@ export default function ProfilePage() {
     { skip: !liveApiEnabled, fetchPolicy: 'network-only' },
   );
   const [confirmAttendance, { loading: confirming }] = useMutation(CONFIRM_EXTERNAL_EVENT_ATTENDANCE);
+  const [declineAttendance, { loading: declining }] = useMutation(DECLINE_EXTERNAL_EVENT_ATTENDANCE);
   const [evaluateEvent, { loading: evaluating }] = useMutation(EVALUATE_EXTERNAL_EVENT);
   const [cancelBooking, { loading: cancelling }] = useMutation(CANCEL_BOOKING);
   const [cancelSubscription, { loading: cancellingSubscription }] = useMutation(CANCEL_SUBSCRIPTION);
@@ -202,7 +217,7 @@ export default function ProfilePage() {
   const [photoError, setPhotoError] = useState('');
   const [edit, setEdit] = useState<EditState>({
     displayName: '', bio: '', city: '', country: '', timezone: 'Europe/Zurich',
-    instruments: [], musicStyles: '', notificationEmail: '',
+    instruments: [], musicStyles: '', notificationEmail: '', weeklyDigestEmailEnabled: true,
   });
   // Which recently-viewed event currently has its evaluation form open, and
   // the in-progress rating/comment for it - keyed by the external event's
@@ -212,6 +227,7 @@ export default function ProfilePage() {
   const [evaluationRating, setEvaluationRating] = useState(5);
   const [evaluationComment, setEvaluationComment] = useState('');
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [decliningId, setDecliningId] = useState<string | null>(null);
   const [engagementError, setEngagementError] = useState('');
 
   const me = data?.me;
@@ -246,6 +262,7 @@ export default function ProfilePage() {
       instruments: me?.profile?.instruments ?? [],
       musicStyles: (me?.profile?.musicStyles ?? []).join(', '),
       notificationEmail: me?.profile?.notificationEmail ?? '',
+      weeklyDigestEmailEnabled: me?.profile?.weeklyDigestEmailEnabled ?? true,
     });
     setEditing(true);
     setSaved(false);
@@ -254,18 +271,13 @@ export default function ProfilePage() {
   async function uploadPhoto(file?: File) {
     if (!file) return;
     setPhotoError('');
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 500_000) {
-      setPhotoError('Choose a JPEG, PNG, or WebP image smaller than 500 KB.');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setPhotoError('Choose a JPEG, PNG, or WebP image.');
       return;
     }
     setUploadingPhoto(true);
     try {
-      const avatarUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(new Error('Could not read the image.'));
-        reader.readAsDataURL(file);
-      });
+      const avatarUrl = await resizeImageToDataUrl(file);
       const response = await fetch('/api/profile/avatar', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -346,6 +358,7 @@ export default function ProfilePage() {
             instruments: edit.instruments,
             musicStyles,
             notificationEmail: edit.notificationEmail.trim(),
+            weeklyDigestEmailEnabled: edit.weeklyDigestEmailEnabled,
           },
         },
       });
@@ -395,6 +408,19 @@ export default function ProfilePage() {
       setEngagementError(error instanceof Error ? error.message : 'Could not confirm attendance.');
     } finally {
       setConfirmingId(null);
+    }
+  }
+
+  async function handleDeclineAttendance(externalEventProjectionId: string) {
+    setEngagementError('');
+    setDecliningId(externalEventProjectionId);
+    try {
+      await declineAttendance({ variables: { id: externalEventProjectionId } });
+      await refetchRecentlyViewed();
+    } catch (error) {
+      setEngagementError(error instanceof Error ? error.message : 'Could not decline participation.');
+    } finally {
+      setDecliningId(null);
     }
   }
 
@@ -547,6 +573,33 @@ export default function ProfilePage() {
                       onChange={e => setEdit(p => ({ ...p, notificationEmail: e.target.value }))} />
                   }
                   hint="Also gets a copy of booking confirmations, cancellations, and calendar invites" />
+
+                <div className="flex items-start gap-3 rounded-lg border border-gray-100 p-3">
+                  <Mail className="mt-0.5 h-4 w-4 text-gray-400" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-700">Weekly learning digest</p>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      XP progress, active courses, lesson counts, event reminders, and recommended teachers/events.
+                    </p>
+                  </div>
+                  {editing ? (
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={edit.weeklyDigestEmailEnabled}
+                        onChange={e => setEdit(p => ({ ...p, weeklyDigestEmailEnabled: e.target.checked }))}
+                        className="h-4 w-4 rounded border-gray-300 text-primary-600"
+                      />
+                      Send
+                    </label>
+                  ) : (
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                      me?.profile?.weeklyDigestEmailEnabled === false ? 'bg-gray-100 text-gray-600' : 'bg-green-50 text-green-700'
+                    }`}>
+                      {me?.profile?.weeklyDigestEmailEnabled === false ? 'Off' : 'On'}
+                    </span>
+                  )}
+                </div>
 
                 <Field label="Biography" icon={<Edit3 className="h-4 w-4" />}
                   editing={editing} value={me?.profile?.bio ?? '—'}
@@ -850,12 +903,15 @@ export default function ProfilePage() {
                               </a>
                               <p className="mt-0.5 truncate text-xs text-gray-500">
                                 {[ev.city ?? ev.venueName, new Date(ev.startsAt).toLocaleDateString(undefined, { dateStyle: 'medium' })].filter(Boolean).join(' · ')}
+                                {typeof ev.recommendationScore === 'number' ? ` · ${ev.recommendationScore}/10 match` : ''}
                               </p>
                             </div>
                             {engagement.xpAwardedAt ? (
                               <span className="flex shrink-0 items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
-                                <CheckCircle className="h-3 w-3" /> Evaluated · +40 XP
+                                <CheckCircle className="h-3 w-3" /> Evaluated · +{ev.attendanceXp ?? 40} XP
                               </span>
+                            ) : engagement.attendanceDeclinedAt ? (
+                              <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-500">Declined</span>
                             ) : engagement.attendanceConfirmedAt ? (
                               <button
                                 onClick={() => startEvaluation(ev.id)}
@@ -864,13 +920,22 @@ export default function ProfilePage() {
                                 Evaluate
                               </button>
                             ) : hasStarted ? (
-                              <button
-                                onClick={() => handleConfirmAttendance(ev.id)}
-                                disabled={confirming && confirmingId === ev.id}
-                                className="shrink-0 rounded-full border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                              >
-                                {confirming && confirmingId === ev.id ? 'Confirming…' : 'Confirm participation'}
-                              </button>
+                              <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                                <button
+                                  onClick={() => handleConfirmAttendance(ev.id)}
+                                  disabled={confirming && confirmingId === ev.id}
+                                  className="rounded-full border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                                >
+                                  {confirming && confirmingId === ev.id ? 'Confirming…' : 'Confirm'}
+                                </button>
+                                <button
+                                  onClick={() => handleDeclineAttendance(ev.id)}
+                                  disabled={declining && decliningId === ev.id}
+                                  className="rounded-full border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-60"
+                                >
+                                  {declining && decliningId === ev.id ? 'Saving…' : 'Did not attend'}
+                                </button>
+                              </div>
                             ) : (
                               <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-500">Visited</span>
                             )}

@@ -199,6 +199,7 @@ model User {
   subscriptionPurchases  SubscriptionPurchase[]
   externalEventEngagements ExternalEventEngagement[]
   externalCalendarConnections ExternalCalendarConnection[]
+  weeklyDigestDeliveries StudentWeeklyDigestDelivery[]
 }
 
 model UserProfile {
@@ -211,6 +212,9 @@ model UserProfile {
   // etc.), distinct from the account/login email (User.email). Outbox
   // recipients are the unique set of both when both are present.
   notificationEmail String?
+  // Engagement newsletter preference. True by default because the digest is
+  // part of the learning loop, but every student can opt out from Profile.
+  weeklyDigestEmailEnabled Boolean @default(true)
   instruments    String[]
   musicStyles    String[]
   skillLevel     SkillLevel @default(BEGINNER)
@@ -1224,6 +1228,7 @@ enum MailOutboxKind {
   BOOKING_CANCELLED
   EVENT_CONFIRMATION
   EVENT_CANCELLED
+  STUDENT_WEEKLY_DIGEST
 }
 
 // Durable transactional-email outbox (see 021-mail-outbox.sql). A booking
@@ -1416,6 +1421,7 @@ model ExternalEventEngagement {
   // confirmExternalEventAttendance) - self-reported, same trust level as
   // any other attendance confirmation without a scanned ticket.
   attendanceConfirmedAt     DateTime?
+  attendanceDeclinedAt      DateTime?
   xpAwardedAt               DateTime?
 
   user                    User                    @relation(fields: [userId], references: [id])
@@ -1423,4 +1429,21 @@ model ExternalEventEngagement {
 
   @@unique([userId, externalEventProjectionId])
   @@index([userId, lastViewedAt])
+}
+
+// One delivery marker per user/week for the engagement newsletter. The
+// worker creates this in the same transaction as the outbox message so a
+// retry or restart cannot enqueue the same week's digest twice.
+model StudentWeeklyDigestDelivery {
+  id               String   @id @default(cuid())
+  userId           String
+  weekStart        DateTime
+  weekEnd          DateTime
+  mailOutboxMessageId String?
+  createdAt        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
+  @@index([weekStart])
 }
