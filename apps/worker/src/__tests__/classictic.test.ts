@@ -38,6 +38,39 @@ const API_EVENT = {
   genre: [{ name: 'Classical Concert' }],
 };
 
+const LIVE_API_EVENT = {
+  id: 2037569,
+  name: 'Piano concert in Salzburg',
+  description: 'Immerse yourself in famous piano works from the Baroque era and popular compositions by Mozart.',
+  link: 'https://www.classictic.com/en/city/salzburg-t5/piano-concert-in-salzburg/14251/?e=2037569&r=1431005',
+  available: {
+    status: 1,
+    message: 'Ticket sales ends Aug 30 2026, 15:00',
+  },
+  location: {
+    country: 'Austria',
+    city: 'Salzburg',
+    venue: 'Radisson Blu Altstadt Hotel',
+    venue_hall: 'Main Hall',
+    postcode: 5020,
+    street: 'Rudolfskai 28',
+  },
+  start: {
+    iso: '2026-08-30T15:00:00+02:00',
+    date: '2026-08-30',
+    time: '15:00',
+  },
+  admission: {
+    iso: '2026-08-30T14:30:00+02:00',
+    date: '2026-08-30',
+    time: '14:30',
+  },
+  picture: {
+    medium: 'https://www.classictic.com/pictures/20/78/207862/977095-test_20210820114209-00d3515f.png',
+    large: 'https://www.classictic.com/pictures/20/78/207862/977092-test_20210820114209-00d3515f.png',
+  },
+};
+
 describe('normalizeEvent', () => {
   const fetchedAt = new Date('2026-08-18T00:00:00Z');
 
@@ -99,6 +132,21 @@ describe('normalizeEvent', () => {
       classifications: ['Classical Concert'],
     });
     expect(result?.startsAt.toISOString()).toBe('2026-12-31T18:45:00.000Z');
+  });
+
+  it('normalizes the live Classictic search row shape', () => {
+    const result = normalizeEvent(LIVE_API_EVENT, fetchedAt);
+    expect(result).toMatchObject({
+      provider: 'CLASSICTIC',
+      providerId: '2037569',
+      title: 'Piano concert in Salzburg',
+      url: 'https://www.classictic.com/en/city/salzburg-t5/piano-concert-in-salzburg/14251/?e=2037569&r=1431005',
+      imageUrl: 'https://www.classictic.com/pictures/20/78/207862/977092-test_20210820114209-00d3515f.png',
+      venueName: 'Radisson Blu Altstadt Hotel',
+      city: 'Salzburg',
+      country: 'Austria',
+    });
+    expect(result?.startsAt.toISOString()).toBe('2026-08-30T13:00:00.000Z');
   });
 
   it('sanitizes an unsafe outbound link by using a token-free Classictic event URL', () => {
@@ -178,7 +226,7 @@ describe('ClassicticAdapter', () => {
     delete process.env.CLASSICTIC_AFFILIATE_ID;
     fetchSpy.mockResolvedValue({
       ok: true,
-      json: async () => ({ events: [API_EVENT] }),
+      json: async () => ({ event_dates: [API_EVENT] }),
     } as Response);
 
     const results = await new ClassicticAdapter().search({
@@ -195,5 +243,84 @@ describe('ClassicticAdapter', () => {
     expect(requestUrl).toContain('until_timestamp=');
     expect(requestUrl).toContain('page=1');
     expect(requestUrl).toContain('range=50');
+  });
+
+  it('extracts live Classictic search arrays during API search', async () => {
+    process.env.CLASSICTIC_API_TOKEN = 'test-token';
+    delete process.env.CLASSICTIC_AFFILIATE_ID;
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        search: [LIVE_API_EVENT],
+        pagination_items_total: 20347,
+      }),
+    } as Response);
+
+    const results = await new ClassicticAdapter().search({
+      countryCode: '',
+      startDateTime: new Date('2026-08-29T00:00:00Z'),
+      endDateTime: new Date('2027-02-25T00:00:00Z'),
+      size: 50,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      providerId: '2037569',
+      title: 'Piano concert in Salzburg',
+      city: 'Salzburg',
+    });
+  });
+
+  it('falls back to country-filtered API searches when the global search returns no rows', async () => {
+    process.env.CLASSICTIC_API_TOKEN = 'test-token';
+    delete process.env.CLASSICTIC_AFFILIATE_ID;
+    fetchSpy
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ event_dates: [] }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ countries: [{ country_id: 1, name: 'Austria' }] }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ event_dates: [API_EVENT] }),
+      } as Response);
+
+    const results = await new ClassicticAdapter().search({
+      countryCode: '',
+      startDateTime: new Date('2026-08-29T00:00:00Z'),
+      endDateTime: new Date('2027-02-25T00:00:00Z'),
+      size: 50,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('/en/api/search/json/test-token/');
+    expect(String(fetchSpy.mock.calls[1][0])).toContain('/en/api/country/json/test-token/');
+    const countrySearchUrl = String(fetchSpy.mock.calls[2][0]);
+    expect(countrySearchUrl).toContain('/en/api/search/json/test-token/');
+    expect(countrySearchUrl).toContain('country_id=1');
+  });
+
+  it('surfaces raw Classictic keys when the API returns rows that cannot be normalized', async () => {
+    process.env.CLASSICTIC_API_TOKEN = 'test-token';
+    delete process.env.CLASSICTIC_AFFILIATE_ID;
+    fetchSpy
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ event_dates: [{ unexpected_id: 'x', unexpected_date: '2026-09-01' }] }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ countries: [] }),
+      } as Response);
+
+    await expect(new ClassicticAdapter().search({
+      countryCode: '',
+      startDateTime: new Date('2026-08-29T00:00:00Z'),
+      endDateTime: new Date('2027-02-25T00:00:00Z'),
+      size: 50,
+    })).rejects.toThrow('Sample keys: unexpected_id, unexpected_date');
   });
 });
