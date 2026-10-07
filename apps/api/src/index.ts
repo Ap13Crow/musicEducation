@@ -15,6 +15,8 @@ import { createLoaders } from './lib/loaders.js';
 import { handleStripeWebhook, handleStripeV2Webhook } from './resolvers/payments.js';
 import { buildUserCalendarFeed } from './lib/calendarFeed.js';
 import { fetchScoreBytes, isAllowedScoreSource } from './lib/openscore.js';
+import { getLibraryAudioTrack, getLibraryManifest, getLibraryPageImage, sendWithRange } from './lib/libraryMedia.js';
+import { bnfLibraryMediaEnabled } from '@my-music-coach/bnf-gallica';
 import type { GraphQLContext } from './types.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -362,6 +364,71 @@ async function main() {
     } catch (error) {
       logger.error({ error, id: req.params.id }, 'Library score fetch failed');
       return res.status(502).send('Score temporarily unavailable');
+    }
+  });
+
+  // Gallica scans/recordings for the public Library viewer - see
+  // lib/libraryMedia.ts. 404 (not 403) when the feature is off, so the URLs
+  // simply don't exist until bnfLibraryMediaEnabled().
+  async function findBnfMediaItem(id: string) {
+    if (!bnfLibraryMediaEnabled()) return null;
+    const item = await prisma.libraryItem.findUnique({ where: { id }, select: { source: true, ark: true, category: true, hiddenAt: true } });
+    if (!item || item.hiddenAt || item.source !== 'BNF' || !/^[a-z0-9]+$/i.test(item.ark)) return null;
+    return item;
+  }
+
+  app.get('/library/items/:id/pages.json', async (req, res) => {
+    try {
+      const item = await findBnfMediaItem(req.params.id);
+      if (!item) return res.status(404).send('Not found');
+      const manifest = await getLibraryManifest(item.ark);
+      const base = `/api/library/items/${req.params.id}`;
+      res.setHeader('cache-control', 'public, max-age=3600');
+      return res.json({
+        title: manifest.title,
+        permalink: manifest.permalink,
+        pages: manifest.pages.map((page) => ({
+          pageNumber: page.pageNumber,
+          label: page.label ?? null,
+          imageUrl: `${base}/pages/${page.pageNumber}.jpg`,
+          audioUrl: item.category === 'AUDIO_RECORDING' ? `${base}/tracks/${page.pageNumber}.mp3` : null,
+        })),
+      });
+    } catch (error) {
+      logger.error({ error, id: req.params.id }, 'Library manifest fetch failed');
+      return res.status(502).send('Gallica is temporarily unavailable');
+    }
+  });
+
+  app.get('/library/items/:id/pages/:page.jpg', async (req, res) => {
+    try {
+      const item = await findBnfMediaItem(req.params.id);
+      const pageNumber = Number(req.params.page);
+      if (!item || !Number.isInteger(pageNumber) || pageNumber < 1) return res.status(404).send('Not found');
+      const image = await getLibraryPageImage(item.ark, pageNumber);
+      if (!image) return res.status(404).send('Not found');
+      res.setHeader('content-type', image.contentType);
+      res.setHeader('cache-control', 'public, max-age=604800');
+      return res.send(image.bytes);
+    } catch (error) {
+      logger.error({ error, id: req.params.id, page: req.params.page }, 'Library page image fetch failed');
+      return res.status(502).send('Gallica is temporarily unavailable');
+    }
+  });
+
+  app.get('/library/items/:id/tracks/:page.mp3', async (req, res) => {
+    try {
+      const item = await findBnfMediaItem(req.params.id);
+      const pageNumber = Number(req.params.page);
+      if (!item || item.category !== 'AUDIO_RECORDING' || !Number.isInteger(pageNumber) || pageNumber < 1) {
+        return res.status(404).send('Not found');
+      }
+      const track = await getLibraryAudioTrack(item.ark, pageNumber);
+      if (!track) return res.status(404).send('Not found');
+      return sendWithRange(req, res, track.bytes, track.contentType);
+    } catch (error) {
+      logger.error({ error, id: req.params.id, page: req.params.page }, 'Library audio fetch failed');
+      return res.status(502).send('Gallica is temporarily unavailable');
     }
   });
 

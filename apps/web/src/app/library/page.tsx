@@ -12,7 +12,7 @@ const GET_LIBRARY_ITEMS = gql`
   query GetLibraryItems($filter: LibraryItemFilterInput, $page: Int, $limit: Int) {
     libraryItems(filter: $filter, page: $page, limit: $limit) {
       nodes {
-        id source category title creator date permalink thumbnailUrl isPublicDomainWork scoreUrl audioUrl
+        id source category title creator date permalink thumbnailUrl isPublicDomainWork scoreUrl pagesUrl embedUrl audioUrl
       }
       pageInfo { hasNextPage hasPreviousPage totalCount }
     }
@@ -58,6 +58,11 @@ function LibraryCard({ item }: { item: any }) {
           </span>
           {item.scoreUrl && (
             <span className="inline-block w-fit rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Score</span>
+          )}
+          {(item.pagesUrl || item.embedUrl) && (
+            <span className="inline-block w-fit rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+              {item.category === 'AUDIO_RECORDING' ? 'Listen' : 'Read online'}
+            </span>
           )}
           {item.audioUrl && (
             <span className="inline-block w-fit rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Audio</span>

@@ -6,13 +6,15 @@ import { gql, useQuery } from '@apollo/client';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { ScoreViewer } from '@/components/library/ScoreViewer';
 import { AudioPlayer } from '@/components/library/AudioPlayer';
+import { GallicaViewer } from '@/components/library/GallicaViewer';
+import { GallicaEmbed } from '@/components/library/GallicaEmbed';
 import { SOURCE_LABELS } from '../sources';
 
 const GET_LIBRARY_ITEM = gql`
   query GetLibraryItem($id: ID!) {
     libraryItem(id: $id) {
       id source category title creator date documentType permalink catalogueUrl
-      scoreUrl audioUrl license attribution
+      scoreUrl pagesUrl embedUrl audioUrl license attribution
     }
   }
 `;
@@ -46,14 +48,15 @@ export default function LibraryItemPage() {
 
             {item.audioUrl && <AudioPlayer url={item.audioUrl} title={item.title} attribution={item.attribution} />}
 
-            {item.scoreUrl ? (
-              <ScoreViewer url={item.scoreUrl} title={item.title} />
-            ) : (
-              !item.audioUrl && (
-                <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
-                  This item can&rsquo;t be shown here yet - open it at the source below.
-                </p>
-              )
+            {item.scoreUrl && <ScoreViewer url={item.scoreUrl} title={item.title} />}
+            {item.pagesUrl && <GallicaViewer pagesUrl={item.pagesUrl} title={item.title} />}
+            {!item.pagesUrl && item.embedUrl && (
+              <GallicaEmbed url={item.embedUrl} title={item.title} audio={item.category === 'AUDIO_RECORDING'} />
+            )}
+            {!item.scoreUrl && !item.pagesUrl && !item.embedUrl && !item.audioUrl && (
+              <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                This item can&rsquo;t be shown here yet - open it at the source below.
+              </p>
             )}
 
             <footer className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-gray-100 pt-4 text-sm">

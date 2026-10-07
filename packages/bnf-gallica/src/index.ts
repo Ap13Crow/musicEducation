@@ -1,6 +1,6 @@
-export { bnfCommercialReuseConfigured, bnfAttribution } from './config.js';
+export { bnfCommercialReuseConfigured, bnfLibraryMediaEnabled, bnfAttribution } from './config.js';
 export { searchCatalogue } from './sru.js';
-export { getManifest, fetchPageImage, fetchPageAudio } from './gallica.js';
+export { getManifest, fetchPageImage, fetchPageAudio, sizedImageUrl } from './gallica.js';
 export {
   ingestLibraryTopic,
   mapDocumentTypeToCategory,

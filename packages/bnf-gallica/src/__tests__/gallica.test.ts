@@ -1,4 +1,5 @@
-import { getManifest, fetchPageImage, fetchPageAudio } from '../gallica.js';
+import { getManifest, fetchPageImage, fetchPageAudio, sizedImageUrl } from '../gallica.js';
+import { bnfLibraryMediaEnabled } from '../config.js';
 import { BnfRequestError } from '../types.js';
 
 // Real IIIF manifest from https://gallica.bnf.fr/iiif/ark:/12148/bpt6k11767775/manifest.json,
@@ -116,5 +117,31 @@ describe('fetchPageImage / fetchPageAudio', () => {
     }));
     const asset = await fetchPageAudio(page);
     expect(asset.contentType).toBe('audio/mp3');
+  });
+});
+
+describe('sizedImageUrl', () => {
+  it('rewrites a full-size IIIF image URL to a width-scaled one', () => {
+    expect(sizedImageUrl('https://gallica.bnf.fr/iiif/ark:/12148/btv1b52500519p/f1/full/full/0/native.jpg', 1600)).toBe(
+      'https://gallica.bnf.fr/iiif/ark:/12148/btv1b52500519p/f1/full/1600,/0/native.jpg',
+    );
+  });
+});
+
+describe('bnfLibraryMediaEnabled', () => {
+  const env = { ...process.env };
+  afterEach(() => {
+    process.env = { ...env };
+  });
+
+  it('is off by default, on with its own flag, and on with a signed commercial licence', () => {
+    delete process.env.BNF_LIBRARY_MEDIA_ENABLED;
+    delete process.env.BNF_COMMERCIAL_LICENSE_ACCEPTED;
+    expect(bnfLibraryMediaEnabled()).toBe(false);
+    process.env.BNF_LIBRARY_MEDIA_ENABLED = 'true';
+    expect(bnfLibraryMediaEnabled()).toBe(true);
+    delete process.env.BNF_LIBRARY_MEDIA_ENABLED;
+    process.env.BNF_COMMERCIAL_LICENSE_ACCEPTED = 'true';
+    expect(bnfLibraryMediaEnabled()).toBe(true);
   });
 });

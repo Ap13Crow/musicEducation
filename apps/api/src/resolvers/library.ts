@@ -6,6 +6,7 @@ import {
 } from '@my-music-coach/bnf-gallica';
 import { requireRole } from '../middleware/auth.js';
 import { ingestOpenScoreLieder } from '../lib/openscore.js';
+import { bnfLibraryMediaEnabled } from '@my-music-coach/bnf-gallica';
 import type { GraphQLContext } from '../types.js';
 
 // Library - public, no-login browsing of the persisted LibraryItem catalogue
@@ -30,6 +31,16 @@ export const libraryResolvers = {
     // /library/*), so the browser never fetches the upstream file itself.
     scoreUrl: (item: { id: string; musicXmlSourceUrl?: string | null }) =>
       item.musicXmlSourceUrl ? `/api/library/items/${item.id}/score.mxl` : null,
+    // Gallica page scans / tracks (served by index.ts's /library/items/:id/*
+    // routes) - only once the operator has enabled BnF library media.
+    // Gallica's own embeddable player (the "share > embed" iframe BnF offers on
+    // every document): content stays on gallica.bnf.fr in BnF's player with
+    // its credit, loaded by the visitor's browser - so no rehosting, no
+    // licence flag, and no load on our IP's Gallica rate limit.
+    embedUrl: (item: { source: string; ark: string }) =>
+      item.source === 'BNF' && /^[a-z0-9]+$/i.test(item.ark) ? `https://gallica.bnf.fr/ark:/12148/${item.ark}/f1.media.mini` : null,
+    pagesUrl: (item: { id: string; source: string }) =>
+      item.source === 'BNF' && bnfLibraryMediaEnabled() ? `/api/library/items/${item.id}/pages.json` : null,
   },
 
   Query: {

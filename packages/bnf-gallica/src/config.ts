@@ -11,6 +11,17 @@ export function bnfCommercialReuseConfigured(): boolean {
   return process.env.BNF_COMMERCIAL_LICENSE_ACCEPTED === 'true';
 }
 
+// Showing Gallica scans/recordings on the free, no-login public Library
+// (read-only, credited "Source gallica.bnf.fr / BnF") - separate from the
+// commercial licence above, which importing into paid courses still needs.
+// Gallica's terms make non-commercial reuse free with that credit and
+// commercial reuse (anything "generating revenue directly") licensed; which
+// side the public Library falls on is the operator's call, so this is its
+// own switch, off by default. A signed commercial licence covers it too.
+export function bnfLibraryMediaEnabled(): boolean {
+  return process.env.BNF_LIBRARY_MEDIA_ENABLED === 'true' || bnfCommercialReuseConfigured();
+}
+
 // Gallica (not catalogue.bnf.fr) 403s a request with no/empty User-Agent -
 // confirmed live: an unidentified request is rejected, an honest one
 // naming this service is accepted. Not a workaround for a block, just

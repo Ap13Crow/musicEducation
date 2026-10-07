@@ -86,9 +86,16 @@ async function fetchAsset(url: string): Promise<BnfFetchedAsset> {
   return { bytes: Buffer.from(arrayBuffer), contentType };
 }
 
-/** Downloads one page's full-resolution image - server-side only, never hotlinked to students (see package README/docs). */
-export async function fetchPageImage(page: BnfManifestPage): Promise<BnfFetchedAsset> {
-  const asset = await fetchAsset(page.imageUrl);
+// Gallica scans are huge at full size (a score page is ~4700x6000 px).
+// IIIF Image API size syntax `/full/{w},/` asks the server for a scaled
+// copy instead - e.g. 1600 px wide is ~250 KB vs several MB.
+export function sizedImageUrl(imageUrl: string, width: number): string {
+  return imageUrl.replace('/full/full/', `/full/${Math.round(width)},/`);
+}
+
+/** Downloads one page's image (full resolution unless `width` is given) - server-side only, never hotlinked to students (see package README/docs). */
+export async function fetchPageImage(page: BnfManifestPage, options: { width?: number } = {}): Promise<BnfFetchedAsset> {
+  const asset = await fetchAsset(options.width ? sizedImageUrl(page.imageUrl, options.width) : page.imageUrl);
   // Gallica's IIIF image service always serves JPEG for `native.jpg` requests
   // (confirmed live) - normalize a generic/missing content-type rather than
   // trust it blindly, since this bypasses storage.ts's normal client-supplied

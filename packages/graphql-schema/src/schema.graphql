@@ -649,6 +649,13 @@ type LibraryItem {
   # null when the item has no score we may serve (every BNF row until the
   # commercial-reuse licence is signed).
   scoreUrl: String
+  # Our own same-origin JSON listing of Gallica page scans (and, for
+  # recordings, playable tracks) for the page viewer - null unless BnF
+  # library media is enabled (BNF_LIBRARY_MEDIA_ENABLED or a signed licence).
+  pagesUrl: String
+  # Gallica's own embeddable player for this document (iframe src) - always
+  # set for BNF items; the default viewer when pagesUrl is null.
+  embedUrl: String
   # Playable audio for the in-page player, or null.
   audioUrl: String
   # Reuse terms (e.g. "CC0-1.0") and credit line for scoreUrl/audioUrl.

@@ -105,6 +105,11 @@ spec:
             # then, importBnfSlide/importBnfAudio reject with NOT_CONFIGURED.
             - name: BNF_COMMERCIAL_LICENSE_ACCEPTED
               value: ''
+            # "true" shows Gallica page scans/recordings on the free public
+            # Library (credited, read-only). Operator decision - see
+            # bnfLibraryMediaEnabled() in packages/bnf-gallica/src/config.ts.
+            - name: BNF_LIBRARY_MEDIA_ENABLED
+              value: ''
             # DeepSeek (preferred) / OpenAI fallback for AI-generated assessment
             # reports (see apps/api/src/lib/ai.ts) - absent, aiChat() returns
             # null and callers fall back to deterministic text.

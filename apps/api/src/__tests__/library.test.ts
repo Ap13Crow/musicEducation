@@ -7,11 +7,12 @@ jest.mock('@my-music-coach/bnf-gallica', () => ({
   ingestLibraryTopic: jest.fn(),
   acquireLibraryIngestLock: jest.fn().mockResolvedValue(true),
   releaseLibraryIngestLock: jest.fn().mockResolvedValue(undefined),
+  bnfLibraryMediaEnabled: jest.fn().mockReturnValue(false),
 }));
 
 jest.mock('../lib/openscore', () => ({ ingestOpenScoreLieder: jest.fn() }));
 
-import { ingestLibraryTopic, acquireLibraryIngestLock, releaseLibraryIngestLock } from '@my-music-coach/bnf-gallica';
+import { ingestLibraryTopic, acquireLibraryIngestLock, releaseLibraryIngestLock, bnfLibraryMediaEnabled } from '@my-music-coach/bnf-gallica';
 import { ingestOpenScoreLieder } from '../lib/openscore';
 import { libraryResolvers } from '../resolvers/library';
 
@@ -155,5 +156,25 @@ describe('Mutation.runOpenScoreIngest - ADMIN only', () => {
 
     (ingestOpenScoreLieder as jest.Mock).mockResolvedValueOnce({ query: 'OpenScore Lieder', fetched: 2, upserted: 2, message: 'ok' });
     await expect(libraryResolvers.Mutation.runOpenScoreIngest(null, {}, ctx)).resolves.toMatchObject({ upserted: 2 });
+  });
+});
+
+describe('LibraryItem.embedUrl', () => {
+  it("is Gallica's own player for BnF items, null otherwise or for a malformed ark", () => {
+    expect(libraryResolvers.LibraryItem.embedUrl({ source: 'BNF', ark: 'bpt6k127536f' })).toBe(
+      'https://gallica.bnf.fr/ark:/12148/bpt6k127536f/f1.media.mini',
+    );
+    expect(libraryResolvers.LibraryItem.embedUrl({ source: 'OPENSCORE', ark: 'lieder:1' })).toBeNull();
+    expect(libraryResolvers.LibraryItem.embedUrl({ source: 'BNF', ark: 'x"><script>' })).toBeNull();
+  });
+});
+
+describe('LibraryItem.pagesUrl', () => {
+  it('is null for BnF items until library media is enabled, and never set for other sources', () => {
+    (bnfLibraryMediaEnabled as jest.Mock).mockReturnValue(false);
+    expect(libraryResolvers.LibraryItem.pagesUrl({ id: 'b1', source: 'BNF' })).toBeNull();
+    (bnfLibraryMediaEnabled as jest.Mock).mockReturnValue(true);
+    expect(libraryResolvers.LibraryItem.pagesUrl({ id: 'b1', source: 'BNF' })).toBe('/api/library/items/b1/pages.json');
+    expect(libraryResolvers.LibraryItem.pagesUrl({ id: 'o1', source: 'OPENSCORE' })).toBeNull();
   });
 });
