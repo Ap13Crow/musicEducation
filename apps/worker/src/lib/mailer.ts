@@ -19,6 +19,16 @@ function getTransport(): Transporter {
     host: process.env.SMTP_HOST,
     port,
     secure: port === 465,
+    // Google's relay answers `421 4.7.0 Try again later` at EHLO when a
+    // sender bursts connections or greets with a non-FQDN name - nodemailer
+    // defaults to os.hostname(), i.e. the pod name. Greet as our domain and
+    // reuse one connection, paced, for a whole dispatch batch (a weekly
+    // digest run otherwise opens one connection per recipient in a minute).
+    name: process.env.SMTP_EHLO_NAME || 'mymusic.coach',
+    pool: true,
+    maxConnections: 1,
+    rateDelta: 1000,
+    rateLimit: 1,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
   });
   return cachedTransport;

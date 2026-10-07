@@ -4,8 +4,10 @@ import type { Job } from './types.js';
 const BATCH_SIZE = 25;
 // Exponential backoff between delivery attempts, capped at 6 hours - a
 // dead Google Workspace relay shouldn't be hammered every minute, but a
-// transient blip should retry well within the same day.
-const BASE_BACKOFF_MS = 60_000;
+// transient blip should retry well within the same day. A 5-minute base
+// spreads the default 8 attempts over ~10.5h - a 1-minute base spent them in
+// ~2h, shorter than a Google relay `421 4.7.0` throttle window.
+const BASE_BACKOFF_MS = 5 * 60_000;
 const MAX_BACKOFF_MS = 6 * 60 * 60_000;
 
 function nextBackoff(attempts: number): Date {

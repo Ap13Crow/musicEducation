@@ -25,6 +25,9 @@ function getTransport(): Transporter {
     // STARTTLS after connecting in plaintext - nodemailer's `secure` flag
     // picks which handshake to perform, so it must match the chosen port.
     secure: port === 465,
+    // Non-FQDN EHLO (the pod hostname by default) gets `421 4.7.0` from
+    // Google's relay - see apps/worker/src/lib/mailer.ts.
+    name: process.env.SMTP_EHLO_NAME || 'mymusic.coach',
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
   });
   return cachedTransport;
