@@ -36,7 +36,8 @@ export type UploadPurpose =
   | 'TEACHER_APPLICATION_AUDIO'
   | 'TEACHER_APPLICATION_DOCUMENT'
   | 'COURSE_SLIDE'
-  | 'TEACHER_PROFILE_IMAGE';
+  | 'TEACHER_PROFILE_IMAGE'
+  | 'COURSE_LESSON_AUDIO';
 
 // Matches the instrument/style/level vocabulary elsewhere in the codebase:
 // keep the allowed content types narrow and purpose-specific rather than a
@@ -53,6 +54,14 @@ const PURPOSES: Record<UploadPurpose, { prefix: string; allowedContentTypes: str
     allowedContentTypes: ['application/pdf', 'image/png', 'image/jpeg'],
   },
   COURSE_SLIDE: { prefix: 'course-slides', allowedContentTypes: ['application/pdf', 'image/png', 'image/jpeg'] },
+  // A contentType AUDIO lesson's own audio file (distinct from
+  // TEACHER_APPLICATION_AUDIO, which is an applicant's audition recording,
+  // not course content) - populated either by a teacher's own upload or by
+  // importBnfAudio (see resolvers/bnf.ts).
+  COURSE_LESSON_AUDIO: {
+    prefix: 'course-lesson-audio',
+    allowedContentTypes: ['audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/wav', 'audio/x-wav', 'audio/ogg'],
+  },
   // Public teacher directory/profile photo - image only, no PDF (unlike
   // TEACHER_APPLICATION_DOCUMENT, nothing here is ever opened as a document).
   TEACHER_PROFILE_IMAGE: { prefix: 'teacher-profile-images', allowedContentTypes: ['image/png', 'image/jpeg', 'image/webp'] },
@@ -98,6 +107,37 @@ export async function createUploadTarget(
   const uploadUrl = await getSignedUrl(getClient(), command, { expiresIn: 300 });
   const fileUrl = `${process.env.S3_ENDPOINT!.replace(/\/$/, '')}/${process.env.S3_BUCKET}/${key}`;
   return { uploadUrl, fileUrl, key };
+}
+
+// Unlike createUploadTarget (mints a presigned URL for the *browser* to PUT
+// to), this is for bytes the API server already has in hand - today, only
+// importBnfSlide/importBnfAudio (resolvers/bnf.ts), which download a Gallica
+// asset server-side rather than hotlink it (see that file's header for why).
+// Reuses the same purpose/prefix/content-type allowlist as createUploadTarget
+// so both paths land under the same key scheme and pass isOwnedUploadUrl.
+export async function uploadServerFetchedAsset(
+  purpose: UploadPurpose,
+  ownerId: string,
+  bytes: Buffer,
+  contentType: string,
+  filenameHint: string,
+): Promise<string> {
+  if (!storageConfigured()) {
+    throw new GraphQLError('File uploads are not configured on this deployment yet.', {
+      extensions: { code: 'STORAGE_NOT_CONFIGURED' },
+    });
+  }
+  const config = PURPOSES[purpose];
+  if (!config) throw new GraphQLError('Unknown upload purpose.', { extensions: { code: 'BAD_USER_INPUT' } });
+  if (!config.allowedContentTypes.includes(contentType)) {
+    throw new GraphQLError(`Unsupported file type for this upload: ${contentType}.`, {
+      extensions: { code: 'BAD_USER_INPUT' },
+    });
+  }
+
+  const key = `${config.prefix}/${ownerId}/${Date.now()}-${randomUUID()}-${sanitizeFilename(filenameHint)}`;
+  await getClient().send(new PutObjectCommand({ Bucket: process.env.S3_BUCKET!, Key: key, Body: bytes, ContentType: contentType }));
+  return `${process.env.S3_ENDPOINT!.replace(/\/$/, '')}/${process.env.S3_BUCKET}/${key}`;
 }
 
 // Callers (applyForTeacher, addLessonSlide) persist a fileUrl the browser

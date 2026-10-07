@@ -40,4 +40,7 @@ export type {
   PaymentProvider,
   EventBookingStatus,
   ExternalEventProvider,
+  LibraryItem,
+  LibrarySource,
+  LibraryItemCategory,
 } from '@prisma/client';

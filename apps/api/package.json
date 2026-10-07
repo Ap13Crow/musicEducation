@@ -15,6 +15,7 @@
     "@aws-sdk/s3-request-presigner": "^3.600.0",
     "@graphql-tools/merge": "^9.0.4",
     "@graphql-tools/schema": "^10.0.5",
+    "@my-music-coach/bnf-gallica": "*",
     "@my-music-coach/database": "*",
     "@my-music-coach/external-events": "*",
     "@my-music-coach/graphql-schema": "*",
