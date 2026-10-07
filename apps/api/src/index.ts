@@ -367,6 +367,27 @@ async function main() {
     }
   });
 
+  // Downloadable files (PDF score/parts) for openly licensed items - same
+  // allowlist and cache as the score route above.
+  app.get('/library/items/:id/files/:index.pdf', async (req, res) => {
+    try {
+      const index = Number(req.params.index);
+      const item = await prisma.libraryItem.findUnique({ where: { id: req.params.id }, select: { files: true, hiddenAt: true } });
+      const file = Array.isArray(item?.files) && Number.isInteger(index) ? (item!.files as any[])[index] : null;
+      if (!item || item.hiddenAt || !file?.sourceUrl || !isAllowedScoreSource(file.sourceUrl) || file.contentType !== 'application/pdf') {
+        return res.status(404).send('Not found');
+      }
+      const bytes = await fetchScoreBytes(file.sourceUrl);
+      res.setHeader('content-type', 'application/pdf');
+      res.setHeader('content-disposition', 'inline');
+      res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+      return res.send(bytes);
+    } catch (error) {
+      logger.error({ error, id: req.params.id, index: req.params.index }, 'Library file fetch failed');
+      return res.status(502).send('File temporarily unavailable');
+    }
+  });
+
   // Gallica scans/recordings for the public Library viewer - see
   // lib/libraryMedia.ts. 404 (not 403) when the feature is off, so the URLs
   // simply don't exist until bnfLibraryMediaEnabled().

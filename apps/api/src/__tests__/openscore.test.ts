@@ -6,7 +6,8 @@ import {
   buildOpenScoreRecords,
   composerFromFolder,
   fetchScoreBytes,
-  ingestOpenScoreLieder,
+  ingestOpenScoreCorpus,
+  pdfFileLabel,
   isAllowedScoreSource,
   parseFlatYaml,
   titleFromScorePath,
@@ -67,7 +68,7 @@ describe('titleFromScorePath', () => {
 });
 
 describe('buildOpenScoreRecords', () => {
-  const records = buildOpenScoreRecords('abc123', MXL_PATHS, parseFlatYaml(SCORES_YAML), parseFlatYaml(COMPOSERS_YAML));
+  const records = buildOpenScoreRecords('LIEDER', 'abc123', MXL_PATHS, parseFlatYaml(SCORES_YAML), parseFlatYaml(COMPOSERS_YAML));
 
   it('builds one record per .mxl file only', () => {
     expect(records.map((r) => r.ark)).toEqual(['lieder:6583477', 'lieder:5015378', 'lieder:999']);
@@ -82,6 +83,7 @@ describe('buildOpenScoreRecords', () => {
       permalink: 'https://musescore.com/score/5015378',
       catalogueUrl: null,
       musicXmlSourceUrl: `${OPENSCORE_RAW_PREFIX}Lieder/abc123/scores/Schubert%2C_Franz/Winterreise%2C_D.911/01_Gute_Nacht/lc5015378.mxl`,
+      files: [],
     });
     expect(records[0].catalogueUrl).toBe('https://imslp.org/wiki/Special:ReverseLookup/412044');
   });
@@ -121,7 +123,7 @@ describe('isAllowedScoreSource / fetchScoreBytes', () => {
   });
 });
 
-describe('ingestOpenScoreLieder', () => {
+describe('ingestOpenScoreCorpus', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('pins to the current commit and upserts every score as CC0 sheet music', async () => {
@@ -138,7 +140,7 @@ describe('ingestOpenScoreLieder', () => {
     const upsert = jest.fn().mockResolvedValue({});
     const prisma = { libraryItem: { upsert } } as any;
 
-    const result = await ingestOpenScoreLieder(prisma);
+    const result = await ingestOpenScoreCorpus(prisma, 'LIEDER');
 
     expect(result).toMatchObject({ fetched: 3, upserted: 3 });
     expect(upsert).toHaveBeenCalledWith(
@@ -151,6 +153,57 @@ describe('ingestOpenScoreLieder', () => {
 
   it('fails loudly when GitHub is unreachable instead of importing nothing silently', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(new Response('rate limited', { status: 403 }));
-    await expect(ingestOpenScoreLieder({ libraryItem: { upsert: jest.fn() } } as any)).rejects.toThrow('403');
+    await expect(ingestOpenScoreCorpus({ libraryItem: { upsert: jest.fn() } } as any, 'LIEDER')).rejects.toThrow('403');
+  });
+});
+
+describe('String Quartets corpus - real Arriaga folder layout (2026-10-07)', () => {
+  const dir = 'scores/Arriaga,_Juan_Crisóstomo_de/String_Quartet_No.1_in_D_minor';
+  const paths = [
+    `${dir}/README.md`,
+    `${dir}/sq13744399-Part-Viola.pdf`,
+    `${dir}/sq13744399-Part-Violin_1.pdf`,
+    `${dir}/sq13744399-Part-Violin_2.pdf`,
+    `${dir}/sq13744399-Part-Violoncello.pdf`,
+    `${dir}/sq13744399.mscx`,
+    `${dir}/sq13744399.mxl`,
+    `${dir}/sq13744399.pdf`,
+  ];
+  const scores = parseFlatYaml(`13744399:
+  path: Arriaga,_Juan_Crisóstomo_de/String_Quartet_No.1_in_D_minor
+  name: String Quartet No.1 in D minor
+  imslp: '#33857'
+`);
+  const composers = parseFlatYaml(`313669:
+  path: Arriaga,_Juan_Crisóstomo_de
+  name: Juan Crisóstomo de Arriaga
+`);
+  const [record] = buildOpenScoreRecords('STRING_QUARTETS', 'sha2', paths, scores, composers);
+
+  it('builds one record per work with its metadata title and composer', () => {
+    expect(record).toMatchObject({
+      ark: 'sq:13744399',
+      title: 'String Quartet No.1 in D minor',
+      creator: 'Juan Crisóstomo de Arriaga',
+      documentType: 'String quartet',
+      catalogueUrl: 'https://imslp.org/wiki/Special:ReverseLookup/33857',
+    });
+    expect(record.musicXmlSourceUrl.startsWith(`${OPENSCORE_RAW_PREFIX}StringQuartets/sha2/`)).toBe(true);
+  });
+
+  it('attaches the full score then parts in playing order, as PDFs', () => {
+    expect(record.files.map((file) => file.label)).toEqual([
+      'Full score (PDF)',
+      'Violin 1 part (PDF)',
+      'Violin 2 part (PDF)',
+      'Viola part (PDF)',
+      'Violoncello part (PDF)',
+    ]);
+    expect(record.files.every((file) => file.contentType === 'application/pdf' && isAllowedScoreSource(file.sourceUrl))).toBe(true);
+  });
+
+  it('labels PDF files', () => {
+    expect(pdfFileLabel('sq1.pdf')).toBe('Full score (PDF)');
+    expect(pdfFileLabel('sq1-Part-Violin_2.pdf')).toBe('Violin 2 part (PDF)');
   });
 });

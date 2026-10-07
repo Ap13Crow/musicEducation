@@ -5,7 +5,7 @@ import {
   releaseLibraryIngestLock,
 } from '@my-music-coach/bnf-gallica';
 import { requireRole } from '../middleware/auth.js';
-import { ingestOpenScoreLieder } from '../lib/openscore.js';
+import { ingestOpenScoreCorpus } from '../lib/openscore.js';
 import { bnfLibraryMediaEnabled } from '@my-music-coach/bnf-gallica';
 import type { GraphQLContext } from '../types.js';
 
@@ -23,6 +23,7 @@ function csvField(value: string | null | undefined): string {
 
 // One OpenScore import at a time per API process - it's an admin button,
 // and a double click shouldn't run two 1,400-row upsert passes side by side.
+const OPENSCORE_CORPORA = ['LIEDER', 'STRING_QUARTETS'] as const;
 let openScoreIngestRunning = false;
 
 export const libraryResolvers = {
@@ -39,6 +40,12 @@ export const libraryResolvers = {
     // licence flag, and no load on our IP's Gallica rate limit.
     embedUrl: (item: { source: string; ark: string }) =>
       item.source === 'BNF' && /^[a-z0-9]+$/i.test(item.ark) ? `https://gallica.bnf.fr/ark:/12148/${item.ark}/f1.media.mini` : null,
+    files: (item: { id: string; files?: unknown }) =>
+      (Array.isArray(item.files) ? item.files : []).map((file: any, index: number) => ({
+        label: String(file?.label ?? `File ${index + 1}`),
+        url: `/api/library/items/${item.id}/files/${index}.pdf`,
+        contentType: String(file?.contentType ?? 'application/pdf'),
+      })),
     pagesUrl: (item: { id: string; source: string }) =>
       item.source === 'BNF' && bnfLibraryMediaEnabled() ? `/api/library/items/${item.id}/pages.json` : null,
   },
@@ -131,8 +138,10 @@ export const libraryResolvers = {
       }
     },
 
-    async runOpenScoreIngest(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
+    async runOpenScoreIngest(_: unknown, { corpus = 'LIEDER' }: { corpus?: string | null }, { prisma, user }: GraphQLContext) {
       requireRole(user, 'ADMIN');
+      const corpusKey = OPENSCORE_CORPORA.find((key) => key === (corpus ?? 'LIEDER'));
+      if (!corpusKey) throw new GraphQLError('Unknown OpenScore corpus.', { extensions: { code: 'BAD_USER_INPUT' } });
       if (openScoreIngestRunning) {
         throw new GraphQLError('An OpenScore import is already running - try again shortly.', {
           extensions: { code: 'CONFLICT' },
@@ -140,7 +149,7 @@ export const libraryResolvers = {
       }
       openScoreIngestRunning = true;
       try {
-        return await ingestOpenScoreLieder(prisma);
+        return await ingestOpenScoreCorpus(prisma, corpusKey);
       } catch (error) {
         throw new GraphQLError(error instanceof Error ? error.message : 'OpenScore import failed.', {
           extensions: { code: 'INTERNAL_SERVER_ERROR' },

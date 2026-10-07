@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
-import { ArrowLeft, ExternalLink } from 'lucide-react';
+import { ArrowLeft, ExternalLink, FileText } from 'lucide-react';
 import { ScoreViewer } from '@/components/library/ScoreViewer';
 import { AudioPlayer } from '@/components/library/AudioPlayer';
 import { GallicaViewer } from '@/components/library/GallicaViewer';
@@ -15,6 +15,7 @@ const GET_LIBRARY_ITEM = gql`
     libraryItem(id: $id) {
       id source category title creator date documentType permalink catalogueUrl
       scoreUrl pagesUrl embedUrl audioUrl license attribution
+      files { label url contentType }
     }
   }
 `;
@@ -49,11 +50,38 @@ export default function LibraryItemPage() {
             {item.audioUrl && <AudioPlayer url={item.audioUrl} title={item.title} attribution={item.attribution} />}
 
             {item.scoreUrl && <ScoreViewer url={item.scoreUrl} title={item.title} />}
-            {item.pagesUrl && <GallicaViewer pagesUrl={item.pagesUrl} title={item.title} />}
+            {item.pagesUrl && (
+              <GallicaViewer
+                pagesUrl={item.pagesUrl}
+                title={item.title}
+                audio={item.category === 'AUDIO_RECORDING'}
+                fallbackEmbedUrl={item.embedUrl}
+              />
+            )}
             {!item.pagesUrl && item.embedUrl && (
               <GallicaEmbed url={item.embedUrl} title={item.title} audio={item.category === 'AUDIO_RECORDING'} />
             )}
-            {!item.scoreUrl && !item.pagesUrl && !item.embedUrl && !item.audioUrl && (
+            {item.files.length > 0 && (
+              <section className="card p-4" data-testid="library-files">
+                <h2 className="mb-2 text-sm font-semibold text-gray-800">Scores and parts</h2>
+                <ul className="flex flex-wrap gap-2">
+                  {item.files.map((file: any) => (
+                    <li key={file.url}>
+                      <a
+                        href={file.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:border-primary-300 hover:text-primary-700"
+                      >
+                        <FileText className="h-4 w-4" /> {file.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {!item.scoreUrl && !item.pagesUrl && !item.embedUrl && !item.audioUrl && item.files.length === 0 && (
               <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
                 This item can&rsquo;t be shown here yet - open it at the source below.
               </p>

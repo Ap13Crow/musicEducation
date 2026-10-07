@@ -1,0 +1,5 @@
+BEGIN;
+
+ALTER TABLE "LibraryItem" ADD COLUMN IF NOT EXISTS "files" JSONB;
+
+COMMIT;

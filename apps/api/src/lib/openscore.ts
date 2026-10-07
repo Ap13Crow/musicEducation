@@ -1,20 +1,54 @@
 import type { PrismaClient } from '@my-music-coach/database';
 
-// OpenScore Lieder (https://github.com/OpenScore/Lieder) - ~1,450 art songs
-// transcribed to MusicXML by volunteers and dedicated CC0-1.0, so unlike BnF
-// masters (resolvers/bnf.ts) we may show them on a commercial platform.
-// The corpus is read straight from GitHub: one commits call to pin the
-// current HEAD, one tree call for the .mxl paths, two raw YAML files for
-// metadata. Every stored score URL is pinned to that commit, so its bytes
-// never change and the score route (index.ts) can cache them indefinitely.
+// OpenScore corpora - volunteer MusicXML transcriptions dedicated CC0-1.0,
+// so unlike BnF masters (resolvers/bnf.ts) we may show them on a commercial
+// platform:
+//   - Lieder (https://github.com/OpenScore/Lieder): ~1,450 art songs.
+//   - String Quartets (https://github.com/OpenScore/StringQuartets): ~200
+//     works with MusicXML, most also with a PDF full score and PDF parts.
+// Each corpus is read straight from GitHub: one commits call to pin the
+// current HEAD, one tree call for file paths, two raw YAML files for
+// metadata. Every stored source URL is pinned to that commit, so its bytes
+// never change and the library file routes (index.ts) can cache them
+// indefinitely.
 
-const REPO = 'OpenScore/Lieder';
+export type OpenScoreCorpusKey = 'LIEDER' | 'STRING_QUARTETS';
+
+interface CorpusConfig {
+  repo: string;
+  label: string;
+  // Score file prefix ("lc6583477.mxl", "sq7313978.mxl") and our ark prefix.
+  filePrefix: string;
+  arkPrefix: string;
+  documentType: string;
+  // Lieder sit at scores/<composer>/<set>/<song>/, quartets one level up at
+  // scores/<composer>/<work>/ - titles come from the path or scores.yaml.
+  titleFrom: 'path' | 'metadata';
+}
+
+const CORPORA: Record<OpenScoreCorpusKey, CorpusConfig> = {
+  LIEDER: { repo: 'OpenScore/Lieder', label: 'OpenScore Lieder', filePrefix: 'lc', arkPrefix: 'lieder', documentType: 'Lied', titleFrom: 'path' },
+  STRING_QUARTETS: {
+    repo: 'OpenScore/StringQuartets',
+    label: 'OpenScore String Quartets',
+    filePrefix: 'sq',
+    arkPrefix: 'sq',
+    documentType: 'String quartet',
+    titleFrom: 'metadata',
+  },
+};
+
 const BRANCH = 'main';
 const GITHUB_API = 'https://api.github.com';
 export const OPENSCORE_RAW_PREFIX = 'https://raw.githubusercontent.com/OpenScore/';
 const USER_AGENT = 'MyMusicCoach/1.0 (+https://mymusic.coach; library import)';
 const LICENSE = 'CC0-1.0';
-const ATTRIBUTION = 'OpenScore Lieder - transcribed by OpenScore contributors, CC0 1.0';
+
+export interface LibraryFileSource {
+  label: string;
+  sourceUrl: string;
+  contentType: string;
+}
 
 export interface OpenScoreRecord {
   ark: string;
@@ -24,6 +58,7 @@ export interface OpenScoreRecord {
   permalink: string;
   catalogueUrl: string | null;
   musicXmlSourceUrl: string;
+  files: LibraryFileSource[];
 }
 
 async function fetchOk(url: string, accept?: string): Promise<Response> {
@@ -41,7 +76,7 @@ function unquote(value: string): string {
   return value;
 }
 
-// The corpus's data/*.yaml files are StrictYAML, always two levels deep:
+// The corpora's data/*.yaml files are StrictYAML, always two levels deep:
 // a top-level `<id>:` key followed by indented `field: value` lines. That's
 // all this parses - not a general YAML parser.
 export function parseFlatYaml(text: string): Record<string, Record<string, string>> {
@@ -81,54 +116,93 @@ function encodePath(path: string): string {
   return path.split('/').map(encodeURIComponent).join('/');
 }
 
+// String-quartet part order as players expect it, not alphabetical.
+const PART_ORDER = ['violin 1', 'violin 2', 'viola', 'violoncello', 'cello'];
+
+// "sq13744399.pdf" -> "Full score (PDF)"; "sq13744399-Part-Violin_1.pdf" -> "Violin 1 part (PDF)".
+export function pdfFileLabel(fileName: string): string {
+  const part = /-Part-(.+)\.pdf$/i.exec(fileName)?.[1];
+  return part ? `${part.replace(/_/g, ' ')} part (PDF)` : 'Full score (PDF)';
+}
+
+function pdfSortKey(label: string): number {
+  if (label.startsWith('Full score')) return -1;
+  const index = PART_ORDER.findIndex((part) => label.toLowerCase().startsWith(part));
+  return index === -1 ? PART_ORDER.length : index;
+}
+
 export function buildOpenScoreRecords(
+  corpusKey: OpenScoreCorpusKey,
   sha: string,
-  mxlPaths: string[],
+  filePaths: string[],
   scores: Record<string, Record<string, string>>,
   composers: Record<string, Record<string, string>>,
 ): OpenScoreRecord[] {
+  const corpus = CORPORA[corpusKey];
+  const rawBase = `${OPENSCORE_RAW_PREFIX}${corpus.repo.split('/')[1]}/${sha}/`;
   const composerByPath = new Map(Object.values(composers).map((c) => [c.path, c.name]));
+  const scorePattern = new RegExp(`^scores/(.+)/${corpus.filePrefix}(\\d+)\\.mxl$`);
+
+  const pdfsByScoreId = new Map<string, string[]>();
+  const pdfPattern = new RegExp(`/${corpus.filePrefix}(\\d+)(-Part-[^/]+)?\\.pdf$`, 'i');
+  for (const path of filePaths) {
+    const id = pdfPattern.exec(path)?.[1];
+    if (id) pdfsByScoreId.set(id, [...(pdfsByScoreId.get(id) ?? []), path]);
+  }
+
   const records: OpenScoreRecord[] = [];
-  for (const mxlPath of mxlPaths) {
-    const match = /^scores\/(.+)\/lc(\d+)\.mxl$/.exec(mxlPath);
+  for (const path of filePaths) {
+    const match = scorePattern.exec(path);
     if (!match) continue;
     const [, scorePath, id] = match;
     const meta = scores[id] ?? {};
     const imslp = meta.imslp?.replace(/^#/, '');
+    const composerFolder = scorePath.split('/')[0];
+    const files = (pdfsByScoreId.get(id) ?? [])
+      .map((pdfPath) => ({
+        label: pdfFileLabel(pdfPath.split('/').pop()!),
+        sourceUrl: `${rawBase}${encodePath(pdfPath)}`,
+        contentType: 'application/pdf',
+      }))
+      .sort((a, b) => pdfSortKey(a.label) - pdfSortKey(b.label) || a.label.localeCompare(b.label));
     records.push({
-      ark: `lieder:${id}`,
-      title: titleFromScorePath(scorePath),
-      creator: composerByPath.get(scorePath.split('/')[0]) ?? composerFromFolder(scorePath.split('/')[0]),
-      documentType: ['Lied', meta.language, meta.instruments].filter(Boolean).join(' · '),
+      ark: `${corpus.arkPrefix}:${id}`,
+      title: corpus.titleFrom === 'metadata' && meta.name ? meta.name : titleFromScorePath(scorePath),
+      creator: composerByPath.get(composerFolder) ?? composerFromFolder(composerFolder),
+      documentType: [corpus.documentType, meta.language, meta.instruments].filter(Boolean).join(' · '),
       permalink: `https://musescore.com/score/${id}`,
       catalogueUrl: imslp ? `https://imslp.org/wiki/Special:ReverseLookup/${imslp}` : null,
-      musicXmlSourceUrl: `${OPENSCORE_RAW_PREFIX}Lieder/${sha}/${encodePath(mxlPath)}`,
+      musicXmlSourceUrl: `${rawBase}${encodePath(path)}`,
+      files,
     });
   }
   return records;
 }
 
-export async function fetchOpenScoreLieder(): Promise<OpenScoreRecord[]> {
+export async function fetchOpenScoreCorpus(corpusKey: OpenScoreCorpusKey): Promise<OpenScoreRecord[]> {
+  const corpus = CORPORA[corpusKey];
   const github = 'application/vnd.github+json';
-  const commit = (await (await fetchOk(`${GITHUB_API}/repos/${REPO}/commits/${BRANCH}`, github)).json()) as { sha: string };
-  const tree = (await (await fetchOk(`${GITHUB_API}/repos/${REPO}/git/trees/${commit.sha}?recursive=1`, github)).json()) as {
+  const commit = (await (await fetchOk(`${GITHUB_API}/repos/${corpus.repo}/commits/${BRANCH}`, github)).json()) as { sha: string };
+  const tree = (await (await fetchOk(`${GITHUB_API}/repos/${corpus.repo}/git/trees/${commit.sha}?recursive=1`, github)).json()) as {
     tree: { path: string; type: string }[];
     truncated: boolean;
   };
-  if (tree.truncated) throw new Error('OpenScore tree listing was truncated by GitHub.');
-  const raw = `${OPENSCORE_RAW_PREFIX}Lieder/${commit.sha}/data`;
+  if (tree.truncated) throw new Error(`${corpus.label} tree listing was truncated by GitHub.`);
+  const raw = `${OPENSCORE_RAW_PREFIX}${corpus.repo.split('/')[1]}/${commit.sha}/data`;
   const [scoresYaml, composersYaml] = await Promise.all([
     fetchOk(`${raw}/scores.yaml`).then((r) => r.text()),
     fetchOk(`${raw}/composers.yaml`).then((r) => r.text()),
   ]);
-  const mxlPaths = tree.tree.filter((entry) => entry.type === 'blob' && entry.path.endsWith('.mxl')).map((entry) => entry.path);
-  return buildOpenScoreRecords(commit.sha, mxlPaths, parseFlatYaml(scoresYaml), parseFlatYaml(composersYaml));
+  const filePaths = tree.tree.filter((entry) => entry.type === 'blob').map((entry) => entry.path);
+  return buildOpenScoreRecords(corpusKey, commit.sha, filePaths, parseFlatYaml(scoresYaml), parseFlatYaml(composersYaml));
 }
 
 const UPSERT_CONCURRENCY = 20;
 
-export async function ingestOpenScoreLieder(prisma: PrismaClient) {
-  const records = await fetchOpenScoreLieder();
+export async function ingestOpenScoreCorpus(prisma: PrismaClient, corpusKey: OpenScoreCorpusKey = 'LIEDER') {
+  const corpus = CORPORA[corpusKey];
+  const records = await fetchOpenScoreCorpus(corpusKey);
+  const attribution = `${corpus.label} - transcribed by OpenScore contributors, CC0 1.0`;
   let upserted = 0;
   for (let i = 0; i < records.length; i += UPSERT_CONCURRENCY) {
     const results = await Promise.allSettled(
@@ -142,9 +216,10 @@ export async function ingestOpenScoreLieder(prisma: PrismaClient) {
           catalogueUrl: record.catalogueUrl,
           permalink: record.permalink,
           musicXmlSourceUrl: record.musicXmlSourceUrl,
+          files: record.files as any,
           license: LICENSE,
-          attribution: ATTRIBUTION,
-          seedQuery: 'openscore-lieder',
+          attribution,
+          seedQuery: `openscore-${corpus.arkPrefix}`,
         };
         return prisma.libraryItem.upsert({
           where: { source_ark: { source: 'OPENSCORE', ark: record.ark } },
@@ -156,18 +231,20 @@ export async function ingestOpenScoreLieder(prisma: PrismaClient) {
     upserted += results.filter((result) => result.status === 'fulfilled').length;
   }
   return {
-    query: 'OpenScore Lieder',
+    query: corpus.label,
     fetched: records.length,
     upserted,
-    message: `OpenScore Lieder import completed: ${upserted}/${records.length} scores upserted.`,
+    message: `${corpus.label} import completed: ${upserted}/${records.length} scores upserted.`,
   };
 }
 
-// Small in-process cache for the score route - a corpus file is 10-200 KB
-// and immutable at its pinned URL, so the hot set fits comfortably.
-const SCORE_CACHE_MAX = 200;
-const MAX_SCORE_BYTES = 5 * 1024 * 1024;
-const scoreCache = new Map<string, Buffer>();
+// In-process cache for the library file routes, bounded by total bytes (a
+// score .mxl is 10-200 KB, a PDF full score up to a few MB). Upstream URLs
+// are immutable at their pinned commit, so entries never go stale.
+const SOURCE_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
+const sourceCache = new Map<string, Buffer>();
+let sourceCacheBytes = 0;
 
 export function isAllowedScoreSource(url: string): boolean {
   return url.startsWith(OPENSCORE_RAW_PREFIX);
@@ -175,15 +252,20 @@ export function isAllowedScoreSource(url: string): boolean {
 
 export async function fetchScoreBytes(url: string): Promise<Buffer> {
   if (!isAllowedScoreSource(url)) throw new Error('Score source not allowed.');
-  const cached = scoreCache.get(url);
+  const cached = sourceCache.get(url);
   if (cached) {
-    scoreCache.delete(url);
-    scoreCache.set(url, cached);
+    sourceCache.delete(url);
+    sourceCache.set(url, cached);
     return cached;
   }
   const bytes = Buffer.from(await (await fetchOk(url)).arrayBuffer());
-  if (bytes.length > MAX_SCORE_BYTES) throw new Error('Score file too large.');
-  scoreCache.set(url, bytes);
-  if (scoreCache.size > SCORE_CACHE_MAX) scoreCache.delete(scoreCache.keys().next().value!);
+  if (bytes.length > MAX_SOURCE_BYTES) throw new Error('Score file too large.');
+  sourceCache.set(url, bytes);
+  sourceCacheBytes += bytes.length;
+  while (sourceCacheBytes > SOURCE_CACHE_MAX_BYTES && sourceCache.size > 1) {
+    const [oldestUrl, oldest] = sourceCache.entries().next().value!;
+    sourceCache.delete(oldestUrl);
+    sourceCacheBytes -= oldest.length;
+  }
   return bytes;
 }

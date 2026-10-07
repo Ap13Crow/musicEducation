@@ -1510,6 +1510,11 @@ model LibraryItem {
   // openly licensed sources (OPENSCORE); a BNF row stays null until its
   // commercial-reuse licence is signed.
   musicXmlSourceUrl  String?
+  // Extra downloadable files ([{ label, sourceUrl, contentType }]) - e.g. an
+  // OpenScore quartet's PDF full score and parts. Same rule as
+  // musicXmlSourceUrl: pinned, openly licensed upstreams only, served via
+  // /library/items/:id/files/:index.pdf, never linked directly.
+  files              Json?
   // Playable audio we may serve (our own storage, or an openly licensed
   // upstream). Null for every BNF row for the same licence reason.
   audioUrl           String?

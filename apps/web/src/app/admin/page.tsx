@@ -616,10 +616,15 @@ const RUN_LIBRARY_INGEST = gql`
 `;
 
 const RUN_OPENSCORE_INGEST = gql`
-  mutation AdminRunOpenScoreIngest {
-    runOpenScoreIngest { query fetched upserted message }
+  mutation AdminRunOpenScoreIngest($corpus: OpenScoreCorpus) {
+    runOpenScoreIngest(corpus: $corpus) { query fetched upserted message }
   }
 `;
+
+const OPENSCORE_CORPORA = [
+  { value: 'LIEDER' as const, label: 'OpenScore Lieder' },
+  { value: 'STRING_QUARTETS' as const, label: 'OpenScore String Quartets' },
+];
 
 // Single-word Gallica dc.type filters only - see packages/bnf-gallica/src/libraryIngest.ts.
 const LIBRARY_DOCUMENT_TYPES = [
@@ -651,9 +656,9 @@ function LibraryPullCard() {
     setLastResult(result.data?.runLibraryIngest ?? null);
   }
 
-  async function handleOpenScoreImport() {
+  async function handleOpenScoreImport(corpus: 'LIEDER' | 'STRING_QUARTETS') {
     setLastResult(null);
-    const result = await runOpenScore();
+    const result = await runOpenScore({ variables: { corpus } });
     setLastResult(result.data?.runOpenScoreIngest ?? null);
   }
 
@@ -726,19 +731,24 @@ function LibraryPullCard() {
           OpenScore import failed: {openScoreError.message}
         </div>
       )}
-      <div className="flex flex-col gap-2 rounded-lg border border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 rounded-lg border border-gray-200 px-4 py-3">
         <p className="text-sm text-gray-600">
-          <span className="font-medium text-gray-800">OpenScore Lieder</span> - ~1,450 art songs as CC0 MusicXML, displayed as engraved scores in the Library. Re-run to pick up corpus updates.
+          <span className="font-medium text-gray-800">OpenScore</span> - CC0 MusicXML displayed as engraved scores in the Library. Lieder: ~1,450 art songs. String Quartets: ~200 works, most with PDF full score and parts. Re-run to pick up corpus updates.
         </p>
-        <button
-          type="button"
-          disabled={importingOpenScore}
-          onClick={() => void handleOpenScoreImport()}
-          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${importingOpenScore ? 'animate-spin' : ''}`} />
-          {importingOpenScore ? 'Importing…' : 'Import OpenScore Lieder'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {OPENSCORE_CORPORA.map((corpus) => (
+            <button
+              key={corpus.value}
+              type="button"
+              disabled={importingOpenScore}
+              onClick={() => void handleOpenScoreImport(corpus.value)}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${importingOpenScore ? 'animate-spin' : ''}`} />
+              Import {corpus.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {lastResult && (

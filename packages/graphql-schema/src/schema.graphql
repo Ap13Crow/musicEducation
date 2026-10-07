@@ -625,6 +625,19 @@ enum LibraryItemCategory {
   OTHER
 }
 
+# A downloadable file attached to a LibraryItem (e.g. a PDF full score or
+# part) - url is always our own same-origin route.
+type LibraryFile {
+  label: String!
+  url: String!
+  contentType: String!
+}
+
+enum OpenScoreCorpus {
+  LIEDER
+  STRING_QUARTETS
+}
+
 type LibraryItem {
   id: ID!
   source: LibrarySource!
@@ -656,6 +669,7 @@ type LibraryItem {
   # Gallica's own embeddable player for this document (iframe src) - always
   # set for BNF items; the default viewer when pagesUrl is null.
   embedUrl: String
+  files: [LibraryFile!]!
   # Playable audio for the in-page player, or null.
   audioUrl: String
   # Reuse terms (e.g. "CC0-1.0") and credit line for scoreUrl/audioUrl.
@@ -1810,9 +1824,10 @@ type Mutation {
   # Library ingestion (admin on-demand pull) - ADMIN only. Shares the same
   # ingest function as the scheduled worker job; see docs/integration-architecture.md.
   runLibraryIngest(query: String!, documentType: String): LibraryIngestResult!
-  # ADMIN only - (re)imports the CC0 OpenScore Lieder corpus (MusicXML) from
-  # GitHub, pinned to the corpus's current commit. Idempotent.
-  runOpenScoreIngest: LibraryIngestResult!
+  # ADMIN only - (re)imports a CC0 OpenScore corpus (MusicXML, plus PDF score
+  # and parts where the corpus has them) from GitHub, pinned to the corpus's
+  # current commit. Idempotent. Defaults to LIEDER.
+  runOpenScoreIngest(corpus: OpenScoreCorpus): LibraryIngestResult!
 
   # Bookings
   bookSession(input: BookSessionInput!): Booking!

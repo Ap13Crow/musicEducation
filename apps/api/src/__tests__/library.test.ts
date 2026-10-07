@@ -10,10 +10,10 @@ jest.mock('@my-music-coach/bnf-gallica', () => ({
   bnfLibraryMediaEnabled: jest.fn().mockReturnValue(false),
 }));
 
-jest.mock('../lib/openscore', () => ({ ingestOpenScoreLieder: jest.fn() }));
+jest.mock('../lib/openscore', () => ({ ingestOpenScoreCorpus: jest.fn() }));
 
 import { ingestLibraryTopic, acquireLibraryIngestLock, releaseLibraryIngestLock, bnfLibraryMediaEnabled } from '@my-music-coach/bnf-gallica';
-import { ingestOpenScoreLieder } from '../lib/openscore';
+import { ingestOpenScoreCorpus } from '../lib/openscore';
 import { libraryResolvers } from '../resolvers/library';
 
 const adminUser = { id: 'admin-1', role: 'ADMIN' } as const;
@@ -146,16 +146,26 @@ describe('Mutation.runOpenScoreIngest - ADMIN only', () => {
     await expect(
       libraryResolvers.Mutation.runOpenScoreIngest(null, {}, { prisma: fakePrisma(), user: studentUser } as any),
     ).rejects.toThrow('FORBIDDEN');
-    expect(ingestOpenScoreLieder).not.toHaveBeenCalled();
+    expect(ingestOpenScoreCorpus).not.toHaveBeenCalled();
   });
 
   it('returns the import result, and allows a new run after a failure', async () => {
-    (ingestOpenScoreLieder as jest.Mock).mockRejectedValueOnce(new Error('GitHub down'));
+    (ingestOpenScoreCorpus as jest.Mock).mockRejectedValueOnce(new Error('GitHub down'));
     const ctx = { prisma: fakePrisma(), user: adminUser } as any;
     await expect(libraryResolvers.Mutation.runOpenScoreIngest(null, {}, ctx)).rejects.toThrow('GitHub down');
 
-    (ingestOpenScoreLieder as jest.Mock).mockResolvedValueOnce({ query: 'OpenScore Lieder', fetched: 2, upserted: 2, message: 'ok' });
+    (ingestOpenScoreCorpus as jest.Mock).mockResolvedValueOnce({ query: 'OpenScore Lieder', fetched: 2, upserted: 2, message: 'ok' });
     await expect(libraryResolvers.Mutation.runOpenScoreIngest(null, {}, ctx)).resolves.toMatchObject({ upserted: 2 });
+  });
+
+  it('imports the requested corpus and rejects an unknown one', async () => {
+    const ctx = { prisma: fakePrisma(), user: adminUser } as any;
+    (ingestOpenScoreCorpus as jest.Mock).mockResolvedValueOnce({ upserted: 1 });
+    await libraryResolvers.Mutation.runOpenScoreIngest(null, { corpus: 'STRING_QUARTETS' }, ctx);
+    expect(ingestOpenScoreCorpus).toHaveBeenCalledWith(ctx.prisma, 'STRING_QUARTETS');
+    await expect(libraryResolvers.Mutation.runOpenScoreIngest(null, { corpus: 'JAZZ' }, ctx)).rejects.toMatchObject({
+      extensions: { code: 'BAD_USER_INPUT' },
+    });
   });
 });
 
@@ -176,5 +186,16 @@ describe('LibraryItem.pagesUrl', () => {
     (bnfLibraryMediaEnabled as jest.Mock).mockReturnValue(true);
     expect(libraryResolvers.LibraryItem.pagesUrl({ id: 'b1', source: 'BNF' })).toBe('/api/library/items/b1/pages.json');
     expect(libraryResolvers.LibraryItem.pagesUrl({ id: 'o1', source: 'OPENSCORE' })).toBeNull();
+  });
+});
+
+describe('LibraryItem.files', () => {
+  it('exposes stored files only through our own indexed route', () => {
+    const files = libraryResolvers.LibraryItem.files({
+      id: 'q1',
+      files: [{ label: 'Full score (PDF)', sourceUrl: 'https://raw.githubusercontent.com/OpenScore/x.pdf', contentType: 'application/pdf' }],
+    });
+    expect(files).toEqual([{ label: 'Full score (PDF)', url: '/api/library/items/q1/files/0.pdf', contentType: 'application/pdf' }]);
+    expect(libraryResolvers.LibraryItem.files({ id: 'q2', files: null })).toEqual([]);
   });
 });

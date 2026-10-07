@@ -106,10 +106,12 @@ spec:
             - name: BNF_COMMERCIAL_LICENSE_ACCEPTED
               value: ''
             # "true" shows Gallica page scans/recordings on the free public
-            # Library (credited, read-only). Operator decision - see
+            # Library through our own viewer/player (credited, read-only).
+            # Operator decision (enabled 2026-10-07) - see
             # bnfLibraryMediaEnabled() in packages/bnf-gallica/src/config.ts.
+            # Off, BnF items fall back to Gallica's own embed player.
             - name: BNF_LIBRARY_MEDIA_ENABLED
-              value: ''
+              value: 'true'
             # DeepSeek (preferred) / OpenAI fallback for AI-generated assessment
             # reports (see apps/api/src/lib/ai.ts) - absent, aiChat() returns
             # null and callers fall back to deterministic text.
