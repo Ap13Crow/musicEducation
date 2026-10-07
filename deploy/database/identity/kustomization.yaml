@@ -41,3 +41,4 @@ configMapGenerator:
       - 034-teacher-application-drafts.sql
       - 035-booking-cart-entitlements.sql
       - 036-student-weekly-digest.sql
+      - 037-library-item.sql
