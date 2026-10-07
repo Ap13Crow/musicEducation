@@ -143,7 +143,10 @@ export const libraryResolvers = {
         });
       }
       try {
-        return await ingestLibraryTopic(prisma, query.trim(), documentType ?? undefined);
+        const result = await ingestLibraryTopic(prisma, query.trim(), documentType ?? undefined);
+        // Thumbnails for the pulled items, in the background.
+        void startLibraryImport(prisma, 'THUMBNAILS').catch(() => undefined);
+        return result;
       } catch (error) {
         throw new GraphQLError(error instanceof Error ? error.message : 'Library ingest failed.', {
           extensions: { code: 'INTERNAL_SERVER_ERROR' },

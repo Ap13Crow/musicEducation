@@ -642,6 +642,8 @@ enum LibraryImportSource {
   OPENSCORE_STRING_QUARTETS
   MUSOPEN
   MUTOPIA
+  # Not a source: generates card thumbnails for items still missing one.
+  THUMBNAILS
 }
 
 enum LibraryImportState {
@@ -685,9 +687,9 @@ type LibraryItem {
   # Public outbound link to BnF's own Gallica page - the non-commercial
   # "view it yourself" path that needs no license at all.
   permalink: String!
-  # Only ever our own re-hosted image or null - never a gallica.bnf.fr URL
-  # (see the Prisma model's doc comment for why). Null until the thumbnail
-  # backfill pass has run for this item.
+  # Only ever our own /api/library/items/:id/thumbnail or null - never a
+  # source URL (see the Prisma model's doc comment). Null until the
+  # thumbnail backfill (startLibraryImport THUMBNAILS) has run for the item.
   thumbnailUrl: String
   # Our own same-origin MusicXML (.mxl) URL for the in-page score viewer, or
   # null when the item has no score we may serve (every BNF row until the

@@ -46,3 +46,4 @@ configMapGenerator:
       - 039-library-item-recategorize.sql
       - 040-library-item-files.sql
       - 041-library-open-sources.sql
+      - 042-library-item-thumbnail.sql

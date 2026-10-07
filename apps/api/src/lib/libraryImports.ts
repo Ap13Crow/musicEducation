@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@my-music-coach/database';
 import { ingestOpenScoreCorpus } from './openscore.js';
 import { fetchMusopenRecords, fetchMutopiaRecords, upsertOpenSourceRecords } from './openSources.js';
+import { backfillLibraryThumbnails } from './libraryThumbnails.js';
 import { logger } from '../utils/logger.js';
 
 // Admin-started imports of the openly licensed Library sources. They run in
@@ -10,7 +11,9 @@ import { logger } from '../utils/logger.js';
 // it survives a pod restart. A "running" row older than STALE_MS is treated
 // as a crashed run and may be restarted.
 
-export const LIBRARY_IMPORT_SOURCES = ['OPENSCORE_LIEDER', 'OPENSCORE_STRING_QUARTETS', 'MUSOPEN', 'MUTOPIA'] as const;
+// THUMBNAILS isn't a source but runs the same way: it fills in card images
+// for every item still missing one (lib/libraryThumbnails.ts).
+export const LIBRARY_IMPORT_SOURCES = ['OPENSCORE_LIEDER', 'OPENSCORE_STRING_QUARTETS', 'MUSOPEN', 'MUTOPIA', 'THUMBNAILS'] as const;
 export type LibraryImportSource = (typeof LIBRARY_IMPORT_SOURCES)[number];
 
 export interface LibraryImportStatus {
@@ -67,6 +70,14 @@ async function runImport(prisma: PrismaClient, source: LibraryImportSource, stat
       const tracks = records.reduce((sum, record) => sum + record.files.length, 0);
       return { total: records.length, upserted, message: `Musopen import completed: ${upserted}/${records.length} recordings (${tracks} tracks).` };
     }
+    case 'THUMBNAILS': {
+      const result = await backfillLibraryThumbnails(prisma, progress);
+      return {
+        total: result.total,
+        upserted: result.created,
+        message: `Thumbnails: ${result.created} created${result.failed ? `, ${result.failed} without an image` : ''}.`,
+      };
+    }
     case 'MUTOPIA': {
       const records = await fetchMutopiaRecords(progress);
       const upserted = await upsertOpenSourceRecords(prisma, 'MUTOPIA', records);
@@ -82,9 +93,11 @@ export async function startLibraryImport(prisma: PrismaClient, source: LibraryIm
   await saveStatus(prisma, status);
 
   void runImport(prisma, source, status)
-    .then(({ total, upserted, message }) =>
-      saveStatus(prisma, { ...status, state: 'done', done: total, total, upserted, message, finishedAt: new Date().toISOString() }),
-    )
+    .then(async ({ total, upserted, message }) => {
+      await saveStatus(prisma, { ...status, state: 'done', done: total, total, upserted, message, finishedAt: new Date().toISOString() });
+      // New items need card images - Musopen has none to fetch.
+      if (source !== 'THUMBNAILS' && source !== 'MUSOPEN') await startLibraryImport(prisma, 'THUMBNAILS');
+    })
     .catch(async (error) => {
       logger.error({ error, source }, 'Library import failed');
       await saveStatus(prisma, {

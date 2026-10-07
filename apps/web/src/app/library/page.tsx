@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { LibraryThumbnail } from './LibraryThumbnail';
 import Link from 'next/link';
 import { gql, useQuery } from '@apollo/client';
-import { BookOpen, ExternalLink, Library, Music, Search, Volume2 } from 'lucide-react';
+import { ExternalLink, Library, Search } from 'lucide-react';
 import { SOURCE_LABELS } from './sources';
 
 const PAGE_SIZE = 24;
@@ -32,26 +33,11 @@ const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
   CATEGORIES.filter((c) => c.value).map((c) => [c.value, c.label]),
 );
 
-function CategoryIcon({ category }: { category: string }) {
-  const className = 'h-10 w-10 text-primary-300';
-  if (category === 'SHEET_MUSIC') return <Music className={className} />;
-  if (category === 'AUDIO_RECORDING') return <Volume2 className={className} />;
-  return <BookOpen className={className} />;
-}
-
 function LibraryCard({ item }: { item: any }) {
   const source = SOURCE_LABELS[item.source] ?? SOURCE_LABELS.BNF;
   return (
     <article className="card flex flex-col overflow-hidden p-0">
-      {/* thumbnailUrl is only ever our own storage or null - never a
-          gallica.bnf.fr URL (Gallica 429s hotlinked images). */}
-      {item.thumbnailUrl ? (
-        <img src={item.thumbnailUrl} alt="" className="h-36 w-full object-cover" />
-      ) : (
-        <div className="flex h-36 w-full items-center justify-center bg-primary-50">
-          <CategoryIcon category={item.category} />
-        </div>
-      )}
+      <LibraryThumbnail item={item} />
       <div className="flex flex-1 flex-col p-4">
         <div className="mb-2 flex flex-wrap gap-1">
           <span className="inline-block w-fit rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700">

@@ -16,6 +16,7 @@ import { handleStripeWebhook, handleStripeV2Webhook } from './resolvers/payments
 import { buildUserCalendarFeed } from './lib/calendarFeed.js';
 import { fetchScoreBytes, isAllowedScoreSource } from './lib/openscore.js';
 import { MUTOPIA_FTP_PREFIX } from './lib/openSources.js';
+import { startLibraryImport } from './lib/libraryImports.js';
 import { getLibraryAudioTrack, getLibraryManifest, getLibraryPageImage, sendWithRange } from './lib/libraryMedia.js';
 import { bnfLibraryMediaEnabled } from '@my-music-coach/bnf-gallica';
 import type { GraphQLContext } from './types.js';
@@ -368,6 +369,22 @@ async function main() {
     }
   });
 
+  // Card thumbnails, generated once by lib/libraryThumbnails.ts. The URL
+  // never changes for an item, but a regenerated image must show up, so a
+  // week of caching rather than immutable.
+  app.get('/library/items/:id/thumbnail', async (req, res) => {
+    try {
+      const thumbnail = await prisma.libraryItemThumbnail.findUnique({ where: { itemId: req.params.id } });
+      if (!thumbnail) return res.status(404).send('Not found');
+      res.setHeader('content-type', thumbnail.contentType);
+      res.setHeader('cache-control', 'public, max-age=604800');
+      return res.send(Buffer.from(thumbnail.bytes));
+    } catch (error) {
+      logger.error({ error, id: req.params.id }, 'Library thumbnail fetch failed');
+      return res.status(500).send('Thumbnail unavailable');
+    }
+  });
+
   // Downloadable files (PDF score/parts) for openly licensed items - same
   // allowlist and cache as the score route above.
   app.get('/library/items/:id/files/:index.pdf', async (req, res) => {
@@ -489,6 +506,16 @@ async function main() {
 
   const port = Number(process.env.PORT ?? 4000);
   httpServer.listen(port, '0.0.0.0', () => logger.info({ port }, 'API server listening'));
+
+  // Fill in any missing Library card thumbnails shortly after start (a
+  // no-op query when none are missing), so imported items never wait for
+  // an admin click. Delayed to keep startup and readiness fast.
+  setTimeout(() => {
+    prisma.libraryItem
+      .count({ where: { thumbnailUrl: null, hiddenAt: null, source: { in: ['OPENSCORE', 'MUTOPIA', 'BNF'] } } })
+      .then((missing: number) => (missing > 0 ? startLibraryImport(prisma, 'THUMBNAILS') : null))
+      .catch((error: unknown) => logger.warn({ error }, 'Thumbnail backfill on startup skipped'));
+  }, 60_000).unref();
 }
 
 async function shutdown(signal: string) {

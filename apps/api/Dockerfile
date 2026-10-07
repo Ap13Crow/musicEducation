@@ -32,7 +32,7 @@ RUN npm ci --omit=dev --workspace @my-music-coach/api --workspace @my-music-coac
 
 FROM node:20-bookworm-slim AS runner
 RUN apt-get update -qq \
- && apt-get install -y --no-install-recommends ca-certificates openssl \
+ && apt-get install -y --no-install-recommends ca-certificates openssl poppler-utils \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production \

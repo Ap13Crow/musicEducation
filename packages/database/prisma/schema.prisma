@@ -1502,11 +1502,11 @@ model LibraryItem {
   catalogueUrl       String?
   // gallica.bnf.fr permalink - the public "View on Gallica" outbound link.
   permalink          String
-  // Only ever our own S3 URL or null - NEVER a gallica.bnf.fr URL. Gallica
-  // 429s a second image request seconds after the first (confirmed live),
-  // and automatically rehosting a digitized master's thumbnail at scale is
-  // itself a commercial-reuse question - backfilled only once
-  // bnfCommercialReuseConfigured() is true. See docs/integration-architecture.md.
+  // Only ever our own /library/items/:id/thumbnail route (backed by
+  // LibraryItemThumbnail) or null - NEVER a source URL: Gallica 429s a
+  // second request seconds after the first, and the grid must not make
+  // per-visitor upstream calls. BnF thumbnails are generated only while
+  // bnfLibraryMediaEnabled() (see apps/api/src/lib/libraryThumbnails.ts).
   thumbnailUrl       String?
   // Upstream MusicXML (.mxl) URL pinned to an exact commit, so its bytes never
   // change - served to browsers only through the API's own
@@ -1539,9 +1539,22 @@ model LibraryItem {
   // withdrawal from absence) - an auto-hide here would silently disappear
   // real items.
   hiddenAt           DateTime?
+  thumbnail          LibraryItemThumbnail?
   ingestedAt         DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   @@unique([source, ark])
   @@index([category, hiddenAt])
+}
+
+// Card thumbnail for a LibraryItem, generated once by the thumbnail backfill
+// (apps/api/src/lib/libraryThumbnails.ts) and served from our own
+// /library/items/:id/thumbnail route - so the Library grid never hits
+// Gallica/GitHub/Mutopia per visitor. LibraryItem.thumbnailUrl points at it.
+model LibraryItemThumbnail {
+  itemId      String      @id
+  item        LibraryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  contentType String
+  bytes       Bytes
+  createdAt   DateTime    @default(now())
 }
