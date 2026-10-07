@@ -615,17 +615,6 @@ const RUN_LIBRARY_INGEST = gql`
   }
 `;
 
-const RUN_OPENSCORE_INGEST = gql`
-  mutation AdminRunOpenScoreIngest($corpus: OpenScoreCorpus) {
-    runOpenScoreIngest(corpus: $corpus) { query fetched upserted message }
-  }
-`;
-
-const OPENSCORE_CORPORA = [
-  { value: 'LIEDER' as const, label: 'OpenScore Lieder' },
-  { value: 'STRING_QUARTETS' as const, label: 'OpenScore String Quartets' },
-];
-
 // Single-word Gallica dc.type filters only - see packages/bnf-gallica/src/libraryIngest.ts.
 const LIBRARY_DOCUMENT_TYPES = [
   { value: 'partition', label: 'Sheet music' },
@@ -642,7 +631,6 @@ function LibraryPullCard() {
     fetchPolicy: 'network-only',
   });
   const [runIngest, { loading: pulling, error: pullError }] = useMutation(RUN_LIBRARY_INGEST);
-  const [runOpenScore, { loading: importingOpenScore, error: openScoreError }] = useMutation(RUN_OPENSCORE_INGEST);
   const records = preview?.searchBnfCatalogue ?? null;
   const canSubmit = query.trim().length > 0 && !previewing && !pulling;
 
@@ -654,12 +642,6 @@ function LibraryPullCard() {
   async function handlePull() {
     const result = await runIngest({ variables });
     setLastResult(result.data?.runLibraryIngest ?? null);
-  }
-
-  async function handleOpenScoreImport(corpus: 'LIEDER' | 'STRING_QUARTETS') {
-    setLastResult(null);
-    const result = await runOpenScore({ variables: { corpus } });
-    setLastResult(result.data?.runOpenScoreIngest ?? null);
   }
 
   return (
@@ -726,31 +708,6 @@ function LibraryPullCard() {
           Library pull failed: {pullError.message}
         </div>
       )}
-      {openScoreError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          OpenScore import failed: {openScoreError.message}
-        </div>
-      )}
-      <div className="flex flex-col gap-3 rounded-lg border border-gray-200 px-4 py-3">
-        <p className="text-sm text-gray-600">
-          <span className="font-medium text-gray-800">OpenScore</span> - CC0 MusicXML displayed as engraved scores in the Library. Lieder: ~1,450 art songs. String Quartets: ~200 works, most with PDF full score and parts. Re-run to pick up corpus updates.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {OPENSCORE_CORPORA.map((corpus) => (
-            <button
-              key={corpus.value}
-              type="button"
-              disabled={importingOpenScore}
-              onClick={() => void handleOpenScoreImport(corpus.value)}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${importingOpenScore ? 'animate-spin' : ''}`} />
-              Import {corpus.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {lastResult && (
         <p className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800" data-testid="library-pull-result">
           {lastResult.message}
@@ -778,6 +735,102 @@ function LibraryPullCard() {
           </ul>
         )
       )}
+    </div>
+  );
+}
+
+const LIBRARY_IMPORT_STATUSES = gql`
+  query AdminLibraryImportStatuses {
+    libraryImportStatuses { source state done total upserted message startedAt finishedAt }
+  }
+`;
+
+const START_LIBRARY_IMPORT = gql`
+  mutation AdminStartLibraryImport($source: LibraryImportSource!) {
+    startLibraryImport(source: $source) { source state done total upserted message startedAt finishedAt }
+  }
+`;
+
+const OPEN_SOURCES = [
+  { source: 'OPENSCORE_LIEDER', name: 'OpenScore Lieder', detail: '~1,460 art songs · MusicXML · CC0' },
+  { source: 'OPENSCORE_STRING_QUARTETS', name: 'OpenScore String Quartets', detail: '~200 works · MusicXML + PDF score & parts · CC0' },
+  { source: 'MUSOPEN', name: 'Musopen', detail: '~250 recordings (symphonies, quartets, Chopin) · public domain' },
+  { source: 'MUTOPIA', name: 'Mutopia Project', detail: '~1,300 engraved PDF scores · PD / CC BY(-SA) · takes a few minutes' },
+] as const;
+
+// Openly licensed Library sources, imported in the background by the API
+// (lib/libraryImports.ts) - this card starts them and polls their progress.
+function OpenSourcesCard() {
+  const { data, refetch, startPolling, stopPolling } = useQuery(LIBRARY_IMPORT_STATUSES, { fetchPolicy: 'cache-and-network' });
+  const [startImport, { error }] = useMutation(START_LIBRARY_IMPORT);
+  const statuses: Record<string, any> = Object.fromEntries((data?.libraryImportStatuses ?? []).map((s: any) => [s.source, s]));
+  const anyRunning = Object.values(statuses).some((s: any) => s.state === 'running');
+
+  useEffect(() => {
+    if (anyRunning) startPolling(3000);
+    else stopPolling();
+    return () => stopPolling();
+  }, [anyRunning, startPolling, stopPolling]);
+
+  async function handleStart(source: string) {
+    await startImport({ variables: { source } }).catch(() => undefined);
+    await refetch();
+  }
+
+  return (
+    <div className="card p-5 space-y-4" data-testid="open-sources-card">
+      <div>
+        <h3 className="flex items-center gap-2 font-semibold">
+          <BookOpen className="h-4 w-4 text-green-600" /> Open-licence sources
+        </h3>
+        <p className="mt-1 text-sm text-gray-600">
+          Scores and recordings we may show and share freely. Imports run in the background - you can leave this page. Re-run to pick up new pieces.
+        </p>
+      </div>
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error.message}</div>
+      )}
+      <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+        {OPEN_SOURCES.map((item) => {
+          const status = statuses[item.source];
+          const running = status?.state === 'running';
+          const percent = running && status.total ? Math.round((status.done / status.total) * 100) : null;
+          return (
+            <li key={item.source} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-800">{item.name}</p>
+                <p className="text-xs text-gray-500">{item.detail}</p>
+                {running && (
+                  <div className="mt-2 w-full max-w-xs">
+                    <div className="h-1.5 overflow-hidden rounded-full bg-gray-200">
+                      <div
+                        className={`h-full rounded-full bg-primary-600 transition-all ${percent === null ? 'w-1/3 animate-pulse' : ''}`}
+                        style={percent === null ? undefined : { width: `${percent}%` }}
+                      />
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">{percent === null ? 'Importing…' : `${status.done} / ${status.total} checked`}</p>
+                  </div>
+                )}
+                {!running && status?.message && status.state !== 'idle' && (
+                  <p className={`mt-1 text-xs ${status.state === 'failed' ? 'text-red-700' : 'text-green-700'}`}>
+                    {status.message}
+                    {status.finishedAt ? ` · ${new Date(status.finishedAt).toLocaleString()}` : ''}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                disabled={running}
+                onClick={() => void handleStart(item.source)}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <RefreshCw className={`h-4 w-4 ${running ? 'animate-spin' : ''}`} />
+                {running ? 'Importing…' : status?.state === 'done' ? 'Re-import' : 'Import'}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -830,6 +883,8 @@ function ContentTab() {
       </div>
 
       <LibraryPullCard />
+
+      <OpenSourcesCard />
 
       <ExternalEventsCard />
     </div>

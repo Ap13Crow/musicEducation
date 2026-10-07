@@ -36,7 +36,6 @@ export function GallicaViewer({
   const [pages, setPages] = useState<GallicaPage[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [index, setIndex] = useState(0);
-  const [autoPlay, setAutoPlay] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,40 +65,11 @@ export function GallicaViewer({
 
   const tracks = pages.filter((page) => page.audioUrl);
   if (tracks.length > 0) {
-    const trackIndex = Math.min(index, tracks.length - 1);
-    const current = tracks[trackIndex];
-    const goTo = (next: number, play: boolean) => {
-      setAutoPlay(play);
-      setIndex(next);
-    };
     return (
-      <div className="space-y-4">
-        <AudioPlayer
-          url={current.audioUrl!}
-          title={current.label ?? `${title} - track ${current.pageNumber}`}
-          attribution={ATTRIBUTION}
-          autoPlay={autoPlay}
-          onEnded={trackIndex < tracks.length - 1 ? () => goTo(trackIndex + 1, true) : undefined}
-          onPrevious={trackIndex > 0 ? () => goTo(trackIndex - 1, autoPlay) : undefined}
-          onNext={trackIndex < tracks.length - 1 ? () => goTo(trackIndex + 1, autoPlay) : undefined}
-        />
-        {tracks.length > 1 && (
-          <ol className="card divide-y divide-gray-100 p-0 text-sm" data-testid="gallica-tracks">
-            {tracks.map((track, position) => (
-              <li key={track.pageNumber}>
-                <button
-                  type="button"
-                  onClick={() => goTo(position, true)}
-                  aria-current={position === trackIndex}
-                  className={`w-full px-4 py-2 text-left hover:bg-gray-50 ${position === trackIndex ? 'font-semibold text-primary-700' : 'text-gray-700'}`}
-                >
-                  {position + 1}. {track.label ?? `Track ${track.pageNumber}`}
-                </button>
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
+      <AudioPlayer
+        tracks={tracks.map((track, position) => ({ title: track.label ?? `Track ${position + 1}`, url: track.audioUrl! }))}
+        attribution={ATTRIBUTION}
+      />
     );
   }
 

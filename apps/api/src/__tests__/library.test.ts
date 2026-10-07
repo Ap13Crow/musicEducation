@@ -195,7 +195,14 @@ describe('LibraryItem.files', () => {
       id: 'q1',
       files: [{ label: 'Full score (PDF)', sourceUrl: 'https://raw.githubusercontent.com/OpenScore/x.pdf', contentType: 'application/pdf' }],
     });
-    expect(files).toEqual([{ label: 'Full score (PDF)', url: '/api/library/items/q1/files/0.pdf', contentType: 'application/pdf' }]);
+    expect(files).toEqual([{ label: 'Full score (PDF)', url: '/api/library/items/q1/files/0.pdf', contentType: 'application/pdf', durationSeconds: null }]);
     expect(libraryResolvers.LibraryItem.files({ id: 'q2', files: null })).toEqual([]);
+  });
+
+  it('streams archive.org audio directly, with its duration', () => {
+    const url = 'https://archive.org/download/MusopenCollectionAsFlac/Suk_Meditation/a.mp3';
+    expect(libraryResolvers.LibraryItem.files({ id: 'm1', files: [{ label: 'Meditation', sourceUrl: url, contentType: 'audio/mpeg', durationSeconds: 430 }] })).toEqual([
+      { label: 'Meditation', url, contentType: 'audio/mpeg', durationSeconds: 430 },
+    ]);
   });
 });

@@ -8,6 +8,7 @@ import { ScoreViewer } from '@/components/library/ScoreViewer';
 import { AudioPlayer } from '@/components/library/AudioPlayer';
 import { GallicaViewer } from '@/components/library/GallicaViewer';
 import { GallicaEmbed } from '@/components/library/GallicaEmbed';
+import { PdfViewer } from '@/components/library/PdfViewer';
 import { SOURCE_LABELS } from '../sources';
 
 const GET_LIBRARY_ITEM = gql`
@@ -15,7 +16,7 @@ const GET_LIBRARY_ITEM = gql`
     libraryItem(id: $id) {
       id source category title creator date documentType permalink catalogueUrl
       scoreUrl pagesUrl embedUrl audioUrl license attribution
-      files { label url contentType }
+      files { label url contentType durationSeconds }
     }
   }
 `;
@@ -26,9 +27,17 @@ export default function LibraryItemPage() {
   const { data, loading, error } = useQuery(GET_LIBRARY_ITEM, { variables: { id } });
   const item = data?.libraryItem;
   const source = item ? SOURCE_LABELS[item.source] ?? SOURCE_LABELS.BNF : null;
+  const files: any[] = item?.files ?? [];
+  const pdfFiles = files.filter((file) => file.contentType === 'application/pdf');
+  const audioTracks = [
+    ...(item?.audioUrl ? [{ title: item.title, url: item.audioUrl }] : []),
+    ...files
+      .filter((file) => file.contentType.startsWith('audio/'))
+      .map((file) => ({ title: file.label, url: file.url, durationSeconds: file.durationSeconds })),
+  ];
 
   return (
-    <main className="px-6 py-12">
+    <main className="px-4 py-8 sm:px-6 sm:py-12">
       <div className="mx-auto max-w-5xl space-y-6">
         <Link href="/library" className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900">
           <ArrowLeft className="h-4 w-4" /> Library
@@ -41,13 +50,13 @@ export default function LibraryItemPage() {
         {item && source && (
           <>
             <header>
-              <h1 className="text-3xl font-bold leading-tight">{item.title}</h1>
+              <h1 className="text-2xl font-bold leading-tight sm:text-3xl">{item.title}</h1>
               <p className="mt-2 text-gray-600">
                 {[item.creator, item.date, item.documentType].filter(Boolean).join(' · ')}
               </p>
             </header>
 
-            {item.audioUrl && <AudioPlayer url={item.audioUrl} title={item.title} attribution={item.attribution} />}
+            {audioTracks.length > 0 && <AudioPlayer tracks={audioTracks} attribution={item.attribution} />}
 
             {item.scoreUrl && <ScoreViewer url={item.scoreUrl} title={item.title} />}
             {item.pagesUrl && (
@@ -61,17 +70,21 @@ export default function LibraryItemPage() {
             {!item.pagesUrl && item.embedUrl && (
               <GallicaEmbed url={item.embedUrl} title={item.title} audio={item.category === 'AUDIO_RECORDING'} />
             )}
-            {item.files.length > 0 && (
+
+            {/* No engraved MusicXML: show the first PDF score inline. */}
+            {!item.scoreUrl && pdfFiles.length > 0 && <PdfViewer url={pdfFiles[0].url} title={item.title} />}
+
+            {pdfFiles.length > 0 && (
               <section className="card p-4" data-testid="library-files">
                 <h2 className="mb-2 text-sm font-semibold text-gray-800">Scores and parts</h2>
                 <ul className="flex flex-wrap gap-2">
-                  {item.files.map((file: any) => (
+                  {pdfFiles.map((file: any) => (
                     <li key={file.url}>
                       <a
                         href={file.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:border-primary-300 hover:text-primary-700"
+                        className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:border-primary-300 hover:text-primary-700"
                       >
                         <FileText className="h-4 w-4" /> {file.label}
                       </a>
@@ -81,7 +94,7 @@ export default function LibraryItemPage() {
               </section>
             )}
 
-            {!item.scoreUrl && !item.pagesUrl && !item.embedUrl && !item.audioUrl && item.files.length === 0 && (
+            {!item.scoreUrl && !item.pagesUrl && !item.embedUrl && audioTracks.length === 0 && pdfFiles.length === 0 && (
               <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
                 This item can&rsquo;t be shown here yet - open it at the source below.
               </p>

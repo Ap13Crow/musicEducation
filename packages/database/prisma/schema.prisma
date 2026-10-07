@@ -1471,6 +1471,10 @@ enum LibrarySource {
   BNF
   // OpenScore corpora (Lieder, ...) - CC0 MusicXML on GitHub.
   OPENSCORE
+  // Musopen recordings (public domain / CC0) hosted on the Internet Archive.
+  MUSOPEN
+  // Mutopia Project engraved scores (public domain / CC BY / CC BY-SA PDFs).
+  MUTOPIA
 }
 
 enum LibraryItemCategory {
@@ -1510,10 +1514,11 @@ model LibraryItem {
   // openly licensed sources (OPENSCORE); a BNF row stays null until its
   // commercial-reuse licence is signed.
   musicXmlSourceUrl  String?
-  // Extra downloadable files ([{ label, sourceUrl, contentType }]) - e.g. an
-  // OpenScore quartet's PDF full score and parts. Same rule as
-  // musicXmlSourceUrl: pinned, openly licensed upstreams only, served via
-  // /library/items/:id/files/:index.pdf, never linked directly.
+  // Attached files ([{ label, sourceUrl, contentType, durationSeconds? }]) -
+  // PDF scores/parts (OpenScore quartets, Mutopia; served via
+  // /library/items/:id/files/:index.pdf from an allowlisted upstream) and
+  // audio tracks (Musopen; played straight from archive.org, which is built
+  // for direct streaming). Openly licensed upstreams only.
   files              Json?
   // Playable audio we may serve (our own storage, or an openly licensed
   // upstream). Null for every BNF row for the same licence reason.

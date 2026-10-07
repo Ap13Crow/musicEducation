@@ -250,8 +250,13 @@ export function isAllowedScoreSource(url: string): boolean {
   return url.startsWith(OPENSCORE_RAW_PREFIX);
 }
 
+// Mutopia PDFs share the score cache - see lib/openSources.ts.
+const EXTRA_ALLOWED_PREFIXES = ['https://www.mutopiaproject.org/ftp/'];
+
 export async function fetchScoreBytes(url: string): Promise<Buffer> {
-  if (!isAllowedScoreSource(url)) throw new Error('Score source not allowed.');
+  if (!isAllowedScoreSource(url) && !EXTRA_ALLOWED_PREFIXES.some((prefix) => url.startsWith(prefix))) {
+    throw new Error('Score source not allowed.');
+  }
   const cached = sourceCache.get(url);
   if (cached) {
     sourceCache.delete(url);

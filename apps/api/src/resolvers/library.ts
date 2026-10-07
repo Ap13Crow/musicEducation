@@ -6,6 +6,8 @@ import {
 } from '@my-music-coach/bnf-gallica';
 import { requireRole } from '../middleware/auth.js';
 import { ingestOpenScoreCorpus } from '../lib/openscore.js';
+import { ARCHIVE_DOWNLOAD_PREFIX } from '../lib/openSources.js';
+import { LIBRARY_IMPORT_SOURCES, getLibraryImportStatus, startLibraryImport } from '../lib/libraryImports.js';
 import { bnfLibraryMediaEnabled } from '@my-music-coach/bnf-gallica';
 import type { GraphQLContext } from '../types.js';
 
@@ -40,12 +42,20 @@ export const libraryResolvers = {
     // licence flag, and no load on our IP's Gallica rate limit.
     embedUrl: (item: { source: string; ark: string }) =>
       item.source === 'BNF' && /^[a-z0-9]+$/i.test(item.ark) ? `https://gallica.bnf.fr/ark:/12148/${item.ark}/f1.media.mini` : null,
+    // PDFs go through our cached same-origin route; archive.org audio is
+    // streamed straight from the Internet Archive (public domain, built for
+    // direct range-request streaming - no reason to relay MBs through us).
     files: (item: { id: string; files?: unknown }) =>
-      (Array.isArray(item.files) ? item.files : []).map((file: any, index: number) => ({
-        label: String(file?.label ?? `File ${index + 1}`),
-        url: `/api/library/items/${item.id}/files/${index}.pdf`,
-        contentType: String(file?.contentType ?? 'application/pdf'),
-      })),
+      (Array.isArray(item.files) ? item.files : []).map((file: any, index: number) => {
+        const contentType = String(file?.contentType ?? 'application/pdf');
+        const direct = contentType.startsWith('audio/') && String(file?.sourceUrl ?? '').startsWith(ARCHIVE_DOWNLOAD_PREFIX);
+        return {
+          label: String(file?.label ?? `File ${index + 1}`),
+          url: direct ? file.sourceUrl : `/api/library/items/${item.id}/files/${index}.pdf`,
+          contentType,
+          durationSeconds: Number.isFinite(file?.durationSeconds) ? file.durationSeconds : null,
+        };
+      }),
     pagesUrl: (item: { id: string; source: string }) =>
       item.source === 'BNF' && bnfLibraryMediaEnabled() ? `/api/library/items/${item.id}/pages.json` : null,
   },
@@ -73,6 +83,11 @@ export const libraryResolvers = {
       const item = await prisma.libraryItem.findUnique({ where: { id } });
       if (!item || item.hiddenAt) return null;
       return item;
+    },
+
+    async libraryImportStatuses(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'ADMIN');
+      return Promise.all(LIBRARY_IMPORT_SOURCES.map((source) => getLibraryImportStatus(prisma, source)));
     },
 
     async libraryStats(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
@@ -136,6 +151,17 @@ export const libraryResolvers = {
       } finally {
         await releaseLibraryIngestLock(prisma);
       }
+    },
+
+    async startLibraryImport(_: unknown, { source }: { source: string }, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'ADMIN');
+      const key = LIBRARY_IMPORT_SOURCES.find((candidate) => candidate === source);
+      if (!key) throw new GraphQLError('Unknown library source.', { extensions: { code: 'BAD_USER_INPUT' } });
+      const status = await startLibraryImport(prisma, key);
+      if (!status) {
+        throw new GraphQLError('This import is already running - its progress is shown below.', { extensions: { code: 'CONFLICT' } });
+      }
+      return status;
     },
 
     async runOpenScoreIngest(_: unknown, { corpus = 'LIEDER' }: { corpus?: string | null }, { prisma, user }: GraphQLContext) {

@@ -401,3 +401,22 @@ describe('Admin Settings', () => {
     });
   });
 });
+
+describe('platformStats', () => {
+  it('counts visible library scores and recordings alongside the existing stats', async () => {
+    const libraryCount = jest.fn(({ where }: any) => Promise.resolve(where.category === 'SHEET_MUSIC' ? 1677 : 20));
+    const prisma = fakePrisma({
+      user: { count: jest.fn().mockResolvedValue(1) },
+      teacherProfile: { count: jest.fn().mockResolvedValue(2) },
+      course: { count: jest.fn().mockResolvedValue(0) },
+      event: { count: jest.fn().mockResolvedValue(3) },
+      externalEventProjection: { count: jest.fn().mockResolvedValue(7145) },
+      libraryItem: { count: libraryCount },
+    });
+
+    const stats = await adminResolvers.Query.platformStats(null, {}, { prisma, user: null } as any);
+
+    expect(stats).toEqual({ totalCourses: 0, totalTeachers: 2, totalStudents: 1, totalEvents: 7148, totalScores: 1677, totalRecordings: 20 });
+    expect(libraryCount).toHaveBeenCalledWith({ where: { category: 'SHEET_MUSIC', hiddenAt: null } });
+  });
+});

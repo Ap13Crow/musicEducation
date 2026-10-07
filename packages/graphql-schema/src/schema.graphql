@@ -616,6 +616,8 @@ type LessonSlide {
 enum LibrarySource {
   BNF
   OPENSCORE
+  MUSOPEN
+  MUTOPIA
 }
 
 enum LibraryItemCategory {
@@ -631,6 +633,35 @@ type LibraryFile {
   label: String!
   url: String!
   contentType: String!
+  # Audio tracks only, when the source reports it.
+  durationSeconds: Int
+}
+
+enum LibraryImportSource {
+  OPENSCORE_LIEDER
+  OPENSCORE_STRING_QUARTETS
+  MUSOPEN
+  MUTOPIA
+}
+
+enum LibraryImportState {
+  idle
+  running
+  done
+  failed
+}
+
+# Progress of an admin-started background import of an openly licensed
+# Library source.
+type LibraryImportStatus {
+  source: LibraryImportSource!
+  state: LibraryImportState!
+  done: Int!
+  total: Int!
+  upserted: Int!
+  message: String
+  startedAt: DateTime
+  finishedAt: DateTime
 }
 
 enum OpenScoreCorpus {
@@ -1305,6 +1336,10 @@ type PlatformStats {
   totalTeachers: Int!
   totalEvents: Int!
   totalStudents: Int!
+  # Visible Library items - sheet music (OpenScore + Gallica scores) and
+  # recordings.
+  totalScores: Int!
+  totalRecordings: Int!
 }
 
 # ── Input Types ──────────
@@ -1708,6 +1743,8 @@ type Query {
   # Library - public, no login required, matches Query.events.
   libraryItems(filter: LibraryItemFilterInput, page: Int, limit: Int): LibraryItemConnection!
   libraryItem(id: ID!): LibraryItem
+  # ADMIN only - one status per openly licensed source.
+  libraryImportStatuses: [LibraryImportStatus!]!
   # ADMIN only - live-reconstructed from LibraryItem, no run-history table.
   libraryStats: LibraryStats!
   # ADMIN only - metadata-only CSV export, no commercial-reuse gate needed.
@@ -1828,6 +1865,10 @@ type Mutation {
   # and parts where the corpus has them) from GitHub, pinned to the corpus's
   # current commit. Idempotent. Defaults to LIEDER.
   runOpenScoreIngest(corpus: OpenScoreCorpus): LibraryIngestResult!
+  # ADMIN only - starts a background import of an openly licensed source
+  # (OpenScore, Musopen, Mutopia); poll libraryImportStatuses for progress.
+  # CONFLICT while that source is already running.
+  startLibraryImport(source: LibraryImportSource!): LibraryImportStatus!
 
   # Bookings
   bookSession(input: BookSessionInput!): Booking!

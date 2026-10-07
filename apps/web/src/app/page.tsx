@@ -6,14 +6,18 @@ import { BookOpen, Music, Calendar, Star, Users, TrendingUp } from 'lucide-react
 
 const GET_PLATFORM_STATS = gql`
   query HomepagePlatformStats {
-    platformStats { totalCourses totalTeachers totalEvents totalStudents }
+    platformStats { totalCourses totalTeachers totalEvents totalStudents totalScores totalRecordings }
   }
 `;
 
-function formatCount(n: number | undefined): string {
-  if (n === undefined) return '—';
-  return n.toLocaleString('en-US');
-}
+const STAT_FIELDS = [
+  { key: 'totalCourses', label: 'Courses', href: '/courses' },
+  { key: 'totalTeachers', label: 'Teachers', href: '/teachers' },
+  { key: 'totalEvents', label: 'Events', href: '/events' },
+  { key: 'totalScores', label: 'Scores', href: '/library' },
+  { key: 'totalRecordings', label: 'Recordings', href: '/library' },
+  { key: 'totalStudents', label: 'Students', href: null },
+] as const;
 
 const features = [
   {
@@ -43,12 +47,12 @@ export default function HomePage() {
   const liveApiEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_API === 'true';
   const { data } = useQuery(GET_PLATFORM_STATS, { skip: !liveApiEnabled });
   const platformStats = data?.platformStats;
-  const stats = [
-    { value: formatCount(platformStats?.totalCourses), label: 'Courses' },
-    { value: formatCount(platformStats?.totalTeachers), label: 'Teachers' },
-    { value: formatCount(platformStats?.totalEvents), label: 'Events' },
-    { value: formatCount(platformStats?.totalStudents), label: 'Students' },
-  ];
+  // Only stats with something to show - a "0 Courses" tile reads as an
+  // empty platform, so zero (or not-yet-loaded) values are hidden.
+  const stats = STAT_FIELDS.flatMap((field) => {
+    const value = platformStats?.[field.key];
+    return typeof value === 'number' && value > 0 ? [{ ...field, value: value.toLocaleString('en-US') }] : [];
+  });
 
   return (
     <main>
@@ -76,14 +80,23 @@ export default function HomePage() {
       </section>
 
       {/* Stats */}
-      <section className="border-y border-gray-100 bg-gray-50 px-6 py-12">
-        <div className="mx-auto grid max-w-4xl grid-cols-2 gap-8 sm:grid-cols-4">
-          {stats.map((stat) => (
-            <div key={stat.label} className="text-center">
-              <div className="mb-1 text-3xl font-bold text-primary-600">{stat.value}</div>
-              <div className="text-sm text-gray-500">{stat.label}</div>
-            </div>
-          ))}
+      <section className="min-h-[8.5rem] border-y border-gray-100 bg-gray-50 px-6 py-12" data-testid="platform-stats">
+        <div className="mx-auto flex max-w-5xl flex-wrap justify-center gap-x-10 gap-y-6 sm:gap-x-14">
+          {stats.map((stat) => {
+            const content = (
+              <>
+                <div className="mb-1 text-3xl font-bold tabular-nums text-primary-600">{stat.value}</div>
+                <div className="text-sm text-gray-500">{stat.label}</div>
+              </>
+            );
+            return stat.href ? (
+              <Link key={stat.label} href={stat.href} className="min-w-[5.5rem] text-center transition-opacity hover:opacity-80">
+                {content}
+              </Link>
+            ) : (
+              <div key={stat.label} className="min-w-[5.5rem] text-center">{content}</div>
+            );
+          })}
         </div>
       </section>
 

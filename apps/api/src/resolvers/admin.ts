@@ -18,7 +18,7 @@ export const adminResolvers = {
     // discoverable as teachers at all.
     async platformStats(_: unknown, __: unknown, { prisma }: GraphQLContext) {
       const now = new Date();
-      const [totalCourses, totalTeachers, totalStudents, nativeEvents, externalEvents] = await Promise.all([
+      const [totalCourses, totalTeachers, totalStudents, nativeEvents, externalEvents, totalScores, totalRecordings] = await Promise.all([
         prisma.course.count({ where: { status: 'PUBLISHED' } }),
         prisma.teacherProfile.count({
           where: { isPublic: true, user: { role: { in: ['TEACHER', 'ADMIN'] }, status: 'ACTIVE' } },
@@ -28,8 +28,10 @@ export const adminResolvers = {
         prisma.externalEventProjection.count({
           where: { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
         }),
+        prisma.libraryItem.count({ where: { category: 'SHEET_MUSIC', hiddenAt: null } }),
+        prisma.libraryItem.count({ where: { category: 'AUDIO_RECORDING', hiddenAt: null } }),
       ]);
-      return { totalCourses, totalTeachers, totalStudents, totalEvents: nativeEvents + externalEvents };
+      return { totalCourses, totalTeachers, totalStudents, totalEvents: nativeEvents + externalEvents, totalScores, totalRecordings };
     },
 
     async adminSettings(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {

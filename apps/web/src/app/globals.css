@@ -30,3 +30,59 @@
     @apply block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500;
   }
 }
+
+/* Library audio player scrubber (components/library/AudioPlayer.tsx): a
+   44 px tall touch area around a 6 px track that fills to --progress, with a
+   20 px thumb - range inputs need vendor pseudo-elements to style. */
+.player-seek {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+.player-seek:focus-visible {
+  outline: none;
+}
+.player-seek::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    theme('colors.primary.600') var(--progress, 0%),
+    theme('colors.gray.200') var(--progress, 0%)
+  );
+}
+.player-seek::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: theme('colors.gray.200');
+}
+.player-seek::-moz-range-progress {
+  height: 6px;
+  border-radius: 9999px;
+  background: theme('colors.primary.600');
+}
+.player-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -7px;
+  height: 20px;
+  width: 20px;
+  border-radius: 9999px;
+  background: theme('colors.primary.600');
+  border: 3px solid white;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+}
+.player-seek::-moz-range-thumb {
+  height: 20px;
+  width: 20px;
+  border-radius: 9999px;
+  background: theme('colors.primary.600');
+  border: 3px solid white;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+}
+.player-seek:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px theme('colors.primary.100');
+}
+.player-seek:disabled::-webkit-slider-thumb {
+  background: theme('colors.gray.300');
+}

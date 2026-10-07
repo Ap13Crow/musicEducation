@@ -15,6 +15,7 @@ import { createLoaders } from './lib/loaders.js';
 import { handleStripeWebhook, handleStripeV2Webhook } from './resolvers/payments.js';
 import { buildUserCalendarFeed } from './lib/calendarFeed.js';
 import { fetchScoreBytes, isAllowedScoreSource } from './lib/openscore.js';
+import { MUTOPIA_FTP_PREFIX } from './lib/openSources.js';
 import { getLibraryAudioTrack, getLibraryManifest, getLibraryPageImage, sendWithRange } from './lib/libraryMedia.js';
 import { bnfLibraryMediaEnabled } from '@my-music-coach/bnf-gallica';
 import type { GraphQLContext } from './types.js';
@@ -374,7 +375,8 @@ async function main() {
       const index = Number(req.params.index);
       const item = await prisma.libraryItem.findUnique({ where: { id: req.params.id }, select: { files: true, hiddenAt: true } });
       const file = Array.isArray(item?.files) && Number.isInteger(index) ? (item!.files as any[])[index] : null;
-      if (!item || item.hiddenAt || !file?.sourceUrl || !isAllowedScoreSource(file.sourceUrl) || file.contentType !== 'application/pdf') {
+      const allowed = file?.sourceUrl && (isAllowedScoreSource(file.sourceUrl) || file.sourceUrl.startsWith(MUTOPIA_FTP_PREFIX));
+      if (!item || item.hiddenAt || !allowed || file.contentType !== 'application/pdf') {
         return res.status(404).send('Not found');
       }
       const bytes = await fetchScoreBytes(file.sourceUrl);
