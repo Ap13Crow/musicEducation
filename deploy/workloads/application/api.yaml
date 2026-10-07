@@ -99,6 +99,12 @@ spec:
                   name: application-integrations
                   key: CLASSICTIC_API_TOKEN
                   optional: true
+            # BnF/Gallica cultural-heritage library. Search and preview call
+            # BnF's open APIs regardless of this flag; set to "true" only once
+            # the BnF commercial-reuse agreement is actually signed - until
+            # then, importBnfSlide/importBnfAudio reject with NOT_CONFIGURED.
+            - name: BNF_COMMERCIAL_LICENSE_ACCEPTED
+              value: ''
             # DeepSeek (preferred) / OpenAI fallback for AI-generated assessment
             # reports (see apps/api/src/lib/ai.ts) - absent, aiChat() returns
             # null and callers fall back to deterministic text.
