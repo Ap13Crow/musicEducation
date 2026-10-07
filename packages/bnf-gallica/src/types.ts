@@ -15,6 +15,8 @@ export interface BnfCatalogueRecord {
   date?: string | null;
   /** Most specific dc:type value found (e.g. "partition musicale", "document sonore"). */
   documentType?: string | null;
+  /** Every dc:type value on the record - the category is decided from all of them (see categorizeDocumentTypes). */
+  documentTypes?: string[];
   /** True when any dc:rights value says "domaine public"/"public domain" - BnF's reuse fee still applies regardless (see config.ts). */
   isPublicDomainWork: boolean;
   /** BnF catalogue notice URL from the record's "Notice du catalogue" relation, when present. */

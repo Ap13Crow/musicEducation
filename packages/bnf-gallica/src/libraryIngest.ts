@@ -23,16 +23,35 @@ export interface LibraryIngestResult {
 // exist - a CQL/indexing quirk, not a documentType someone removed. Keep
 // filters single-word for this reason; this mapping checks substrings so it
 // still recognizes the full phrases that come back in dc:type values.
-export function mapDocumentTypeToCategory(documentType: string | null | undefined): LibraryItemCategory {
-  const value = (documentType ?? '').toLowerCase();
-  if (value.includes('partition')) return 'SHEET_MUSIC';
-  if (value.includes('sonore') || value.includes('sound')) return 'AUDIO_RECORDING';
-  if (value.includes('monographie') || value.includes('monograph') || value.includes('texte') || value.includes('text')) return 'BOOK';
+
+// Decided from ALL of a record's dc:type values, not the one display label
+// pickDocumentType keeps - confirmed live, a manuscript score's list is
+// ["Genre musical : sonate", "manuscript music", "musique manuscrite"] and
+// some scores carry nothing but a genre ("Genre musical : rondo"). Order
+// matters: a printed score also lists "text", so notated music wins first.
+const SHEET_MUSIC_TYPE = /partition|\bscore\b|manuscript music|printed music|notated music|musique (manuscrite|imprim|not)/;
+const AUDIO_TYPE = /sonore|\bsound\b/;
+const BOOK_TYPE = /monographie|monograph|texte|\btext\b|\blivre\b|\bbook\b/;
+// A genre classification with no other nature label is notated music in
+// practice: Gallica recordings always also carry "document sonore".
+const MUSIC_GENRE_TYPE = /^genre musical\s*:/;
+
+export function categorizeDocumentTypes(types: ReadonlyArray<string | null | undefined>): LibraryItemCategory {
+  const values = types.filter((t): t is string => Boolean(t)).map((t) => t.trim().toLowerCase());
+  const has = (pattern: RegExp) => values.some((value) => pattern.test(value));
+  if (has(SHEET_MUSIC_TYPE)) return 'SHEET_MUSIC';
+  if (has(AUDIO_TYPE)) return 'AUDIO_RECORDING';
+  if (has(BOOK_TYPE)) return 'BOOK';
+  if (has(MUSIC_GENRE_TYPE)) return 'SHEET_MUSIC';
   return 'OTHER';
 }
 
+export function mapDocumentTypeToCategory(documentType: string | null | undefined): LibraryItemCategory {
+  return categorizeDocumentTypes([documentType]);
+}
+
 async function upsertLibraryItem(prisma: PrismaClient, record: BnfCatalogueRecord, seedQuery: string) {
-  const category = mapDocumentTypeToCategory(record.documentType);
+  const category = categorizeDocumentTypes(record.documentTypes?.length ? record.documentTypes : [record.documentType]);
   await prisma.libraryItem.upsert({
     where: { source_ark: { source: 'BNF', ark: record.ark } },
     create: {

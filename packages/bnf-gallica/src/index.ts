@@ -4,6 +4,7 @@ export { getManifest, fetchPageImage, fetchPageAudio, sizedImageUrl } from './ga
 export {
   ingestLibraryTopic,
   mapDocumentTypeToCategory,
+  categorizeDocumentTypes,
   acquireLibraryIngestLock,
   releaseLibraryIngestLock,
 } from './libraryIngest.js';

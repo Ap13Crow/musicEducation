@@ -91,6 +91,7 @@ function normalizeRecord(dc: Record<string, unknown>): BnfCatalogueRecord | null
     creator: creators[0] ?? null,
     date: textOf(asArray(dc.date)[0]),
     documentType: pickDocumentType(types),
+    documentTypes: types,
     isPublicDomainWork: rights.some((r) => /domaine public|public domain/i.test(r)),
     catalogueUrl,
     permalink: `https://gallica.bnf.fr/ark:/12148/${ark}`,

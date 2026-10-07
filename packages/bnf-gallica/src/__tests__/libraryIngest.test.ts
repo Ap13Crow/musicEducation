@@ -1,7 +1,31 @@
-import { mapDocumentTypeToCategory, ingestLibraryTopic, acquireLibraryIngestLock, releaseLibraryIngestLock } from '../libraryIngest.js';
+import { categorizeDocumentTypes, mapDocumentTypeToCategory, ingestLibraryTopic, acquireLibraryIngestLock, releaseLibraryIngestLock } from '../libraryIngest.js';
 import { searchCatalogue } from '../sru.js';
 
 jest.mock('../sru.js', () => ({ searchCatalogue: jest.fn() }));
+
+describe('categorizeDocumentTypes - full dc:type lists captured live 2026-10-07', () => {
+  it('files a manuscript score as sheet music', () => {
+    expect(categorizeDocumentTypes(['Genre musical : sonate ', 'manuscript music', 'musique manuscrite'])).toBe('SHEET_MUSIC');
+  });
+
+  it('files a genre-only record as sheet music', () => {
+    expect(categorizeDocumentTypes(['Genre musical : rondo '])).toBe('SHEET_MUSIC');
+    expect(categorizeDocumentTypes(['Genre musical : divers'])).toBe('SHEET_MUSIC');
+  });
+
+  it('prefers sheet music over the "text" a printed score also carries', () => {
+    expect(categorizeDocumentTypes(['Genre musical : divers', 'partition musicale', 'score', 'text'])).toBe('SHEET_MUSIC');
+  });
+
+  it('keeps a recording with a genre as audio', () => {
+    expect(categorizeDocumentTypes(['Genre musical : opéra', 'sound', 'document sonore'])).toBe('AUDIO_RECORDING');
+  });
+
+  it('files a printed book as a book and an empty list as other', () => {
+    expect(categorizeDocumentTypes(['monographie imprimée', 'text'])).toBe('BOOK');
+    expect(categorizeDocumentTypes([])).toBe('OTHER');
+  });
+});
 
 describe('mapDocumentTypeToCategory', () => {
   it('maps the confirmed-live single-word fragments to the right category', () => {
