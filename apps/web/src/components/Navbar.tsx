@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useSession, signIn } from 'next-auth/react';
 import { useState } from 'react';
-import { Menu, X, User, LogOut, Settings, BookOpen, Music, Calendar, ChevronDown, GraduationCap } from 'lucide-react';
+import { Menu, X, User, LogOut, Settings, BookOpen, Music, Calendar, ChevronDown, GraduationCap, Library } from 'lucide-react';
 import { hasRole } from '@/lib/roles';
 
 export default function Navbar() {
@@ -24,6 +24,7 @@ export default function Navbar() {
     { name: 'Courses', href: '/courses', icon: BookOpen },
     { name: 'Teachers', href: '/teachers', icon: Music },
     { name: 'Events', href: '/events', icon: Calendar },
+    { name: 'Library', href: '/library', icon: Library },
   ];
   // Previously only linked from a small text link in the homepage footer -
   // easy to miss entirely on any other page. Shown for guests and students;
