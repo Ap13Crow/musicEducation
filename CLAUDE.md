@@ -23,7 +23,8 @@ removed. Do not reintroduce them.
 - `apps/worker` — async jobs: webhook processing, email, external-event ingestion, retries.
   (Being introduced; async work currently runs in-process in the API and is moving here.)
 
-Shared code: `packages/database` (Prisma, `db push` workflow — no migrations folder),
+Shared code: `packages/database` (Prisma; `db push` in dev, numbered SQL in
+`deploy/database/identity/` for production — see Deployment model),
 `packages/graphql-schema`, `packages/mcp-server`.
 
 ### Platform reality
@@ -46,12 +47,55 @@ Shared code: `packages/database` (Prisma, `db push` workflow — no migrations f
 
 ## Deployment model (how your changes reach the cluster)
 
-You author code and manifests and open a PR. **CI owns cluster mutation**, not Claude Code.
-`.github/workflows/deploy-k3s-production.yml` builds SHA-tagged GHCR images on GitHub-hosted
-runners, then a protected, manually dispatched job uses the `mymusiccoach-prod` self-hosted
-runner to reconcile local k3s. Do not run `kubectl apply`, rotate credentials, or make direct
-cluster/cloud changes yourself. Read-only `kubectl get/logs/describe` is fine when explicitly
-permitted.
+**GitHub is the repository only. Production is built and deployed from the k3s host itself**
+(this checkout, `/data/projects/musicedu`), by Claude Code when the owner asks to deploy. Do not
+use GitHub Actions or `workflow_dispatch` for production; `.github/workflows/deploy-k3s-production.yml`
+is kept as a reference only. Namespace: `mymusic-coach`.
+
+Deploy, in order (stop at the first failure):
+
+```bash
+cd /data/projects/musicedu
+git push origin main                      # HTTPS remote, PAT in /root/.netrc
+SHA=$(git rev-parse HEAD); PREFIX=ghcr.io/ap13crow/mymusiccoach
+docker build --file apps/api/Dockerfile    --tag "$PREFIX-api:$SHA" .
+docker build --file apps/web/Dockerfile \
+  --build-arg NEXT_PUBLIC_GRAPHQL_URL=/api/graphql \
+  --build-arg NEXT_PUBLIC_ENABLE_LIVE_API=true \
+  --build-arg NEXT_PUBLIC_KEYCLOAK_ISSUER=https://auth.mymusic.coach/realms/mymusic-coach \
+  --build-arg NEXT_PUBLIC_APP_URL=https://mymusic.coach \
+  --tag "$PREFIX-web:$SHA" .
+docker build --file apps/worker/Dockerfile --tag "$PREFIX-worker:$SHA" .
+for a in api web worker; do docker push "$PREFIX-$a:$SHA"; done
+
+# Schema: every file in deploy/database/identity/ re-runs, so each must be idempotent.
+kubectl -n mymusic-coach delete job application-identity-schema --ignore-not-found --wait=true
+kubectl apply -k deploy/overlays/prod/application-database
+kubectl -n mymusic-coach wait --for=condition=complete --timeout=300s job/application-identity-schema
+
+# Workloads: the prod overlay pins `bootstrap` tags - replace them with the full SHA.
+manifest=$(mktemp); kubectl kustomize deploy/overlays/prod/application > "$manifest"
+sed -i -e "s|$PREFIX-api:bootstrap|$PREFIX-api:$SHA|g" \
+       -e "s|$PREFIX-web:bootstrap|$PREFIX-web:$SHA|g" \
+       -e "s|$PREFIX-worker:bootstrap|$PREFIX-worker:$SHA|g" "$manifest"
+kubectl apply -f "$manifest"; rm "$manifest"
+kubectl -n mymusic-coach rollout status deployment/api deployment/web deployment/worker --timeout=300s
+```
+
+- **Schema changes ship as SQL**, not `db push`: a Prisma model/enum/column change needs a new
+  numbered, idempotent file in `deploy/database/identity/` (`IF NOT EXISTS`, `ADD VALUE IF NOT
+  EXISTS`) **and** an entry in that folder's `kustomization.yaml`, or production breaks at runtime.
+- **There is no node/npm on the host.** Test and type-check inside the images: `docker build
+  --target builder -f apps/<app>/Dockerfile -t <tag> .` then `docker run --rm <tag> sh -c 'cd /app
+  && npm test --workspace @my-music-coach/<app>'`; the web image build runs `next build`
+  (type-check). Lockfile updates: `npm install … --package-lock-only` in a `node:20-bookworm-slim`
+  container as the repo owner's uid (npm re-sorts `package.json`; restore the original order).
+- After a deploy, verify against the public site (`https://mymusic.coach`, public GraphQL at
+  `/api/graphql`) rather than assuming the rollout means the feature works.
+- Allowed on this host for operational work in `mymusic-coach`: `kubectl get/logs/describe/exec`,
+  read checks via `psql` in `postgres-0`, and running worker jobs in the worker pod.
+- Still never, without the owner's explicit say-so: rotate credentials, edit Kubernetes Secrets,
+  delete data or PVCs, change Cloudflare/GitHub/cloud settings, or touch other namespaces.
 
 ## Guardrails
 
@@ -62,7 +106,8 @@ permitted.
 - Keep credentials and provider SDK calls server-side. Store timestamps in UTC, keep IANA timezones.
 - Make webhook and job handlers idempotent; external callbacks and provider data are untrusted input.
 - Keep payment, entitlement, progress, and XP state deterministic and auditable. AI never mutates them.
-- Change the Prisma schema only when the task says so; after schema edits, run `db push` (dev).
+- Change the Prisma schema only when the task says so; after schema edits, run `db push` (dev) and
+  add the matching idempotent SQL file + kustomization entry for production.
 - One vertical slice per PR. Add tests with behavior changes; prefer contract tests at boundaries
   and conflict tests for booking/payment. Preserve unrelated changes; keep commits focused.
 
