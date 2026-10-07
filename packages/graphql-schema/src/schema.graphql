@@ -583,6 +583,10 @@ type Lesson {
   # Slide ids the current caller has viewed in this lesson - [] when signed
   # out or not enrolled. Drives the slide viewer's progress bar.
   myViewedSlideIds: [ID!]!
+  # Set only when videoUrl was imported via importBnfAudio rather than
+  # uploaded/linked by the teacher - null for teacher-authored content.
+  sourceUrl: String
+  attribution: String
 }
 
 type LessonSlide {
@@ -592,6 +596,108 @@ type LessonSlide {
   fileUrl: String!
   title: String
   createdAt: DateTime!
+  # See Lesson.sourceUrl/attribution - set only for a slide imported via importBnfSlide.
+  sourceUrl: String
+  attribution: String
+}
+
+# ── Library (BnF/Gallica cultural-heritage content) ──────────
+#
+# A persisted, backend-populated catalogue - public/no-login browsing (see
+# Query.libraryItems), teacher/admin-only course integration (importBnfSlide/
+# importBnfAudio below), admin-only ingestion control and export. Filled by a
+# scheduled worker job and by Mutation.runLibraryIngest (admin on-demand
+# pull); never searched live per visitor. searchBnfCatalogue/bnfManifest
+# below call BnF's open, unauthenticated APIs directly and are now ADMIN-only
+# (the preview step for an on-demand pull, and the page/track picker used
+# when integrating an already-catalogued item into a course) - they are not
+# a general teacher-facing live-search surface.
+
+enum LibrarySource {
+  BNF
+}
+
+enum LibraryItemCategory {
+  SHEET_MUSIC
+  AUDIO_RECORDING
+  BOOK
+  OTHER
+}
+
+type LibraryItem {
+  id: ID!
+  source: LibrarySource!
+  ark: String!
+  category: LibraryItemCategory!
+  title: String!
+  creator: String
+  date: String
+  documentType: String
+  # BnF's reuse fee applies to commercial use of their digitized masters
+  # regardless of this flag - see Query.bnfCommercialReuseConfigured.
+  isPublicDomainWork: Boolean!
+  catalogueUrl: String
+  # Public outbound link to BnF's own Gallica page - the non-commercial
+  # "view it yourself" path that needs no license at all.
+  permalink: String!
+  # Only ever our own re-hosted image or null - never a gallica.bnf.fr URL
+  # (see the Prisma model's doc comment for why). Null until the thumbnail
+  # backfill pass has run for this item.
+  thumbnailUrl: String
+  ingestedAt: DateTime!
+}
+
+type LibraryItemConnection {
+  nodes: [LibraryItem!]!
+  pageInfo: PageInfo!
+}
+
+input LibraryItemFilterInput {
+  query: String
+  category: LibraryItemCategory
+}
+
+type LibraryStats {
+  totalItems: Int!
+  byCategory: [LibraryCategoryCount!]!
+  lastIngestedAt: DateTime
+}
+
+type LibraryCategoryCount {
+  category: LibraryItemCategory!
+  count: Int!
+}
+
+type LibraryIngestResult {
+  query: String!
+  fetched: Int!
+  upserted: Int!
+  message: String!
+}
+
+type BnfCatalogueRecord {
+  # Gallica document ARK - pass to bnfManifest as `ark`.
+  ark: String!
+  title: String!
+  creator: String
+  date: String
+  documentType: String
+  isPublicDomainWork: Boolean!
+  catalogueUrl: String
+  permalink: String!
+}
+
+type BnfManifestPage {
+  pageNumber: Int!
+  label: String
+  thumbnailUrl: String!
+}
+
+type BnfManifest {
+  ark: String!
+  title: String!
+  permalink: String!
+  pages: [BnfManifestPage!]!
 }
 
 type QuizOption {
@@ -1557,6 +1663,24 @@ type Query {
   # StripeConnectStatus. TEACHER/ADMIN only, same as
   # createStripeConnectOnboardingLink.
   stripeConnectStatus: StripeConnectStatus!
+
+  # BnF/Gallica cultural-heritage content. False until
+  # BNF_COMMERCIAL_LICENSE_ACCEPTED=true - importBnfSlide/importBnfAudio (and
+  # downloading an original asset) reject until then; browsing the Library
+  # and its outbound Gallica links are unaffected either way.
+  bnfCommercialReuseConfigured: Boolean!
+  # ADMIN only - preview step for runLibraryIngest, and the page/track picker
+  # used when integrating an already-catalogued LibraryItem into a course.
+  searchBnfCatalogue(query: String!, documentType: String): [BnfCatalogueRecord!]!
+  bnfManifest(ark: String!): BnfManifest!
+
+  # Library - public, no login required, matches Query.events.
+  libraryItems(filter: LibraryItemFilterInput, page: Int, limit: Int): LibraryItemConnection!
+  libraryItem(id: ID!): LibraryItem
+  # ADMIN only - live-reconstructed from LibraryItem, no run-history table.
+  libraryStats: LibraryStats!
+  # ADMIN only - metadata-only CSV export, no commercial-reuse gate needed.
+  exportLibraryItemsCsv(filter: LibraryItemFilterInput): String!
 }
 
 # ── Mutations ──────────
@@ -1657,6 +1781,18 @@ type Mutation {
   # myViewedSlideIds. Does not itself complete the lesson; call
   # markLessonComplete once every slide has been viewed.
   viewLessonSlide(slideId: ID!): Boolean!
+
+  # BnF/Gallica import (course authoring) - TEACHER/ADMIN, course-owner only,
+  # from an already-catalogued LibraryItem (not an arbitrary ark). Both
+  # reject NOT_CONFIGURED unless bnfCommercialReuseConfigured is true.
+  # Downloads the asset server-side and re-hosts it in our own object
+  # storage (never a Gallica URL stored directly) - see resolvers/bnf.ts.
+  importBnfSlide(lessonId: ID!, libraryItemId: ID!, page: Int!): LessonSlide!
+  importBnfAudio(lessonId: ID!, libraryItemId: ID!, page: Int): Lesson!
+
+  # Library ingestion (admin on-demand pull) - ADMIN only. Shares the same
+  # ingest function as the scheduled worker job; see docs/integration-architecture.md.
+  runLibraryIngest(query: String!, documentType: String): LibraryIngestResult!
 
   # Bookings
   bookSession(input: BookSessionInput!): Booking!

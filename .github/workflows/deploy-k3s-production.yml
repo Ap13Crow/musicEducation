@@ -9,6 +9,7 @@ on:
       - 'apps/worker/**'
       - 'packages/database/**'
       - 'packages/external-events/**'
+      - 'packages/bnf-gallica/**'
       - 'packages/graphql-schema/**'
       - 'deploy/**'
       - 'docs/production-runbook.md'
@@ -65,10 +66,12 @@ jobs:
             --workspace @my-music-coach/worker \
             --workspace @my-music-coach/database \
             --workspace @my-music-coach/external-events \
+            --workspace @my-music-coach/bnf-gallica \
             --include-workspace-root
           npm run db:generate --workspace @my-music-coach/database
           npm run build --workspace @my-music-coach/database
           npm run build --workspace @my-music-coach/external-events
+          npm run build --workspace @my-music-coach/bnf-gallica
           npm test --workspace @my-music-coach/api -- --runInBand
           npm test --workspace @my-music-coach/worker -- --runInBand
       - name: Render every production target

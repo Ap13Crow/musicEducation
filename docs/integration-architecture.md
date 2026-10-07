@@ -26,6 +26,7 @@ never a second source of truth for platform state:
 | **DeepSeek / OpenAI** | Advisory-only AI text (assessment feedback, event classification) | `apps/api/src/lib/ai.ts`, `apps/worker/src/lib/ai.ts` |
 | **Ticketmaster** | External event discovery ingestion | `apps/worker/src/discovery/ticketmaster.ts`, `apps/worker/src/jobs/ticketmaster-ingest.ts` |
 | **Classictic** | External affiliate event discovery | `@my-music-coach/external-events`, `apps/worker/src/jobs/classictic-ingest.ts`, `Mutation.runExternalEventIngest` |
+| **BnF / Gallica** | Cultural-heritage sheet-music/audio content for course authoring | `@my-music-coach/bnf-gallica`, `apps/api/src/resolvers/bnf.ts` |
 | **Europeana** | Planned cultural-heritage content for learning — not yet implemented | — |
 | **Calendar subscription feed (ICS)** | Outbound-only — Apple Calendar/Google Calendar/Outlook "subscribe from URL" | `apps/api/src/lib/calendarFeed.ts`, `GET /calendar/feed/:token` |
 | **Google/Microsoft Calendar sync** | Schema/adapter contract only, deliberately not implemented — see below | `apps/api/src/lib/externalCalendar.ts` |
@@ -178,6 +179,57 @@ production checks.
 - **Attribution**: every normalized row's `attribution` field states events are sold
   by Classictic and the listing links out to complete purchase — same disclosure
   requirement as Ticketmaster, rendered by `ExternalEventCard` on `/events`.
+
+### BnF / Gallica (course authoring)
+
+Unlike Ticketmaster/Classictic, this isn't a scheduled ingest - a teacher
+searches on demand while building a course, and an import mutation fetches
+one specific page/track into one specific lesson.
+
+- **Search**: `Query.searchBnfCatalogue(query, documentType)` calls
+  `@my-music-coach/bnf-gallica`'s `searchCatalogue()`, which queries
+  **`https://gallica.bnf.fr/SRU`** (Gallica's own SRU index of digitized
+  documents - confirmed live; this is a different endpoint from
+  `catalogue.bnf.fr/api/SRU`, which indexes physical holdings and only rarely
+  links to a digitized copy). CQL: `gallica all "<query>" and dc.type all
+  "<documentType>"` (e.g. `documentType: "partition"` for sheet music,
+  `"document sonore"` for audio). Open, unauthenticated, no credential gate.
+- **Preview**: `Query.bnfManifest(ark)` fetches the Gallica IIIF manifest
+  (`gallica.bnf.fr/iiif/ark:/12148/<ark>/manifest.json`) and lists each
+  page/canvas's thumbnail - confirmed live structure:
+  `sequences[0].canvases[].images[0].resource['@id']` is the full-resolution
+  image URL, `thumbnail['@id']` the small one, page number parsed from the
+  canvas `@id`'s trailing `/f<n>`.
+- **Requests identify themselves**: Gallica (not catalogue.bnf.fr) returns
+  403 to a request with no/default User-Agent - confirmed live. Every
+  request sends an honest, descriptive UA (`GALLICA_USER_AGENT` in
+  `packages/bnf-gallica/src/config.ts`), not a spoofed browser one.
+- **Import requires a signed license**: `Mutation.importBnfSlide` /
+  `Mutation.importBnfAudio` additionally call
+  `assertBnfCommercialReuseConfigured()` (`apps/api/src/lib/bnf.ts`) first -
+  BnF charges a commercial-reuse fee and requires a signed declaration to
+  put their digitized masters on a paid platform
+  (https://www.bnf.fr/en/order-reproduction-commercial-use), independent of
+  whether the underlying work is public domain. `BNF_COMMERCIAL_LICENSE_ACCEPTED`
+  unset → both reject `NOT_CONFIGURED`, same shape as
+  `connectExternalCalendar`. Search/preview are unaffected either way.
+- **Downloaded, never hotlinked**: both mutations fetch the asset bytes
+  server-side (`fetchPageImage`/`fetchPageAudio`) and re-host them via
+  `uploadServerFetchedAsset` (`apps/api/src/lib/storage.ts`) under the
+  existing `COURSE_SLIDE` / new `COURSE_LESSON_AUDIO` purposes - the same
+  "each slide its own file in object storage" rule as a teacher's own
+  upload, and it keeps student traffic off Gallica (which rate-limits:
+  confirmed a 429 on a second image request seconds after the first).
+- **Attribution**: every import sets `LessonSlide.sourceUrl`/`.attribution`
+  (or `Lesson.sourceUrl`/`.attribution` for audio) to the Gallica permalink
+  and BnF's required credit line - rendered wherever that slide/lesson is
+  rendered, same disclosure principle as Classictic/Ticketmaster's
+  `attribution` field.
+- **Catalogue ARK ≠ Gallica ARK**: a BnF catalogue-general notice
+  (`catalogue.bnf.fr/ark:/12148/cb...`) and its digitized copy on Gallica
+  (`gallica.bnf.fr/ark:/12148/bpt6k...` or `btv1b...`) are different ARK
+  series - only the latter works against the endpoints above. `ark` in this
+  integration always means the Gallica one.
 
 ### Engagement, attendance confirmation, and XP (both providers)
 

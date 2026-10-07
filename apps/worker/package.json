@@ -10,6 +10,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@my-music-coach/bnf-gallica": "*",
     "@my-music-coach/database": "*",
     "@my-music-coach/external-events": "*",
     "axios": "^1.7.2",

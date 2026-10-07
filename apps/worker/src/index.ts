@@ -10,6 +10,7 @@ import { mailDispatchJob } from './jobs/mail-dispatch.js';
 import { classicticIngestJob } from './jobs/classictic-ingest.js';
 import { keycloakUserSyncJob } from './jobs/keycloak-user-sync.js';
 import { studentWeeklyDigestJob } from './jobs/student-weekly-digest.js';
+import { bnfLibraryIngestJob } from './jobs/bnf-library-ingest.js';
 
 // Mirrors apps/api's DATABASE_URL construction: the postgres-mymusiccoach
 // Kubernetes Secret provides PG* pieces (via envFrom), not a single DSN.
@@ -44,6 +45,7 @@ registry.register(mailDispatchJob);
 registry.register(classicticIngestJob);
 registry.register(keycloakUserSyncJob);
 registry.register(studentWeeklyDigestJob);
+registry.register(bnfLibraryIngestJob);
 
 async function main() {
   const app = express();

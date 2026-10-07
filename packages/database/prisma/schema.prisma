@@ -535,6 +535,13 @@ model Lesson {
   xpReward     Int      @default(10)
   isPreview    Boolean  @default(false)
   feedbackMode QuizFeedbackMode @default(IMMEDIATE)
+  // Set only when videoUrl was imported from an external cultural-heritage
+  // provider (BnF/Gallica today) rather than uploaded/linked by the teacher -
+  // sourceUrl is the provider's own permalink, attribution is the exact
+  // credit line their reuse terms require. Both null for teacher-authored
+  // content, which needs neither.
+  sourceUrl    String?
+  attribution  String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -555,6 +562,10 @@ model LessonSlide {
   order     Int      @default(0)
   fileUrl   String
   title     String?
+  // See Lesson.sourceUrl/attribution - same meaning, for a slide imported
+  // from an external provider instead of uploaded by the teacher.
+  sourceUrl   String?
+  attribution String?
   createdAt DateTime @default(now())
 
   lesson Lesson            @relation(fields: [lessonId], references: [id], onDelete: Cascade)
@@ -1446,4 +1457,66 @@ model StudentWeeklyDigestDelivery {
 
   @@unique([userId, weekStart])
   @@index([weekStart])
+}
+
+// ── Library (cultural-heritage content, BnF/Gallica today) ──────────────────────────────────────────────────────────
+// Persisted, backend-populated catalogue - public/no-login browsing, teacher/
+// admin-only course integration (see apps/api/src/resolvers/bnf.ts), admin-only
+// export/download. Filled by apps/worker/src/jobs/bnf-library-ingest.ts and by
+// Mutation.runLibraryIngest (admin on-demand pull) - both call the same
+// packages/bnf-gallica/src/libraryIngest.ts function. Distinct from
+// ExternalEventProjection: that's a read-only discovery *input* to the Events
+// pillar; this is reference/source content for the Learning pillar.
+enum LibrarySource {
+  BNF
+}
+
+enum LibraryItemCategory {
+  SHEET_MUSIC
+  AUDIO_RECORDING
+  BOOK
+  OTHER
+}
+
+model LibraryItem {
+  id     String        @id @default(cuid())
+  source LibrarySource @default(BNF)
+  // Gallica document ARK - always has a real digitized copy: searchCatalogue
+  // (packages/bnf-gallica) only returns hits whose dc:identifier resolves to
+  // an actual gallica.bnf.fr ARK, so there is no catalogue-only/undigitized
+  // row to filter out here.
+  ark                String
+  category           LibraryItemCategory
+  title              String
+  creator            String?
+  date               String?
+  // Raw BnF dc:type label, kept for display/debugging alongside the mapped category.
+  documentType       String?
+  isPublicDomainWork Boolean  @default(false)
+  catalogueUrl       String?
+  // gallica.bnf.fr permalink - the public "View on Gallica" outbound link.
+  permalink          String
+  // Only ever our own S3 URL or null - NEVER a gallica.bnf.fr URL. Gallica
+  // 429s a second image request seconds after the first (confirmed live),
+  // and automatically rehosting a digitized master's thumbnail at scale is
+  // itself a commercial-reuse question - backfilled only once
+  // bnfCommercialReuseConfigured() is true. See docs/integration-architecture.md.
+  thumbnailUrl       String?
+  // Most recent ingest topic that touched this row - admin-dashboard
+  // provenance, not a run-history log (this schema deliberately keeps none -
+  // "last run"/counts are always live-reconstructed from this table, same as
+  // the Classictic/Ticketmaster convention).
+  seedQuery          String?
+  // Admin moderation only - never set by the ingest job itself. Each ingest
+  // call only returns Gallica's top matches for one search string, so a row
+  // absent from today's pull does NOT mean it was removed from Gallica
+  // (unlike Classictic's full-catalog snapshot, which can safely infer
+  // withdrawal from absence) - an auto-hide here would silently disappear
+  // real items.
+  hiddenAt           DateTime?
+  ingestedAt         DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([source, ark])
+  @@index([category, hiddenAt])
 }

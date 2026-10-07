@@ -9,6 +9,7 @@ on:
       - 'apps/worker/**'
       - 'packages/database/**'
       - 'packages/external-events/**'
+      - 'packages/bnf-gallica/**'
       - 'packages/graphql-schema/**'
       - 'deploy/workloads/application/**'
       - 'deploy/database/identity/**'

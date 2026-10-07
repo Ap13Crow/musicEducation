@@ -86,6 +86,14 @@ spec:
                   name: application-integrations
                   key: CLASSICTIC_AFFILIATE_ID
                   optional: true
+            # BnF/Gallica cultural-heritage library. Set
+            # BNF_COMMERCIAL_LICENSE_ACCEPTED to "true" only once the BnF
+            # commercial-reuse agreement is signed. BNF_LIBRARY_INGEST_DELAY_MS
+            # paces the nightly ingest to avoid Gallica 429s.
+            - name: BNF_COMMERCIAL_LICENSE_ACCEPTED
+              value: ''
+            - name: BNF_LIBRARY_INGEST_DELAY_MS
+              value: '2000'
             # DeepSeek (preferred) / OpenAI fallback for the event-classification
             # job (see apps/worker/src/jobs/event-classification.ts) - absent,
             # aiChat() returns null and the job skips classification this run.
