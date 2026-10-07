@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { gql, useMutation, useQuery } from '@apollo/client';
+import { gql, useLazyQuery, useMutation, useQuery } from '@apollo/client';
 import { keycloakAdminUrl, keycloakIssuer } from '@/lib/external-links';
 import { useSession, signIn } from 'next-auth/react';
 import { hasRole } from '@/lib/roles';
@@ -590,6 +590,155 @@ function ExternalEventsCard() {
   );
 }
 
+const SEARCH_BNF_CATALOGUE = gql`
+  query AdminSearchBnfCatalogue($query: String!, $documentType: String) {
+    searchBnfCatalogue(query: $query, documentType: $documentType) {
+      ark
+      title
+      creator
+      date
+      documentType
+      isPublicDomainWork
+      permalink
+    }
+  }
+`;
+
+const RUN_LIBRARY_INGEST = gql`
+  mutation AdminRunLibraryIngest($query: String!, $documentType: String) {
+    runLibraryIngest(query: $query, documentType: $documentType) {
+      query
+      fetched
+      upserted
+      message
+    }
+  }
+`;
+
+// Single-word Gallica dc.type filters only - see packages/bnf-gallica/src/libraryIngest.ts.
+const LIBRARY_DOCUMENT_TYPES = [
+  { value: 'partition', label: 'Sheet music' },
+  { value: 'sonore', label: 'Audio recordings' },
+  { value: '', label: 'Any type' },
+];
+
+function LibraryPullCard() {
+  const [query, setQuery] = useState('');
+  const [documentType, setDocumentType] = useState('partition');
+  const [lastResult, setLastResult] = useState<any | null>(null);
+  const variables = { query: query.trim(), documentType: documentType || null };
+  const [runPreview, { data: preview, loading: previewing, error: previewError }] = useLazyQuery(SEARCH_BNF_CATALOGUE, {
+    fetchPolicy: 'network-only',
+  });
+  const [runIngest, { loading: pulling, error: pullError }] = useMutation(RUN_LIBRARY_INGEST);
+  const records = preview?.searchBnfCatalogue ?? null;
+  const canSubmit = query.trim().length > 0 && !previewing && !pulling;
+
+  async function handlePreview() {
+    setLastResult(null);
+    await runPreview({ variables });
+  }
+
+  async function handlePull() {
+    const result = await runIngest({ variables });
+    setLastResult(result.data?.runLibraryIngest ?? null);
+  }
+
+  return (
+    <div className="card p-5 space-y-4" data-testid="library-pull-card">
+      <div>
+        <h3 className="flex items-center gap-2 font-semibold">
+          <BookOpen className="h-4 w-4 text-blue-600" /> BnF / Gallica library
+        </h3>
+        <p className="mt-1 text-sm text-gray-600">
+          Search Gallica and pull matching items into the public Library. French terms match best (e.g. &ldquo;sonate&rdquo;, &ldquo;méthode de piano&rdquo;).
+        </p>
+      </div>
+
+      <form
+        className="flex flex-col gap-2 sm:flex-row"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (canSubmit) void handlePreview();
+        }}
+      >
+        <input
+          type="text"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Composer, work, instrument…"
+          aria-label="Library search query"
+          className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        />
+        <select
+          value={documentType}
+          onChange={(event) => setDocumentType(event.target.value)}
+          aria-label="Document type"
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        >
+          {LIBRARY_DOCUMENT_TYPES.map((type) => (
+            <option key={type.value} value={type.value}>{type.label}</option>
+          ))}
+        </select>
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {previewing ? 'Searching…' : 'Preview'}
+        </button>
+        <button
+          type="button"
+          disabled={!canSubmit}
+          onClick={() => void handlePull()}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 ${pulling ? 'animate-spin' : ''}`} />
+          {pulling ? 'Pulling…' : 'Pull into library'}
+        </button>
+      </form>
+
+      {previewError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Gallica search failed: {previewError.message}
+        </div>
+      )}
+      {pullError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Library pull failed: {pullError.message}
+        </div>
+      )}
+      {lastResult && (
+        <p className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800" data-testid="library-pull-result">
+          {lastResult.message}
+        </p>
+      )}
+
+      {records && (
+        records.length === 0 ? (
+          <p className="text-sm text-gray-500">No Gallica results for this search.</p>
+        ) : (
+          <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200 text-sm" data-testid="library-preview-list">
+            {records.map((record: any) => (
+              <li key={record.ark} className="flex items-start justify-between gap-3 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-gray-800">{record.title}</p>
+                  <p className="truncate text-xs text-gray-500">
+                    {[record.creator, record.date, record.documentType].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+                <a href={record.permalink} target="_blank" rel="noopener noreferrer" className="shrink-0 text-xs text-primary-600 hover:underline">
+                  Gallica
+                </a>
+              </li>
+            ))}
+          </ul>
+        )
+      )}
+    </div>
+  );
+}
+
 function ContentTab() {
   return (
     <div className="space-y-4">
@@ -636,6 +785,8 @@ function ContentTab() {
           <ChevronRight className="ml-auto h-4 w-4 text-gray-400 shrink-0" />
         </a>
       </div>
+
+      <LibraryPullCard />
 
       <ExternalEventsCard />
     </div>
