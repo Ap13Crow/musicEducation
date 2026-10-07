@@ -14,6 +14,7 @@ import { resolvers } from './resolvers/index.js';
 import { createLoaders } from './lib/loaders.js';
 import { handleStripeWebhook, handleStripeV2Webhook } from './resolvers/payments.js';
 import { buildUserCalendarFeed } from './lib/calendarFeed.js';
+import { fetchScoreBytes, isAllowedScoreSource } from './lib/openscore.js';
 import type { GraphQLContext } from './types.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -339,6 +340,28 @@ async function main() {
     } catch (error) {
       logger.error({ error }, 'Calendar feed generation failed');
       return res.status(500).send('Calendar feed temporarily unavailable');
+    }
+  });
+
+  // Public, no session: library scores are openly licensed (see
+  // lib/openscore.ts). Only a stored, allowlisted upstream URL is ever
+  // fetched - the client supplies an item id, never a URL.
+  app.get('/library/items/:id/score.mxl', async (req, res) => {
+    try {
+      const item = await prisma.libraryItem.findUnique({
+        where: { id: req.params.id },
+        select: { musicXmlSourceUrl: true, hiddenAt: true },
+      });
+      if (!item?.musicXmlSourceUrl || item.hiddenAt || !isAllowedScoreSource(item.musicXmlSourceUrl)) {
+        return res.status(404).send('Not found');
+      }
+      const bytes = await fetchScoreBytes(item.musicXmlSourceUrl);
+      res.setHeader('content-type', 'application/vnd.recordare.musicxml');
+      res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+      return res.send(bytes);
+    } catch (error) {
+      logger.error({ error, id: req.params.id }, 'Library score fetch failed');
+      return res.status(502).send('Score temporarily unavailable');
     }
   });
 

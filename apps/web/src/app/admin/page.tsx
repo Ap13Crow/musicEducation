@@ -615,6 +615,12 @@ const RUN_LIBRARY_INGEST = gql`
   }
 `;
 
+const RUN_OPENSCORE_INGEST = gql`
+  mutation AdminRunOpenScoreIngest {
+    runOpenScoreIngest { query fetched upserted message }
+  }
+`;
+
 // Single-word Gallica dc.type filters only - see packages/bnf-gallica/src/libraryIngest.ts.
 const LIBRARY_DOCUMENT_TYPES = [
   { value: 'partition', label: 'Sheet music' },
@@ -631,6 +637,7 @@ function LibraryPullCard() {
     fetchPolicy: 'network-only',
   });
   const [runIngest, { loading: pulling, error: pullError }] = useMutation(RUN_LIBRARY_INGEST);
+  const [runOpenScore, { loading: importingOpenScore, error: openScoreError }] = useMutation(RUN_OPENSCORE_INGEST);
   const records = preview?.searchBnfCatalogue ?? null;
   const canSubmit = query.trim().length > 0 && !previewing && !pulling;
 
@@ -642,6 +649,12 @@ function LibraryPullCard() {
   async function handlePull() {
     const result = await runIngest({ variables });
     setLastResult(result.data?.runLibraryIngest ?? null);
+  }
+
+  async function handleOpenScoreImport() {
+    setLastResult(null);
+    const result = await runOpenScore();
+    setLastResult(result.data?.runOpenScoreIngest ?? null);
   }
 
   return (
@@ -708,6 +721,26 @@ function LibraryPullCard() {
           Library pull failed: {pullError.message}
         </div>
       )}
+      {openScoreError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          OpenScore import failed: {openScoreError.message}
+        </div>
+      )}
+      <div className="flex flex-col gap-2 rounded-lg border border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-gray-600">
+          <span className="font-medium text-gray-800">OpenScore Lieder</span> - ~1,450 art songs as CC0 MusicXML, displayed as engraved scores in the Library. Re-run to pick up corpus updates.
+        </p>
+        <button
+          type="button"
+          disabled={importingOpenScore}
+          onClick={() => void handleOpenScoreImport()}
+          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 ${importingOpenScore ? 'animate-spin' : ''}`} />
+          {importingOpenScore ? 'Importing…' : 'Import OpenScore Lieder'}
+        </button>
+      </div>
+
       {lastResult && (
         <p className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800" data-testid="library-pull-result">
           {lastResult.message}

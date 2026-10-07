@@ -1,0 +1,11 @@
+BEGIN;
+
+ALTER TYPE "LibrarySource" ADD VALUE IF NOT EXISTS 'OPENSCORE';
+
+ALTER TABLE "LibraryItem"
+  ADD COLUMN IF NOT EXISTS "musicXmlSourceUrl" TEXT,
+  ADD COLUMN IF NOT EXISTS "audioUrl"          TEXT,
+  ADD COLUMN IF NOT EXISTS "license"           TEXT,
+  ADD COLUMN IF NOT EXISTS "attribution"       TEXT;
+
+COMMIT;

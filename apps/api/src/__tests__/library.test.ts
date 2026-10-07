@@ -9,7 +9,10 @@ jest.mock('@my-music-coach/bnf-gallica', () => ({
   releaseLibraryIngestLock: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../lib/openscore', () => ({ ingestOpenScoreLieder: jest.fn() }));
+
 import { ingestLibraryTopic, acquireLibraryIngestLock, releaseLibraryIngestLock } from '@my-music-coach/bnf-gallica';
+import { ingestOpenScoreLieder } from '../lib/openscore';
 import { libraryResolvers } from '../resolvers/library';
 
 const adminUser = { id: 'admin-1', role: 'ADMIN' } as const;
@@ -123,5 +126,34 @@ describe('Mutation.runLibraryIngest - ADMIN only, advisory-locked', () => {
       libraryResolvers.Mutation.runLibraryIngest(null, { query: 'Mozart' }, { prisma, user: adminUser } as any),
     ).rejects.toThrow('Gallica down');
     expect(releaseLibraryIngestLock).toHaveBeenCalledWith(prisma);
+  });
+});
+
+describe('LibraryItem.scoreUrl', () => {
+  it('points at our own same-origin route only when a score source is stored', () => {
+    expect(libraryResolvers.LibraryItem.scoreUrl({ id: 'i1', musicXmlSourceUrl: 'https://raw.githubusercontent.com/OpenScore/x.mxl' })).toBe(
+      '/api/library/items/i1/score.mxl',
+    );
+    expect(libraryResolvers.LibraryItem.scoreUrl({ id: 'i2', musicXmlSourceUrl: null })).toBeNull();
+  });
+});
+
+describe('Mutation.runOpenScoreIngest - ADMIN only', () => {
+  afterEach(() => jest.resetAllMocks());
+
+  it('rejects a non-admin caller without importing', async () => {
+    await expect(
+      libraryResolvers.Mutation.runOpenScoreIngest(null, {}, { prisma: fakePrisma(), user: studentUser } as any),
+    ).rejects.toThrow('FORBIDDEN');
+    expect(ingestOpenScoreLieder).not.toHaveBeenCalled();
+  });
+
+  it('returns the import result, and allows a new run after a failure', async () => {
+    (ingestOpenScoreLieder as jest.Mock).mockRejectedValueOnce(new Error('GitHub down'));
+    const ctx = { prisma: fakePrisma(), user: adminUser } as any;
+    await expect(libraryResolvers.Mutation.runOpenScoreIngest(null, {}, ctx)).rejects.toThrow('GitHub down');
+
+    (ingestOpenScoreLieder as jest.Mock).mockResolvedValueOnce({ query: 'OpenScore Lieder', fetched: 2, upserted: 2, message: 'ok' });
+    await expect(libraryResolvers.Mutation.runOpenScoreIngest(null, {}, ctx)).resolves.toMatchObject({ upserted: 2 });
   });
 });

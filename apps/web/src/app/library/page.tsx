@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { gql, useQuery } from '@apollo/client';
 import { BookOpen, ExternalLink, Library, Music, Search, Volume2 } from 'lucide-react';
+import { SOURCE_LABELS } from './sources';
 
 const PAGE_SIZE = 24;
 
@@ -10,7 +12,7 @@ const GET_LIBRARY_ITEMS = gql`
   query GetLibraryItems($filter: LibraryItemFilterInput, $page: Int, $limit: Int) {
     libraryItems(filter: $filter, page: $page, limit: $limit) {
       nodes {
-        id category title creator date permalink thumbnailUrl isPublicDomainWork
+        id source category title creator date permalink thumbnailUrl isPublicDomainWork scoreUrl audioUrl
       }
       pageInfo { hasNextPage hasPreviousPage totalCount }
     }
@@ -37,6 +39,7 @@ function CategoryIcon({ category }: { category: string }) {
 }
 
 function LibraryCard({ item }: { item: any }) {
+  const source = SOURCE_LABELS[item.source] ?? SOURCE_LABELS.BNF;
   return (
     <article className="card flex flex-col overflow-hidden p-0">
       {/* thumbnailUrl is only ever our own storage or null - never a
@@ -49,10 +52,20 @@ function LibraryCard({ item }: { item: any }) {
         </div>
       )}
       <div className="flex flex-1 flex-col p-4">
-        <span className="mb-2 inline-block w-fit rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700">
-          {CATEGORY_LABELS[item.category] ?? item.category}
-        </span>
-        <h3 className="line-clamp-3 font-semibold leading-snug">{item.title}</h3>
+        <div className="mb-2 flex flex-wrap gap-1">
+          <span className="inline-block w-fit rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700">
+            {CATEGORY_LABELS[item.category] ?? item.category}
+          </span>
+          {item.scoreUrl && (
+            <span className="inline-block w-fit rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Score</span>
+          )}
+          {item.audioUrl && (
+            <span className="inline-block w-fit rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Audio</span>
+          )}
+        </div>
+        <h3 className="line-clamp-3 font-semibold leading-snug">
+          <Link href={`/library/${item.id}`} className="hover:text-primary-700">{item.title}</Link>
+        </h3>
         <p className="mt-1 text-sm text-gray-600">{[item.creator, item.date].filter(Boolean).join(' · ')}</p>
         <a
           href={item.permalink}
@@ -60,9 +73,9 @@ function LibraryCard({ item }: { item: any }) {
           rel="noopener noreferrer"
           className="mt-auto inline-flex items-center gap-1 pt-3 text-sm font-medium text-primary-600 hover:text-primary-800"
         >
-          View on Gallica <ExternalLink className="h-3.5 w-3.5" />
+          {source.viewLabel} <ExternalLink className="h-3.5 w-3.5" />
         </a>
-        <p className="pt-1 text-xs text-gray-400">Source: gallica.bnf.fr / Bibliothèque nationale de France</p>
+        <p className="pt-1 text-xs text-gray-400">{source.credit}</p>
       </div>
     </article>
   );

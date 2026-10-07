@@ -1469,6 +1469,8 @@ model StudentWeeklyDigestDelivery {
 // pillar; this is reference/source content for the Learning pillar.
 enum LibrarySource {
   BNF
+  // OpenScore corpora (Lieder, ...) - CC0 MusicXML on GitHub.
+  OPENSCORE
 }
 
 enum LibraryItemCategory {
@@ -1502,6 +1504,19 @@ model LibraryItem {
   // itself a commercial-reuse question - backfilled only once
   // bnfCommercialReuseConfigured() is true. See docs/integration-architecture.md.
   thumbnailUrl       String?
+  // Upstream MusicXML (.mxl) URL pinned to an exact commit, so its bytes never
+  // change - served to browsers only through the API's own
+  // /library/items/:id/score.mxl route, never linked directly. Set only for
+  // openly licensed sources (OPENSCORE); a BNF row stays null until its
+  // commercial-reuse licence is signed.
+  musicXmlSourceUrl  String?
+  // Playable audio we may serve (our own storage, or an openly licensed
+  // upstream). Null for every BNF row for the same licence reason.
+  audioUrl           String?
+  // e.g. "CC0-1.0" - the reuse terms the media above is served under.
+  license            String?
+  // Credit line shown next to the viewer/player.
+  attribution        String?
   // Most recent ingest topic that touched this row - admin-dashboard
   // provenance, not a run-history log (this schema deliberately keeps none -
   // "last run"/counts are always live-reconstructed from this table, same as

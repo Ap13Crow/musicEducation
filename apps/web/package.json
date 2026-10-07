@@ -21,6 +21,7 @@
     "tailwindcss": "^3.4.4",
     "clsx": "^2.1.1",
     "lucide-react": "^0.397.0",
+    "opensheetmusicdisplay": "^2.2.0",
     "react-hook-form": "^7.52.0",
     "zod": "^3.23.8",
     "@hookform/resolvers": "^3.6.0",

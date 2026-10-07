@@ -615,6 +615,7 @@ type LessonSlide {
 
 enum LibrarySource {
   BNF
+  OPENSCORE
 }
 
 enum LibraryItemCategory {
@@ -644,6 +645,15 @@ type LibraryItem {
   # (see the Prisma model's doc comment for why). Null until the thumbnail
   # backfill pass has run for this item.
   thumbnailUrl: String
+  # Our own same-origin MusicXML (.mxl) URL for the in-page score viewer, or
+  # null when the item has no score we may serve (every BNF row until the
+  # commercial-reuse licence is signed).
+  scoreUrl: String
+  # Playable audio for the in-page player, or null.
+  audioUrl: String
+  # Reuse terms (e.g. "CC0-1.0") and credit line for scoreUrl/audioUrl.
+  license: String
+  attribution: String
   ingestedAt: DateTime!
 }
 
@@ -1793,6 +1803,9 @@ type Mutation {
   # Library ingestion (admin on-demand pull) - ADMIN only. Shares the same
   # ingest function as the scheduled worker job; see docs/integration-architecture.md.
   runLibraryIngest(query: String!, documentType: String): LibraryIngestResult!
+  # ADMIN only - (re)imports the CC0 OpenScore Lieder corpus (MusicXML) from
+  # GitHub, pinned to the corpus's current commit. Idempotent.
+  runOpenScoreIngest: LibraryIngestResult!
 
   # Bookings
   bookSession(input: BookSessionInput!): Booking!

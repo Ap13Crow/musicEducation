@@ -5,6 +5,7 @@ import {
   releaseLibraryIngestLock,
 } from '@my-music-coach/bnf-gallica';
 import { requireRole } from '../middleware/auth.js';
+import { ingestOpenScoreLieder } from '../lib/openscore.js';
 import type { GraphQLContext } from '../types.js';
 
 // Library - public, no-login browsing of the persisted LibraryItem catalogue
@@ -19,7 +20,18 @@ function csvField(value: string | null | undefined): string {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
+// One OpenScore import at a time per API process - it's an admin button,
+// and a double click shouldn't run two 1,400-row upsert passes side by side.
+let openScoreIngestRunning = false;
+
 export const libraryResolvers = {
+  LibraryItem: {
+    // Same-origin route (apps/web proxies /api/library/* to apps/api's
+    // /library/*), so the browser never fetches the upstream file itself.
+    scoreUrl: (item: { id: string; musicXmlSourceUrl?: string | null }) =>
+      item.musicXmlSourceUrl ? `/api/library/items/${item.id}/score.mxl` : null,
+  },
+
   Query: {
     async libraryItems(_: unknown, { filter, page = 1, limit = 20 }: any, { prisma }: GraphQLContext) {
       const where: any = { hiddenAt: null };
@@ -105,6 +117,25 @@ export const libraryResolvers = {
         });
       } finally {
         await releaseLibraryIngestLock(prisma);
+      }
+    },
+
+    async runOpenScoreIngest(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'ADMIN');
+      if (openScoreIngestRunning) {
+        throw new GraphQLError('An OpenScore import is already running - try again shortly.', {
+          extensions: { code: 'CONFLICT' },
+        });
+      }
+      openScoreIngestRunning = true;
+      try {
+        return await ingestOpenScoreLieder(prisma);
+      } catch (error) {
+        throw new GraphQLError(error instanceof Error ? error.message : 'OpenScore import failed.', {
+          extensions: { code: 'INTERNAL_SERVER_ERROR' },
+        });
+      } finally {
+        openScoreIngestRunning = false;
       }
     },
   },
