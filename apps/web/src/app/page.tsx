@@ -11,12 +11,12 @@ const GET_PLATFORM_STATS = gql`
 `;
 
 const STAT_FIELDS = [
-  { key: 'totalCourses', label: 'Courses', href: '/courses' },
-  { key: 'totalTeachers', label: 'Teachers', href: '/teachers' },
-  { key: 'totalEvents', label: 'Events', href: '/events' },
-  { key: 'totalScores', label: 'Scores', href: '/library' },
-  { key: 'totalRecordings', label: 'Recordings', href: '/library' },
-  { key: 'totalStudents', label: 'Students', href: null },
+  { key: 'totalCourses', label: 'Courses', one: 'Course', href: '/courses' },
+  { key: 'totalTeachers', label: 'Teachers', one: 'Teacher', href: '/teachers' },
+  { key: 'totalEvents', label: 'Events', one: 'Event', href: '/events' },
+  { key: 'totalScores', label: 'Scores', one: 'Score', href: '/library' },
+  { key: 'totalRecordings', label: 'Recordings', one: 'Recording', href: '/library' },
+  { key: 'totalStudents', label: 'Students', one: 'Student', href: null },
 ] as const;
 
 const features = [
@@ -51,7 +51,9 @@ export default function HomePage() {
   // empty platform, so zero (or not-yet-loaded) values are hidden.
   const stats = STAT_FIELDS.flatMap((field) => {
     const value = platformStats?.[field.key];
-    return typeof value === 'number' && value > 0 ? [{ ...field, value: value.toLocaleString('en-US') }] : [];
+    return typeof value === 'number' && value > 0
+      ? [{ ...field, label: value === 1 ? field.one : field.label, value: value.toLocaleString('en-US') }]
+      : [];
   });
 
   return (
