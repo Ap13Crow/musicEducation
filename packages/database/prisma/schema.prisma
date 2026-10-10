@@ -177,6 +177,9 @@ model User {
   teacherApplication TeacherApplication?
   gamification       GamificationProfile?
   externalIdentities UserExternalIdentity[]
+  platformMembership PlatformMembership?
+  courseInvitationsSent     CourseInvitation[] @relation("CourseInvitationsSent")
+  courseInvitationsReceived CourseInvitation[] @relation("CourseInvitationsReceived")
   enrollments        Enrollment[]
   bookings           Booking[]
   eventBookings      EventBooking[]
@@ -517,6 +520,7 @@ model Course {
   sections       CourseSection[]
   enrollments    Enrollment[]
   reviews        Review[]
+  invitations    CourseInvitation[]
 }
 
 model CourseSection {
@@ -658,6 +662,11 @@ model Enrollment {
   userId      String
   courseId    String
   paymentId   String?   @unique
+  // Why the user may take this course (lib/courseAccess.ts): PURCHASE,
+  // FREE, MEMBERSHIP, TEACHER_SUBSCRIPTION, TEACHER_STUDENT, INVITATION.
+  // MEMBERSHIP/TEACHER_SUBSCRIPTION access lasts while that subscription
+  // does; null (older rows) is permanent.
+  accessReason String?
   progress    Float     @default(0)
   completedAt DateTime?
   createdAt   DateTime  @default(now())
@@ -1745,4 +1754,42 @@ model LessonLibraryReference {
   @@unique([lessonId, folderId])
   @@index([itemId])
   @@index([folderId])
+}
+
+// mymusic.coach Plus - the platform-wide membership (a Stripe subscription)
+// that includes every paid course. One row per user, kept in step with
+// Stripe by lib/membership.ts.
+model PlatformMembership {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  plan                 String
+  status               String
+  stripeSubscriptionId String   @unique
+  stripeCustomerId     String?
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean  @default(false)
+  checkedAt            DateTime @default(now())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// A teacher invites someone (by email) into a course for free; matched to
+// the account with that email when they enroll.
+model CourseInvitation {
+  id          String    @id @default(cuid())
+  courseId    String
+  email       String
+  invitedById String
+  userId      String?
+  enrolledAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  course    Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  invitedBy User   @relation("CourseInvitationsSent", fields: [invitedById], references: [id], onDelete: Cascade)
+  user      User?  @relation("CourseInvitationsReceived", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([courseId, email])
+  @@index([email])
 }

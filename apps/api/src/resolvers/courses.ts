@@ -1,4 +1,5 @@
 import { GraphQLError } from 'graphql';
+import { enrollWithoutPayment, enrollmentGrantsAccess } from '../lib/courseAccess.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { isOwnedUploadUrl } from '../lib/storage.js';
 import type { GraphQLContext } from '../types.js';
@@ -36,7 +37,8 @@ export async function resolveLessonAccess(
   const enrollment = await prisma.enrollment.findUnique({
     where: { userId_courseId: { userId: user.id, courseId: section.courseId } },
   });
-  return { allowed: Boolean(enrollment), isOwner: false };
+  // A membership-based enrollment opens the lessons only while it lasts.
+  return { allowed: await enrollmentGrantsAccess(prisma, enrollment, section.course), isOwner: false };
 }
 
 // Shared by markLessonComplete and completeQuizAttempt: recomputes course
@@ -51,6 +53,9 @@ export async function completeLessonForUser(prisma: any, userId: string, lessonI
     where: { userId_courseId: { userId, courseId: lesson.section.courseId } },
   });
   if (!enrollment) throw new GraphQLError('Not enrolled in this course.', { extensions: { code: 'FORBIDDEN' } });
+  if (!(await enrollmentGrantsAccess(prisma, enrollment, lesson.section.course))) {
+    throw new GraphQLError('Your access to this course has ended - renew your membership or buy the course.', { extensions: { code: 'PAYMENT_REQUIRED' } });
+  }
 
   const existing = await prisma.lessonProgress.findUnique({
     where: { enrollmentId_lessonId: { enrollmentId: enrollment.id, lessonId } },
@@ -320,10 +325,11 @@ export const courseResolvers = {
       requireAuth(user);
       const course = await prisma.course.findUnique({ where: { id: courseId } });
       if (!course) throw new GraphQLError('Course not found.', { extensions: { code: 'NOT_FOUND' } });
-      if (Number(course.price) > 0) {
-        throw new GraphQLError('Please complete payment first.', { extensions: { code: 'PAYMENT_REQUIRED' } });
-      }
-      return prisma.enrollment.create({ data: { userId: user.id, courseId } });
+      // Free courses, members, the teacher's subscribers and students, and
+      // invited people enroll directly; everyone else pays first.
+      const enrollment = await enrollWithoutPayment(prisma, user.id, course);
+      if (!enrollment) throw new GraphQLError('Please complete payment first.', { extensions: { code: 'PAYMENT_REQUIRED' } });
+      return enrollment;
     },
 
     async markLessonComplete(_: unknown, { lessonId }: any, { prisma, user }: GraphQLContext) {

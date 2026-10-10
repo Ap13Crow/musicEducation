@@ -803,6 +803,64 @@ const UPDATE_ADMIN_SETTING = gql`
   }
 `;
 
+// mymusic.coach Plus prices (API lib/membership.ts). Empty = that plan is
+// not on sale; the membership page shows "opens soon" while neither is set.
+const MEMBERSHIP_PRICE_FIELDS = [
+  { key: 'membership.monthlyPrice', label: 'Monthly price (CHF)' },
+  { key: 'membership.yearlyPrice', label: 'Yearly price (CHF)' },
+];
+
+function MembershipPricesCard() {
+  const { data, refetch } = useQuery(GET_ADMIN_SETTINGS, { fetchPolicy: 'cache-and-network' });
+  const [save, { loading, error }] = useMutation(UPDATE_ADMIN_SETTING);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState(false);
+  const stored = (key: string) => data?.adminSettings?.find((setting: any) => setting.key === key)?.value ?? '';
+  const value = (key: string) => values[key] ?? stored(key);
+  const valid = MEMBERSHIP_PRICE_FIELDS.every(({ key }) => value(key) === '' || (Number(value(key)) > 0 && Number(value(key)) < 10000));
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!valid) return;
+    for (const { key } of MEMBERSHIP_PRICE_FIELDS) {
+      if (value(key) !== stored(key)) await save({ variables: { key, value: value(key) } });
+    }
+    await refetch();
+    setValues({});
+    setSaved(true);
+  }
+
+  return (
+    <form onSubmit={submit} className="card space-y-3 p-5" data-testid="membership-prices">
+      <div>
+        <h3 className="font-semibold">mymusic.coach Plus</h3>
+        <p className="mt-1 text-sm text-gray-600">
+          The membership that includes every paid course. Leave a price empty to keep that plan off sale. Members, a teacher&rsquo;s
+          subscribers and students, and invited people take courses free; everyone else buys them.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        {MEMBERSHIP_PRICE_FIELDS.map(({ key, label }) => (
+          <label key={key} className="flex flex-col gap-1 text-xs text-gray-600">
+            {label}
+            <input
+              inputMode="decimal"
+              value={value(key)}
+              onChange={(event) => { setSaved(false); setValues((current) => ({ ...current, [key]: event.target.value.replace(',', '.') })); }}
+              placeholder="not on sale"
+              className="w-36 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+            />
+          </label>
+        ))}
+        <button type="submit" disabled={!valid || loading} className="btn-primary">{loading ? 'Saving…' : 'Save prices'}</button>
+        <Link href="/membership" target="_blank" className="text-sm text-primary-700 underline">View page</Link>
+      </div>
+      {saved && <p className="text-sm text-green-700">Saved.</p>}
+      {error && <p className="text-sm text-red-700">{error.message}</p>}
+    </form>
+  );
+}
+
 function XpBoundsCard() {
   const { data, loading, refetch } = useQuery(GET_ADMIN_SETTINGS);
   const [updateSetting, { loading: saving }] = useMutation(UPDATE_ADMIN_SETTING);
@@ -976,6 +1034,7 @@ function SettingsTab() {
         <p className="mt-1">Security, identity and platform settings are managed via environment variables and the Keycloak admin console. Changes take effect on the next container restart.</p>
       </div>
 
+      <MembershipPricesCard />
       <XpBoundsCard />
 
       <div className="card p-5 space-y-3">

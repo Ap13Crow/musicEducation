@@ -251,6 +251,14 @@ export default function PaymentSuccessPage() {
         <BookingCartConfirmation orderId={ref} />
       ) : type === 'event' ? (
         <EventConfirmation eventId={ref} />
+      ) : type === 'membership' ? (
+        <Confirmation
+          confirmed
+          pending={false}
+          confirmedText="Welcome to mymusic.coach Plus - every course is now open to you."
+          link="/courses"
+          linkLabel="Browse courses"
+        />
       ) : (
         <Confirmation confirmed pending={false} confirmedText="Payment received." link="/dashboard" linkLabel="Go to my dashboard" />
       )}

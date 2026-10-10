@@ -25,6 +25,7 @@ const GET_COURSE = gql`
       price currency level status language
       instruments musicStyles isFreeTier
       avgRating totalReviews totalEnrollments totalDurationMin
+      myAccess { enrolled hasAccess reason freeReason }
       teacher {
         id headline
         user { displayName avatarUrl }
@@ -42,8 +43,18 @@ const GET_COURSE = gql`
     myEnrollments(page: 1, limit: 200) {
       nodes { id courseId progress createdAt }
     }
+    membershipOffer { available monthlyPrice yearlyPrice currency }
   }
 `;
+
+// Why this viewer starts without paying (lib/courseAccess.ts on the API).
+const FREE_REASON_TEXT: Record<string, string> = {
+  FREE: 'Free course',
+  MEMBERSHIP: 'Included in your mymusic.coach Plus membership',
+  TEACHER_SUBSCRIPTION: "Included in your subscription with this course's teacher",
+  TEACHER_STUDENT: 'Free for students of this teacher',
+  INVITATION: 'Your teacher invited you - free for you',
+};
 
 export default function CourseDetailPage() {
   const params = useParams();
@@ -63,12 +74,16 @@ export default function CourseDetailPage() {
   const enrolledFromDb = (data?.myEnrollments?.nodes ?? []).some(
     (e: any) => e.courseId === data?.course?.id,
   );
-  const enrolled = enrolledFromDb || !!enrollData?.enrollInCourse;
+  const access = data?.course?.myAccess;
+  // Enrolled with open lessons; a lapsed membership enrollment needs renewing.
+  const enrolled = Boolean(enrollData?.enrollInCourse) || (access ? access.hasAccess : enrolledFromDb);
+  const freeReason: string | null = access?.freeReason ?? (Number(data?.course?.price) === 0 ? 'FREE' : null);
+  const membership = data?.membershipOffer;
 
 
   async function handleEnroll() {
     if (!course?.id || !liveApiEnabled) return;
-    if (Number(course.price) === 0) {
+    if (freeReason) {
       await enrollFree({ variables: { courseId: course.id } });
     } else {
       const { data: checkoutData } = await createCheckout({
@@ -252,17 +267,34 @@ export default function CourseDetailPage() {
                     </Link>
                   </div>
                 ) : (
-                  <button
-                    className="btn-primary w-full py-3 text-base disabled:opacity-60"
-                    onClick={handleEnroll}
-                    disabled={enrolling || checkingOut || !liveApiEnabled}
-                  >
-                    {enrolling || checkingOut
-                      ? 'Processing…'
-                      : Number(course.price) === 0
-                      ? 'Enroll — Free'
-                      : 'Enroll Now'}
-                  </button>
+                  <div className="space-y-3">
+                    {access?.enrolled && !access.hasAccess && (
+                      <p className="rounded-lg bg-amber-50 px-3 py-2 text-center text-xs text-amber-800">
+                        Your access through the membership has ended - your progress is kept.
+                      </p>
+                    )}
+                    {freeReason && freeReason !== 'FREE' && (
+                      <p className="rounded-lg bg-green-50 px-3 py-2 text-center text-sm font-medium text-green-800">{FREE_REASON_TEXT[freeReason]}</p>
+                    )}
+                    <button
+                      className="btn-primary w-full py-3 text-base disabled:opacity-60"
+                      onClick={handleEnroll}
+                      disabled={enrolling || checkingOut || !liveApiEnabled}
+                    >
+                      {enrolling || checkingOut
+                        ? 'Processing…'
+                        : freeReason
+                        ? access?.enrolled ? 'Continue - free for you' : 'Start the course - free for you'
+                        : `Buy for ${course.currency} ${Number(course.price).toFixed(2)}`}
+                    </button>
+                    {!freeReason && membership?.available && (
+                      <p className="text-center text-xs text-gray-600">
+                        or get every course with{' '}
+                        <Link href="/membership" className="font-medium text-primary-700 underline">mymusic.coach Plus</Link>
+                        {membership.monthlyPrice ? ` from ${membership.currency} ${Number(membership.monthlyPrice).toFixed(2)}/month` : ''}
+                      </p>
+                    )}
+                  </div>
                 )
               ) : (
                 <button

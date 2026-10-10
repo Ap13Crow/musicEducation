@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { activateMembershipFromCheckout, syncMembershipSubscription } from '../lib/membership.js';
 import { GraphQLError } from 'graphql';
 import { EXTERNAL_EVENT_ATTENDANCE_XP } from '@my-music-coach/external-events';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -290,11 +291,22 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
       return { email: buyer?.email, name: buyer?.profile?.displayName || buyer?.email?.split('@')[0] || 'there' };
     }
 
-    if (type === 'course') {
+    if (type === 'membership') {
+      // mymusic.coach Plus - the subscription itself carries the period.
+      await activateMembershipFromCheckout(prisma, session);
+      if (await claimConfirmationEmail()) {
+        const buyer = await getBuyerInfo();
+        void sendPurchaseConfirmedEmail({
+          toEmail: buyer.email, toName: buyer.name,
+          description: `mymusic.coach Plus (${refId === 'YEARLY' ? 'yearly' : 'monthly'}) - every course included`,
+          amount: payment.amount.toNumber(), currency: payment.currency,
+        });
+      }
+    } else if (type === 'course') {
       await prisma.enrollment.upsert({
         where: { userId_courseId: { userId: userId!, courseId: refId! } },
-        update: { paymentId: payment.id },
-        create: { userId: userId!, courseId: refId!, paymentId: payment.id },
+        update: { paymentId: payment.id, accessReason: 'PURCHASE' },
+        create: { userId: userId!, courseId: refId!, paymentId: payment.id, accessReason: 'PURCHASE' },
       });
       if (await claimConfirmationEmail()) {
         const [course, buyer] = await Promise.all([
@@ -423,6 +435,10 @@ export async function handleStripeWebhook(prisma: import('@my-music-coach/databa
         if (error?.code !== 'P2002') throw error;
       }
     }
+  } else if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
+    // Only sent when enabled for the endpoint; memberships also re-check
+    // Stripe themselves once a period has passed (lib/membership.ts).
+    await syncMembershipSubscription(prisma, event.data.object as Stripe.Subscription);
   } else if (event.type === 'account.updated') {
     // v1 accounts only - a v2-created account (see
     // createStripeConnectOnboardingLink) never fires this classic event at

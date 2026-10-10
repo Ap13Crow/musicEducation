@@ -214,3 +214,30 @@ export async function sendPurchaseConfirmedEmail(purchase: {
     ),
   });
 }
+
+// A teacher invited this address into a course for free (resolvers/
+// courseAccess.ts inviteToCourse).
+export async function sendCourseInvitationEmail(invite: {
+  toEmail: string;
+  teacherName: string;
+  courseTitle: string;
+  courseUrl: string;
+  alreadyEnrolled: boolean;
+}): Promise<void> {
+  await sendMail({
+    to: invite.toEmail,
+    subject: `${invite.teacherName} invited you to "${invite.courseTitle}"`,
+    html: wrapper(
+      `<p>Hello,</p>
+       <p>${escapeHtml(invite.teacherName)} invited you to the course <strong>${escapeHtml(invite.courseTitle)}</strong> on MyMusic.Coach - free of charge for you.</p>
+       <p><a href="${escapeHtml(invite.courseUrl)}" style="display:inline-block;background:#3b5bdb;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">${
+         invite.alreadyEnrolled ? 'Open the course' : 'Start the course'
+       }</a></p>
+       <p style="font-size:13px;color:#6b7280">${
+         invite.alreadyEnrolled
+           ? 'It is already in your courses.'
+           : 'Sign in (or create your free account) with this email address, then press "Enroll" on the course page.'
+       }</p>`,
+    ),
+  });
+}

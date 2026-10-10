@@ -549,6 +549,8 @@ type Course {
   avgRating: Float!
   totalReviews: Int!
   totalEnrollments: Int!
+  # The signed-in viewer's access (null when signed out).
+  myAccess: CourseAccess
   totalDurationMin: Int!
   createdAt: DateTime!
   updatedAt: DateTime!
@@ -1189,10 +1191,46 @@ type QuizAttempt {
   answers: [QuizAnswer!]!
 }
 
+# Why a viewer can (or could, without paying) take a course: PURCHASE,
+# FREE, MEMBERSHIP, TEACHER_SUBSCRIPTION, TEACHER_STUDENT, INVITATION.
+type CourseAccess {
+  enrolled: Boolean!
+  # The lessons open for this viewer right now.
+  hasAccess: Boolean!
+  reason: String
+  # Set when the viewer may enroll (or re-open the course) without paying.
+  freeReason: String
+}
+
+type MembershipOffer {
+  currency: String!
+  monthlyPrice: Float
+  yearlyPrice: Float
+  # False until an admin sets a price.
+  available: Boolean!
+}
+
+# mymusic.coach Plus - every paid course included while active.
+type PlatformMembership {
+  plan: String!
+  status: String!
+  active: Boolean!
+  currentPeriodEnd: DateTime!
+  cancelAtPeriodEnd: Boolean!
+}
+
+type CourseInvitation {
+  id: ID!
+  email: String!
+  enrolledAt: DateTime
+  createdAt: DateTime!
+}
+
 type Enrollment {
   id: ID!
   userId: ID!
   courseId: ID!
+  accessReason: String
   progress: Float!
   paymentId: ID
   completedAt: DateTime
@@ -2133,6 +2171,10 @@ type Query {
   libraryItems(filter: LibraryItemFilterInput, page: Int, limit: Int): LibraryItemConnection!
   # Public full-text search with filters and facets.
   searchLibrary(input: LibrarySearchInput!): LibrarySearchResult!
+  membershipOffer: MembershipOffer!
+  myMembership: PlatformMembership
+  # TEACHER/ADMIN, own courses only.
+  courseInvitations(courseId: ID!): [CourseInvitation!]!
   # Signed-in user's picks from profile + reading history; [] when signed
   # out or with nothing to go on.
   recommendedLibraryItems(limit: Int): [LibraryRecommendation!]!
@@ -2269,6 +2311,14 @@ type Mutation {
   # references. Adding one that is already attached keeps it (updating the
   # note if given).
   addLessonLibraryReference(input: AddLessonLibraryReferenceInput!): LessonLibraryReference!
+  # mymusic.coach Plus: Stripe Checkout for MONTHLY or YEARLY.
+  startMembershipCheckout(plan: String!): CheckoutSession!
+  # false = cancel at the end of the current period; true = keep renewing.
+  setMembershipAutoRenew(autoRenew: Boolean!): PlatformMembership!
+  # TEACHER/ADMIN, own courses: free access by email; existing accounts are
+  # enrolled at once, everyone gets an email with the course link.
+  inviteToCourse(courseId: ID!, emails: [String!]!): [CourseInvitation!]!
+  revokeCourseInvitation(id: ID!): Boolean!
   updateLessonLibraryReference(id: ID!, note: String): LessonLibraryReference!
   removeLessonLibraryReference(id: ID!): Boolean!
   reorderLessonLibraryReferences(lessonId: ID!, ids: [ID!]!): [LessonLibraryReference!]!

@@ -21,6 +21,7 @@ import { libraryFolderResolvers } from './libraryFolders.js';
 import { libraryEngagementResolvers } from './libraryEngagement.js';
 import { libraryInsightsResolvers } from './libraryInsights.js';
 import { lessonLibraryResolvers } from './lessonLibrary.js';
+import { courseAccessResolvers } from './courseAccess.js';
 import { DateTimeResolver, JSONResolver } from 'graphql-scalars';
 
 // Only DateTime and JSON are actually declared as `scalar` in schema.graphql
@@ -59,4 +60,5 @@ export const resolvers = mergeResolvers([
   libraryEngagementResolvers,
   libraryInsightsResolvers,
   lessonLibraryResolvers,
+  courseAccessResolvers,
 ]);
