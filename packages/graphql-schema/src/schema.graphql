@@ -722,6 +722,9 @@ type LibraryItem {
   attribution: String
   # Abstract / summary from the source record, when it has one.
   description: String
+  # False for a Gallica/DNB item we hold no copy of yet - it can only be
+  # opened at the source for now.
+  availableHere: Boolean!
   ingestedAt: DateTime!
 }
 
@@ -899,6 +902,74 @@ type LibraryItemConnection {
 input LibraryItemFilterInput {
   query: String
   category: LibraryItemCategory
+}
+
+# ── Library search (Query.searchLibrary) ─────────────────────
+enum LibrarySearchField {
+  ANY
+  TITLE
+  CREATOR
+}
+
+enum LibrarySort {
+  RELEVANCE
+  NEWEST
+  TITLE
+  YEAR_ASC
+  YEAR_DESC
+}
+
+input LibrarySearchInput {
+  # Web-search syntax in ALL mode: "exact phrase", -excluded, OR.
+  query: String
+  match: LibrarySearchMode
+  field: LibrarySearchField
+  # Every term must also appear exactly as typed (case and accents).
+  caseSensitive: Boolean
+  sources: [LibrarySource!]
+  categories: [LibraryItemCategory!]
+  # MUSICXML, PDF, AUDIO, SCANS
+  formats: [String!]
+  # PUBLIC_DOMAIN, CC_BY, CC_BY_SA, FREE_ACCESS, BNF_TERMS, OTHER
+  licenses: [String!]
+  # "18" = 1800-1899, "unknown" = undated
+  centuries: [String!]
+  yearFrom: Int
+  yearTo: Int
+  # Only items we can show here (Gallica/DNB items once copied).
+  availableOnly: Boolean
+  sort: LibrarySort
+  page: Int
+  limit: Int
+}
+
+type LibraryFacetValue {
+  value: String!
+  count: Int!
+}
+
+# Each facet is counted with every other active filter applied.
+type LibraryFacets {
+  sources: [LibraryFacetValue!]!
+  categories: [LibraryFacetValue!]!
+  formats: [LibraryFacetValue!]!
+  centuries: [LibraryFacetValue!]!
+  licenses: [LibraryFacetValue!]!
+  # HERE / AT_SOURCE
+  availability: [LibraryFacetValue!]!
+}
+
+type LibrarySearchResult {
+  nodes: [LibraryItem!]!
+  totalCount: Int!
+  page: Int!
+  limit: Int!
+  hasNextPage: Boolean!
+  # No word-for-word match: these are similar-word matches.
+  fuzzy: Boolean!
+  # "Did you mean" - the query with unknown words replaced.
+  suggestion: String
+  facets: LibraryFacets!
 }
 
 type LibraryStats {
@@ -1924,6 +1995,8 @@ type Query {
 
   # Library - public, no login required, matches Query.events.
   libraryItems(filter: LibraryItemFilterInput, page: Int, limit: Int): LibraryItemConnection!
+  # Public full-text search with filters and facets.
+  searchLibrary(input: LibrarySearchInput!): LibrarySearchResult!
   libraryItem(id: ID!): LibraryItem
   libraryPermalink(shortId: String!): LibraryPermalink
   # Signed-in user's own favorites and folders (any role).

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -20,7 +21,7 @@ const GET_LIBRARY_ITEM = gql`
   query GetLibraryItem($id: ID!) {
     libraryItem(id: $id) {
       id shortId shareUrl source ark category title creator date documentType permalink catalogueUrl
-      scoreUrl pagesUrl embedUrl audioUrl license attribution description
+      scoreUrl pagesUrl embedUrl audioUrl license attribution description thumbnailUrl
       files { label url contentType durationSeconds shareUrl }
     }
   }
@@ -49,7 +50,13 @@ export default function LibraryItemView() {
   // One viewer per page earns the item's XP: the player for recordings,
   // otherwise the score / Gallica pages / first PDF. Gallica's own embed
   // can't report progress, so it earns none.
-  const gallicaInViewer = Boolean(item && (item.pagesUrl || (item.source === 'BNF' && item.ark)));
+  // A Gallica item we hold no copy of yet loads from Gallica in the browser
+  // only when the visitor asks: Gallica answers unrequested loads with
+  // "Too many requests" these days.
+  const [tryGallica, setTryGallica] = useState(false);
+  const notCopied = Boolean(item && item.source === 'BNF' && !item.pagesUrl);
+  const showGallica = Boolean(item && (item.pagesUrl || (notCopied && tryGallica && item.ark)));
+  const gallicaInViewer = showGallica;
   const isRecording = audioTracks.length > 0 || (item?.category === 'AUDIO_RECORDING' && gallicaInViewer);
   const trackable = isRecording || Boolean(item?.scoreUrl) || gallicaInViewer || pdfFiles.length > 0;
   const mode: EngagementMode | null = !item || !trackable ? null : isRecording ? 'LISTEN' : 'READ';
@@ -96,17 +103,42 @@ export default function LibraryItemView() {
             {audioTracks.length > 0 && <AudioPlayer tracks={audioTracks} attribution={item.attribution} onProgress={report} />}
 
             {item.scoreUrl && <ScoreViewer url={item.scoreUrl} title={item.title} onProgress={readReport} />}
-            {(item.pagesUrl || (item.source === 'BNF' && item.ark)) && (
+            {notCopied && !tryGallica && (
+              <section className="card flex flex-col gap-4 p-4 sm:flex-row sm:items-center" data-testid="gallica-not-copied">
+                {item.thumbnailUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={item.thumbnailUrl} alt="" className="h-40 w-auto self-start rounded border border-gray-100 object-contain sm:h-32" />
+                )}
+                <div className="space-y-3 text-sm text-gray-700">
+                  <p>
+                    We don&rsquo;t hold our own copy of this Gallica document yet - Gallica is currently limiting how often
+                    it may be downloaded. Until then it opens on gallica.bnf.fr.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <a href={item.permalink} target="_blank" rel="noopener noreferrer" className="btn-primary inline-flex items-center gap-1.5">
+                      Open on Gallica <ExternalLink className="h-4 w-4" />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setTryGallica(true)}
+                      className="inline-flex items-center rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50"
+                    >
+                      Try loading it here
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
+            {showGallica && (
               <GallicaViewer
                 pagesUrl={item.pagesUrl}
                 ark={item.ark}
                 title={item.title}
                 audio={item.category === 'AUDIO_RECORDING'}
-                fallbackEmbedUrl={item.embedUrl}
                 onProgress={item.scoreUrl ? undefined : report}
               />
             )}
-            {!item.pagesUrl && !(item.source === 'BNF' && item.ark) && item.embedUrl && (
+            {!item.pagesUrl && item.source !== 'BNF' && item.embedUrl && (
               <GallicaEmbed url={item.embedUrl} title={item.title} audio={item.category === 'AUDIO_RECORDING'} />
             )}
 
@@ -139,7 +171,7 @@ export default function LibraryItemView() {
               </section>
             )}
 
-            {!item.scoreUrl && !item.pagesUrl && !item.embedUrl && audioTracks.length === 0 && pdfFiles.length === 0 && (
+            {!notCopied && !item.scoreUrl && !item.pagesUrl && !item.embedUrl && audioTracks.length === 0 && pdfFiles.length === 0 && (
               <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
                 {item.source === 'DNB'
                   ? 'We are copying this title from the Deutsche Nationalbibliothek - it will open here in a few minutes. Until then, open it at the source below.'

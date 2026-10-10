@@ -1,31 +1,16 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { LibraryThumbnail } from './LibraryThumbnail';
-import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
-import { ExternalLink, Folder, Library, PanelLeft, Search, Star } from 'lucide-react';
-import { SOURCE_LABELS } from './sources';
-import { childFolders, folderPath, useItemStates, useLibraryCollections } from '@/components/library/LibraryCollections';
-import { AddToFolderButton, FavoriteButton, FolderBreadcrumb } from '@/components/library/ItemCollectionActions';
-import { ITEM_DRAG_TYPE, LibrarySidebar, type LibraryView } from '@/components/library/LibrarySidebar';
+import { Folder, PanelLeft, Star } from 'lucide-react';
+import { childFolders, folderPath, useLibraryCollections } from '@/components/library/LibraryCollections';
+import { FolderBreadcrumb } from '@/components/library/ItemCollectionActions';
+import { LibrarySidebar, type LibraryView } from '@/components/library/LibrarySidebar';
+import { CARD_FIELDS, ItemGrid, LoadingGrid } from '@/components/library/LibraryCards';
+import { LibrarySearchView } from '@/components/library/LibrarySearchView';
 
 const PAGE_SIZE = 24;
-
-const CARD_FIELDS = `
-  id source category title creator date permalink thumbnailUrl isPublicDomainWork scoreUrl pagesUrl embedUrl audioUrl
-  files { contentType }
-`;
-
-const GET_LIBRARY_ITEMS = gql`
-  query GetLibraryItems($filter: LibraryItemFilterInput, $page: Int, $limit: Int) {
-    libraryItems(filter: $filter, page: $page, limit: $limit) {
-      nodes { ${CARD_FIELDS} }
-      pageInfo { hasNextPage hasPreviousPage totalCount }
-    }
-  }
-`;
 
 const GET_FAVORITES = gql`
   query MyLibraryFavorites($page: Int, $limit: Int) {
@@ -44,224 +29,6 @@ const GET_FOLDER_ITEMS = gql`
     }
   }
 `;
-
-const CATEGORIES = [
-  { value: '', label: 'All' },
-  { value: 'SHEET_MUSIC', label: 'Sheet music' },
-  { value: 'AUDIO_RECORDING', label: 'Recordings' },
-  { value: 'BOOK', label: 'Books' },
-  { value: 'OTHER', label: 'Other' },
-];
-
-const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
-  CATEGORIES.filter((c) => c.value).map((c) => [c.value, c.label]),
-);
-
-function LibraryCard({ item }: { item: any }) {
-  const source = SOURCE_LABELS[item.source] ?? SOURCE_LABELS.BNF;
-  const { signedIn } = useLibraryCollections();
-  return (
-    <article
-      className="card flex flex-col overflow-hidden p-0"
-      draggable={signedIn}
-      onDragStart={(event) => event.dataTransfer.setData(ITEM_DRAG_TYPE, item.id)}
-    >
-      <div className="relative">
-        <LibraryThumbnail item={item} />
-        <div className="absolute right-2 top-2 flex gap-1.5">
-          <AddToFolderButton itemId={item.id} compact />
-          <FavoriteButton itemId={item.id} size="sm" />
-        </div>
-      </div>
-      <div className="flex flex-1 flex-col p-4">
-        <div className="mb-2 flex flex-wrap gap-1">
-          <span className="inline-block w-fit rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700">
-            {CATEGORY_LABELS[item.category] ?? item.category}
-          </span>
-          {item.scoreUrl && (
-            <span className="inline-block w-fit rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Score</span>
-          )}
-          {(item.pagesUrl || item.embedUrl) && (
-            <span className="inline-block w-fit rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
-              {item.category === 'AUDIO_RECORDING' ? 'Listen' : 'Read online'}
-            </span>
-          )}
-          {item.files?.some((file: any) => file.contentType.startsWith('audio/')) && (
-            <span className="inline-block w-fit rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Listen</span>
-          )}
-          {!item.scoreUrl && item.files?.some((file: any) => file.contentType === 'application/pdf') && (
-            <span className="inline-block w-fit rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">PDF</span>
-          )}
-          {item.audioUrl && (
-            <span className="inline-block w-fit rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Audio</span>
-          )}
-        </div>
-        <h3 className="line-clamp-3 font-semibold leading-snug">
-          <Link href={`/library/${item.id}`} className="hover:text-primary-700">{item.title}</Link>
-        </h3>
-        <p className="mt-1 text-sm text-gray-600">{[item.creator, item.date].filter(Boolean).join(' · ')}</p>
-        <a
-          href={item.permalink}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-auto inline-flex items-center gap-1 pt-3 text-sm font-medium text-primary-600 hover:text-primary-800"
-        >
-          {source.viewLabel} <ExternalLink className="h-3.5 w-3.5" />
-        </a>
-        <p className="pt-1 text-xs text-gray-400">{source.credit}</p>
-      </div>
-    </article>
-  );
-}
-
-function ItemGrid({ items, pageInfo, page, setPage }: { items: any[]; pageInfo: any; page: number; setPage(page: number): void }) {
-  useItemStates(items.map((item) => item.id));
-  return (
-    <>
-      {pageInfo && (
-        <p className="mb-4 text-sm text-gray-500">
-          {pageInfo.totalCount} {pageInfo.totalCount === 1 ? 'item' : 'items'}
-        </p>
-      )}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {items.map((item) => <LibraryCard key={item.id} item={item} />)}
-      </div>
-      {pageInfo && (pageInfo.hasPreviousPage || pageInfo.hasNextPage) && (
-        <div className="mt-8 flex items-center justify-center gap-4">
-          <button
-            onClick={() => setPage(page - 1)}
-            disabled={!pageInfo.hasPreviousPage}
-            className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40"
-          >
-            Previous
-          </button>
-          <span className="text-sm text-gray-500">Page {page}</span>
-          <button
-            onClick={() => setPage(page + 1)}
-            disabled={!pageInfo.hasNextPage}
-            className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40"
-          >
-            Next
-          </button>
-        </div>
-      )}
-    </>
-  );
-}
-
-function LoadingGrid() {
-  return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {[1, 2, 3, 4, 5, 6].map((i) => (
-        <div key={i} className="card animate-pulse p-0">
-          <div className="h-36 bg-gray-100" />
-          <div className="p-4">
-            <div className="mb-2 h-5 w-2/3 rounded bg-gray-200" />
-            <div className="h-4 w-1/3 rounded bg-gray-200" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function CatalogueView({ liveApiEnabled }: { liveApiEnabled: boolean }) {
-  const [searchInput, setSearchInput] = useState('');
-  const [query, setQuery] = useState('');
-  const [category, setCategory] = useState('');
-  const [page, setPage] = useState(1);
-
-  const { data, loading, error } = useQuery(GET_LIBRARY_ITEMS, {
-    variables: {
-      filter: { query: query || undefined, category: category || undefined },
-      page,
-      limit: PAGE_SIZE,
-    },
-    skip: !liveApiEnabled,
-  });
-
-  const items: any[] = data?.libraryItems?.nodes ?? [];
-  const pageInfo = data?.libraryItems?.pageInfo;
-  const hasActiveFilters = Boolean(query || category);
-
-  // Search on submit, not per keystroke - the catalogue is server-side and
-  // there's no reason to fire a query for every letter typed.
-  function submitSearch(event: React.FormEvent) {
-    event.preventDefault();
-    setQuery(searchInput.trim());
-    setPage(1);
-  }
-
-  function selectCategory(value: string) {
-    setCategory(value);
-    setPage(1);
-  }
-
-  function clearFilters() {
-    setSearchInput(''); setQuery(''); setCategory(''); setPage(1);
-  }
-
-  return (
-    <>
-      {error && liveApiEnabled && (
-        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          The library catalogue is currently unavailable. Please try again shortly.
-        </p>
-      )}
-
-      {liveApiEnabled && (
-        <div className="mb-8">
-          <form onSubmit={submitSearch} className="flex gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search by title or composer..."
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                className="input w-full pl-10"
-              />
-            </div>
-            <button type="submit" className="btn-primary">Search</button>
-          </form>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {CATEGORIES.map((c) => (
-              <button
-                key={c.value || 'all'}
-                onClick={() => selectCategory(c.value)}
-                className={`rounded-full border px-3 py-1 text-sm transition-colors ${
-                  category === c.value
-                    ? 'border-primary-500 bg-primary-50 font-medium text-primary-700'
-                    : 'border-gray-200 text-gray-600 hover:border-primary-300'
-                }`}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {loading ? (
-        <LoadingGrid />
-      ) : items.length > 0 ? (
-        <ItemGrid items={items} pageInfo={pageInfo} page={page} setPage={setPage} />
-      ) : liveApiEnabled && !error ? (
-        <div className="py-16 text-center">
-          <Library className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-          <p className="text-gray-500">
-            {hasActiveFilters ? 'No library items match your search.' : 'The library is being filled — check back soon.'}
-          </p>
-          {hasActiveFilters && (
-            <button onClick={clearFilters} className="mt-2 text-sm text-primary-600 hover:text-primary-800">
-              Clear filters
-            </button>
-          )}
-        </div>
-      ) : null}
-    </>
-  );
-}
 
 function FavoritesView() {
   const { favoritesVersion } = useLibraryCollections();
@@ -369,8 +136,8 @@ function LibraryPageContent() {
         </p>
         <h1 className="mb-4 text-4xl font-bold">Sheet Music, Recordings and Books</h1>
         <p className="mb-8 max-w-3xl text-gray-600">
-          Browse historical scores, recordings and music literature from the Bibliothèque nationale de France and
-          openly licensed collections.
+          Browse historical scores, recordings and music literature from the Bibliothèque nationale de France, the
+          Deutsche Nationalbibliothek and openly licensed collections.
           {signedIn ? ' Star what you like and keep it in your own folders.' : ' Sign in to keep favorites and folders.'}
         </p>
 
@@ -402,7 +169,7 @@ function LibraryPageContent() {
             ) : view.kind === 'folder' ? (
               <FolderView key={view.id} folderId={view.id} onSelect={selectView} />
             ) : (
-              <CatalogueView liveApiEnabled={liveApiEnabled} />
+              <LibrarySearchView liveApiEnabled={liveApiEnabled} />
             )}
           </div>
         </div>

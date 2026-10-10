@@ -9,6 +9,7 @@ import { ingestOpenScoreCorpus } from '../lib/openscore.js';
 import { ARCHIVE_DOWNLOAD_PREFIX } from '../lib/openSources.js';
 import { LIBRARY_IMPORT_SOURCES, getLibraryImportStatus, requestLibraryImport, startLibraryImport } from '../lib/libraryImports.js';
 import { importSelection, searchImportSources } from '../lib/libraryImportSearch.js';
+import { searchLibrary } from '../lib/librarySearch.js';
 import { libraryMediaStoreConfigured } from '../lib/libraryMediaStore.js';
 import { SHORT_ID_PATTERN, libraryShareUrl } from '../lib/libraryLinks.js';
 import type { GraphQLContext } from '../types.js';
@@ -33,6 +34,8 @@ let openScoreIngestRunning = false;
 export const libraryResolvers = {
   LibraryItem: {
     shareUrl: (item: { shortId: string }) => libraryShareUrl(item.shortId),
+    availableHere: (item: { source: string; mirroredAt?: Date | null }) =>
+      (item.source !== 'BNF' && item.source !== 'DNB') || Boolean(item.mirroredAt),
     // Same-origin route (apps/web proxies /api/library/* to apps/api's
     // /library/*), so the browser never fetches the upstream file itself.
     scoreUrl: (item: { id: string; musicXmlSourceUrl?: string | null }) =>
@@ -90,6 +93,22 @@ export const libraryResolvers = {
         prisma.libraryItem.count({ where }),
       ]);
       return { nodes, pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount } };
+    },
+
+    async searchLibrary(_: unknown, { input }: any, { prisma }: GraphQLContext) {
+      const result = await searchLibrary(prisma, input ?? {});
+      const items = result.ids.length ? await prisma.libraryItem.findMany({ where: { id: { in: result.ids } } }) : [];
+      const byId = new Map(items.map((item: any) => [item.id, item]));
+      return {
+        nodes: result.ids.map((id) => byId.get(id)).filter(Boolean),
+        totalCount: result.totalCount,
+        page: result.page,
+        limit: result.limit,
+        hasNextPage: result.page * result.limit < result.totalCount,
+        fuzzy: result.fuzzy,
+        suggestion: result.suggestion,
+        facets: result.facets,
+      };
     },
 
     async libraryItem(_: unknown, { id }: any, { prisma }: GraphQLContext) {

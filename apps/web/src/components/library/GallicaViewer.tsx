@@ -90,7 +90,14 @@ export function GallicaViewer({
     return fallbackEmbedUrl ? (
       <GallicaEmbed url={fallbackEmbedUrl} title={title} audio={audio} />
     ) : (
-      <p className="card px-4 py-10 text-center text-sm text-red-700">Gallica is temporarily unavailable. Try again shortly.</p>
+      <p className="card px-4 py-10 text-center text-sm text-gray-700">
+        Gallica isn&rsquo;t answering right now (it limits how many requests it accepts).{' '}
+        {ark && (
+          <a href={`https://gallica.bnf.fr/ark:/12148/${ark}`} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-700 underline">
+            Open it on gallica.bnf.fr
+          </a>
+        )}
+      </p>
     );
   }
   if (!pages) return <p className="card px-4 py-10 text-center text-sm text-gray-500">Loading from Gallica…</p>;

@@ -52,3 +52,4 @@ configMapGenerator:
       - 045-library-media-store.sql
       - 046-library-engagement.sql
       - 047-library-dnb-source.sql
+      - 048-library-search.sql
