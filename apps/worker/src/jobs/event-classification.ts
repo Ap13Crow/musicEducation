@@ -7,9 +7,9 @@ import type { Job } from './types.js';
 // it exactly is what lets a classified external event actually satisfy the
 // same instrument/musicStyle/skillLevel filters and recommendations built
 // for native Events.
-const INSTRUMENT_VOCAB = ['Piano', 'Violin', 'Viola', 'Cello', 'Double Bass', 'Flute', 'Oboe', 'Clarinet', 'Bassoon', 'Horn', 'Trumpet', 'Trombone', 'Guitar', 'Harp', 'Voice'];
-const STYLE_VOCAB = ['Baroque', 'Classical', 'Romantic', 'Contemporary', 'Opera', 'Chamber Music', 'Orchestral', 'Solo Piano', 'Early Music'];
-const SKILL_LEVEL_VOCAB = ['BEGINNER', 'ELEMENTARY', 'INTERMEDIATE', 'ADVANCED', 'PROFESSIONAL'];
+export const INSTRUMENT_VOCAB = ['Piano', 'Violin', 'Viola', 'Cello', 'Double Bass', 'Flute', 'Oboe', 'Clarinet', 'Bassoon', 'Horn', 'Trumpet', 'Trombone', 'Guitar', 'Harp', 'Voice'];
+export const STYLE_VOCAB = ['Baroque', 'Classical', 'Romantic', 'Contemporary', 'Opera', 'Chamber Music', 'Orchestral', 'Solo Piano', 'Early Music'];
+export const SKILL_LEVEL_VOCAB = ['BEGINNER', 'ELEMENTARY', 'INTERMEDIATE', 'ADVANCED', 'PROFESSIONAL'];
 
 // One DeepSeek call classifies a batch, not one call per event: keeps
 // request volume (and cost) low, and the model has more context to work

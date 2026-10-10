@@ -9,6 +9,7 @@ import { FolderBreadcrumb } from '@/components/library/ItemCollectionActions';
 import { LibrarySidebar, type LibraryView } from '@/components/library/LibrarySidebar';
 import { CARD_FIELDS, ItemGrid, LoadingGrid } from '@/components/library/LibraryCards';
 import { LibrarySearchView } from '@/components/library/LibrarySearchView';
+import { LibraryRecommendations } from '@/components/library/LibraryRecommendations';
 
 const PAGE_SIZE = 24;
 
@@ -169,7 +170,11 @@ function LibraryPageContent() {
             ) : view.kind === 'folder' ? (
               <FolderView key={view.id} folderId={view.id} onSelect={selectView} />
             ) : (
-              <LibrarySearchView liveApiEnabled={liveApiEnabled} />
+              <>
+                {/* Only on the plain catalogue - not over a search. */}
+                {signedIn && liveApiEnabled && !searchParams.get('q') && !searchParams.get('page') && <LibraryRecommendations />}
+                <LibrarySearchView liveApiEnabled={liveApiEnabled} />
+              </>
             )}
           </div>
         </div>

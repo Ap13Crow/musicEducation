@@ -7,12 +7,13 @@ import { keycloakAdminUrl, keycloakIssuer } from '@/lib/external-links';
 import { useSession, signIn } from 'next-auth/react';
 import { hasRole } from '@/lib/roles';
 import { LibraryImportSearch } from '@/components/admin/LibraryImportSearch';
+import { LibraryUsageTab } from '@/components/admin/LibraryUsageTab';
 import {
   Users, BookOpen, Calendar, DollarSign, Settings, Shield,
-  Key, Video, CreditCard, BarChart3, UserCog, ChevronRight, UserCheck, Mail, RefreshCw,
+  Key, Video, CreditCard, BarChart3, UserCog, ChevronRight, UserCheck, Mail, RefreshCw, Library,
 } from 'lucide-react';
 
-type Tab = 'overview' | 'users' | 'applications' | 'content' | 'mail' | 'settings';
+type Tab = 'overview' | 'users' | 'applications' | 'content' | 'library' | 'mail' | 'settings';
 
 // Identity/config defaults shown in the admin UI. Driven by NEXT_PUBLIC_* env
 // so they reflect the deployment; defaults target the production domain.
@@ -989,6 +990,7 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'users', label: 'Users', icon: Users },
   { id: 'applications', label: 'Applications', icon: UserCheck },
   { id: 'content', label: 'Content', icon: BookOpen },
+  { id: 'library', label: 'Library use', icon: Library },
   { id: 'mail', label: 'Mail queue', icon: Mail },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -1096,6 +1098,7 @@ export default function AdminPage() {
             {activeTab === 'users' && <UsersTab />}
             {activeTab === 'applications' && <ApplicationsTab />}
             {activeTab === 'content' && <ContentTab />}
+            {activeTab === 'library' && <LibraryUsageTab />}
             {activeTab === 'mail' && <MailOutboxTab />}
             {activeTab === 'settings' && <SettingsTab />}
           </div>

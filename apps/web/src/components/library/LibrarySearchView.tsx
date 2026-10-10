@@ -27,6 +27,8 @@ const SEARCH_LIBRARY = gql`
         formats { value count }
         centuries { value count }
         licenses { value count }
+        instruments { value count }
+        musicStyles { value count }
         availability { value count }
       }
     }
@@ -51,9 +53,11 @@ const LICENSE_NAMES: Record<string, string> = {
 };
 const centuryName = (value: string) => (value === 'unknown' ? 'Undated' : `${value}00s`);
 
-type FacetKey = 'src' | 'cat' | 'fmt' | 'cent' | 'lic';
+type FacetKey = 'src' | 'cat' | 'fmt' | 'cent' | 'lic' | 'ins' | 'sty';
 const FACETS: { key: FacetKey; title: string; field: string; name: (value: string) => string; sort?: (a: string, b: string) => number }[] = [
   { key: 'cat', title: 'Type', field: 'categories', name: (value) => CATEGORY_LABELS[value] ?? value },
+  { key: 'ins', title: 'Instrument', field: 'instruments', name: (value) => value },
+  { key: 'sty', title: 'Style', field: 'musicStyles', name: (value) => value },
   { key: 'fmt', title: 'Format', field: 'formats', name: (value) => FORMAT_NAMES[value] ?? value },
   { key: 'src', title: 'Source', field: 'sources', name: (value) => SOURCE_NAMES[value] ?? value },
   {
@@ -108,6 +112,8 @@ export function LibrarySearchView({ liveApiEnabled }: { liveApiEnabled: boolean 
     fmt: list(params.get('fmt')),
     cent: list(params.get('cent')),
     lic: list(params.get('lic')),
+    ins: list(params.get('ins')),
+    sty: list(params.get('sty')),
   };
   const yearFrom = year(params.get('from'));
   const yearTo = year(params.get('to'));
@@ -146,6 +152,8 @@ export function LibrarySearchView({ liveApiEnabled }: { liveApiEnabled: boolean 
         formats: selected.fmt,
         centuries: selected.cent,
         licenses: selected.lic,
+        instruments: selected.ins,
+        musicStyles: selected.sty,
         yearFrom,
         yearTo,
         availableOnly: !showAll,

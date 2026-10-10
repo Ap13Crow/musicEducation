@@ -21,7 +21,7 @@ const GET_LIBRARY_ITEM = gql`
   query GetLibraryItem($id: ID!) {
     libraryItem(id: $id) {
       id shortId shareUrl source ark category title creator date documentType permalink catalogueUrl
-      scoreUrl pagesUrl embedUrl audioUrl license attribution description thumbnailUrl
+      scoreUrl pagesUrl embedUrl audioUrl license attribution description thumbnailUrl instruments musicStyles skillLevels
       files { label url contentType durationSeconds shareUrl }
     }
   }
@@ -82,6 +82,25 @@ export default function LibraryItemView() {
               <p className="mt-2 text-gray-600">
                 {[item.creator, item.date, item.documentType].filter(Boolean).join(' · ')}
               </p>
+              {(item.instruments.length > 0 || item.musicStyles.length > 0 || item.skillLevels.length > 0) && (
+                <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
+                  {item.instruments.map((value: string) => (
+                    <Link key={`i-${value}`} href={`/library?ins=${encodeURIComponent(value)}`} className="rounded-full bg-primary-50 px-2.5 py-1 font-medium text-primary-700 hover:bg-primary-100">
+                      {value}
+                    </Link>
+                  ))}
+                  {item.musicStyles.map((value: string) => (
+                    <Link key={`s-${value}`} href={`/library?sty=${encodeURIComponent(value)}`} className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-800 hover:bg-amber-100">
+                      {value}
+                    </Link>
+                  ))}
+                  {item.skillLevels.map((value: string) => (
+                    <span key={`l-${value}`} className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700">
+                      {value.charAt(0) + value.slice(1).toLowerCase()}
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <FavoriteButton itemId={item.id} />
                 <AddToFolderButton itemId={item.id} />

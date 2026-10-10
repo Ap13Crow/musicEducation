@@ -12,7 +12,8 @@ import { Prisma, type PrismaClient } from '@my-music-coach/database';
 //   - case-sensitive: every term must also appear exactly as typed
 //   - no hits: similar words instead (trigram similarity), plus a "did you
 //     mean" built from the words that actually occur in the Library
-//   - facets (source, type, format, century, licence, viewable here), each
+//   - facets (source, type, format, century, licence, instrument, style,
+//     viewable here), each
 //     counted with every other active filter applied
 
 export type SearchMode = 'ALL' | 'ANY' | 'PHRASE';
@@ -29,6 +30,8 @@ export interface LibrarySearchInput {
   formats?: string[] | null;
   licenses?: string[] | null;
   centuries?: string[] | null;
+  instruments?: string[] | null;
+  musicStyles?: string[] | null;
   yearFrom?: number | null;
   yearTo?: number | null;
   availableOnly?: boolean | null;
@@ -55,6 +58,8 @@ export interface LibrarySearchResult {
     formats: FacetValue[];
     centuries: FacetValue[];
     licenses: FacetValue[];
+    instruments: FacetValue[];
+    musicStyles: FacetValue[];
     availability: FacetValue[];
   };
 }
@@ -228,7 +233,7 @@ function textConditions(input: LibrarySearchInput, fuzzy: boolean): { where: Pri
   return { where: Prisma.join(conditions, ' AND '), rank: Prisma.sql`ts_rank(${vector}, ${tsquery})` };
 }
 
-type FacetKey = 'source' | 'category' | 'format' | 'century' | 'license' | 'available';
+type FacetKey = 'source' | 'category' | 'format' | 'century' | 'license' | 'instrument' | 'style' | 'available';
 
 function filterConditions(input: LibrarySearchInput, except?: FacetKey): Prisma.Sql[] {
   const list = (values?: string[] | null) => (values?.length ? values.map(String) : null);
@@ -238,6 +243,10 @@ function filterConditions(input: LibrarySearchInput, except?: FacetKey): Prisma.
   const formats = list(input.formats);
   const licenses = list(input.licenses);
   const centuries = list(input.centuries);
+  const instruments = list(input.instruments);
+  const musicStyles = list(input.musicStyles);
+  if (instruments && except !== 'instrument') conditions.push(Prisma.sql`"instruments" && ${instruments}::text[]`);
+  if (musicStyles && except !== 'style') conditions.push(Prisma.sql`"musicStyles" && ${musicStyles}::text[]`);
   if (sources && except !== 'source') conditions.push(Prisma.sql`"source"::text = ANY(${sources})`);
   if (categories && except !== 'category') conditions.push(Prisma.sql`"category"::text = ANY(${categories})`);
   if (formats && except !== 'format') conditions.push(Prisma.sql`formats && ${formats}::text[]`);
@@ -263,7 +272,7 @@ const ORDER: Record<Exclude<SearchSort, 'RELEVANCE'>, Prisma.Sql> = {
 async function run(prisma: PrismaClient, input: LibrarySearchInput, fuzzy: boolean, page: number, limit: number) {
   const text = textConditions(input, fuzzy);
   const base = Prisma.sql`
-    SELECT id, "source", "category", "year", "title", "ingestedAt",
+    SELECT id, "source", "category", "year", "title", "ingestedAt", "instruments", "musicStyles",
       ${FORMATS_SQL} AS formats,
       ${AVAILABLE_SQL} AS available,
       ${LICENSE_SQL} AS license_group,
@@ -288,6 +297,8 @@ async function run(prisma: PrismaClient, input: LibrarySearchInput, fuzzy: boole
       ${facet(Prisma.sql`format.value`, 'format', Prisma.sql`base CROSS JOIN LATERAL unnest(formats) AS format(value)`)} AS formats,
       ${facet(Prisma.sql`century`, 'century')} AS centuries,
       ${facet(Prisma.sql`license_group`, 'license')} AS licenses,
+      ${facet(Prisma.sql`tag.value`, 'instrument', Prisma.sql`base CROSS JOIN LATERAL unnest("instruments") AS tag(value)`)} AS instruments,
+      ${facet(Prisma.sql`tag.value`, 'style', Prisma.sql`base CROSS JOIN LATERAL unnest("musicStyles") AS tag(value)`)} AS "musicStyles",
       ${facet(Prisma.sql`CASE WHEN available THEN 'HERE' ELSE 'AT_SOURCE' END`, 'available')} AS availability`;
   const row = rows[0];
   return {
@@ -299,6 +310,8 @@ async function run(prisma: PrismaClient, input: LibrarySearchInput, fuzzy: boole
       formats: row.formats,
       centuries: row.centuries,
       licenses: row.licenses,
+      instruments: row.instruments,
+      musicStyles: row.musicStyles,
       availability: row.availability,
     } as LibrarySearchResult['facets'],
   };

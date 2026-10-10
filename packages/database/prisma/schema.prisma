@@ -1547,6 +1547,12 @@ model LibraryItem {
   // date, for cross-source duplicate hints and year filters.
   titleKey           String?
   year               Int?
+  // Tags from the worker's library-classification job, same vocabulary as
+  // UserProfile/Course/Event (instruments, musicStyles, SkillLevel names).
+  instruments        String[] @default([])
+  musicStyles        String[] @default([])
+  skillLevels        String[] @default([])
+  classifiedAt       DateTime?
   // Most recent ingest topic that touched this row - admin-dashboard
   // provenance, not a run-history log (this schema deliberately keeps none -
   // "last run"/counts are always live-reconstructed from this table, same as

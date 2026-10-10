@@ -725,6 +725,11 @@ type LibraryItem {
   # False for a Gallica/DNB item we hold no copy of yet - it can only be
   # opened at the source for now.
   availableHere: Boolean!
+  # AI tags (worker job library-classification), same vocabulary as
+  # profiles, courses and events.
+  instruments: [String!]!
+  musicStyles: [String!]!
+  skillLevels: [String!]!
   ingestedAt: DateTime!
 }
 
@@ -836,6 +841,94 @@ input LibraryEngagementInput {
 
 # Reading/listening progress toward the item's library XP (1 for short, 2
 # for long works, once per item and mode).
+# ── Library recommendations and usage ─────────────────────────
+type LibraryRecommendation {
+  item: LibraryItem!
+  score: Float!
+  # Why it was picked, e.g. "For violin", "More by Schubert".
+  reasons: [String!]!
+}
+
+type LibraryUsageSummary {
+  activeUsers7d: Int!
+  activeUsers30d: Int!
+  itemsOpened30d: Int!
+  completions30d: Int!
+  xpAwarded30d: Int!
+  favorites: Int!
+  folders: Int!
+}
+
+type LibraryTopItem {
+  item: LibraryItem!
+  opens: Int!
+  completions: Int!
+}
+
+type LibraryUserUsage {
+  userId: ID!
+  email: String!
+  role: String!
+  displayName: String
+  itemsOpened: Int!
+  itemsCompleted: Int!
+  xpEarned: Int!
+  activeMinutes: Int!
+  favorites: Int!
+  folders: Int!
+  lastActiveAt: DateTime
+}
+
+type LibraryUserUsagePage {
+  nodes: [LibraryUserUsage!]!
+  totalCount: Int!
+  page: Int!
+  limit: Int!
+}
+
+type LibraryUsageOverview {
+  summary: LibraryUsageSummary!
+  topItems: [LibraryTopItem!]!
+  users: LibraryUserUsagePage!
+}
+
+enum LibraryUsageSort {
+  RECENT
+  OPENED
+  COMPLETED
+  TIME
+}
+
+type LibraryTagShare {
+  value: String!
+  # Share of the user's weighted history (0..1).
+  share: Float!
+}
+
+type LibraryActivityEntry {
+  item: LibraryItem!
+  mode: LibraryEngagementMode!
+  progress: Float!
+  activeMinutes: Int!
+  completedAt: DateTime
+  xpAwarded: Int!
+  updatedAt: DateTime!
+}
+
+type LibraryUserActivity {
+  usage: LibraryUserUsage!
+  profileInstruments: [String!]!
+  profileStyles: [String!]!
+  skillLevel: String
+  historyInstruments: [LibraryTagShare!]!
+  historyStyles: [LibraryTagShare!]!
+  historyCreators: [String!]!
+  recent: [LibraryActivityEntry!]!
+  favorites: [LibraryItem!]!
+  # What the user currently sees under "Recommended for you".
+  recommendations: [LibraryRecommendation!]!
+}
+
 type LibraryEngagement {
   itemId: ID!
   mode: LibraryEngagementMode!
@@ -934,6 +1027,8 @@ input LibrarySearchInput {
   licenses: [String!]
   # "18" = 1800-1899, "unknown" = undated
   centuries: [String!]
+  instruments: [String!]
+  musicStyles: [String!]
   yearFrom: Int
   yearTo: Int
   # Only items we can show here (Gallica/DNB items once copied).
@@ -955,6 +1050,8 @@ type LibraryFacets {
   formats: [LibraryFacetValue!]!
   centuries: [LibraryFacetValue!]!
   licenses: [LibraryFacetValue!]!
+  instruments: [LibraryFacetValue!]!
+  musicStyles: [LibraryFacetValue!]!
   # HERE / AT_SOURCE
   availability: [LibraryFacetValue!]!
 }
@@ -1997,6 +2094,12 @@ type Query {
   libraryItems(filter: LibraryItemFilterInput, page: Int, limit: Int): LibraryItemConnection!
   # Public full-text search with filters and facets.
   searchLibrary(input: LibrarySearchInput!): LibrarySearchResult!
+  # Signed-in user's picks from profile + reading history; [] when signed
+  # out or with nothing to go on.
+  recommendedLibraryItems(limit: Int): [LibraryRecommendation!]!
+  # ADMIN only - Library usage across all users.
+  adminLibraryUsage(query: String, sort: LibraryUsageSort, page: Int, limit: Int): LibraryUsageOverview!
+  adminLibraryUserActivity(userId: ID!): LibraryUserActivity!
   libraryItem(id: ID!): LibraryItem
   libraryPermalink(shortId: String!): LibraryPermalink
   # Signed-in user's own favorites and folders (any role).

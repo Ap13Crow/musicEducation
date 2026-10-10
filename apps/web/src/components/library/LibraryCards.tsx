@@ -28,7 +28,7 @@ export const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
   CATEGORIES.filter((c) => c.value).map((c) => [c.value, c.label]),
 );
 
-export function LibraryCard({ item }: { item: any }) {
+export function LibraryCard({ item, note }: { item: any; note?: string }) {
   const source = SOURCE_LABELS[item.source] ?? SOURCE_LABELS.BNF;
   const { signedIn } = useLibraryCollections();
   return (
@@ -79,6 +79,7 @@ export function LibraryCard({ item }: { item: any }) {
           <Link href={`/library/${item.id}`} className="hover:text-primary-700">{item.title}</Link>
         </h3>
         <p className="mt-1 text-sm text-gray-600">{[item.creator, item.date].filter(Boolean).join(' · ')}</p>
+        {note && <p className="mt-2 text-xs font-medium text-primary-700">{note}</p>}
         <a
           href={item.permalink}
           target="_blank"
