@@ -200,6 +200,8 @@ model User {
   externalEventEngagements ExternalEventEngagement[]
   externalCalendarConnections ExternalCalendarConnection[]
   weeklyDigestDeliveries StudentWeeklyDigestDelivery[]
+  libraryFavorites       LibraryFavorite[]
+  libraryFolders         LibraryFolder[]
 }
 
 model UserProfile {
@@ -1544,6 +1546,8 @@ model LibraryItem {
   // real items.
   hiddenAt           DateTime?
   thumbnail          LibraryItemThumbnail?
+  favorites          LibraryFavorite[]
+  folderEntries      LibraryFolderItem[]
   ingestedAt         DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -1555,6 +1559,52 @@ model LibraryItem {
 // (apps/api/src/lib/libraryThumbnails.ts) and served from our own
 // /library/items/:id/thumbnail route - so the Library grid never hits
 // Gallica/GitHub/Mutopia per visitor. LibraryItem.thumbnailUrl points at it.
+// A user's starred Library items - separate from folders: starring needs no
+// decision about where an item belongs.
+model LibraryFavorite {
+  userId    String
+  itemId    String
+  createdAt DateTime    @default(now())
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item      LibraryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([userId, itemId])
+  @@index([itemId])
+}
+
+// A user's own nested folders of Library items (any role). Deleting a folder
+// deletes its subfolders and entries, never the items. Only an ADMIN may make
+// a folder public, which exposes it read-only at /f/<shortId>.
+model LibraryFolder {
+  id        String   @id @default(cuid())
+  shortId   String   @unique @default(dbgenerated("substr(md5(random()::text || clock_timestamp()::text), 1, 10)"))
+  ownerId   String
+  parentId  String?
+  name      String
+  isPublic  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner    User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  parent   LibraryFolder?      @relation("LibraryFolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children LibraryFolder[]     @relation("LibraryFolderTree")
+  items    LibraryFolderItem[]
+
+  @@index([ownerId])
+  @@index([parentId])
+}
+
+model LibraryFolderItem {
+  folderId String
+  itemId   String
+  addedAt  DateTime      @default(now())
+  folder   LibraryFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  item     LibraryItem   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([folderId, itemId])
+  @@index([itemId])
+}
+
 model LibraryItemThumbnail {
   itemId      String      @id
   item        LibraryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)

@@ -14,6 +14,11 @@ export function libraryShareUrl(shortId: string, fileNumber?: number): string {
   return `${appOrigin()}/l/${shortId}${fileNumber ? `/${fileNumber}` : ''}`;
 }
 
+// Public (admin-shared) folder - /f/<shortId>.
+export function libraryFolderShareUrl(shortId: string): string {
+  return `${appOrigin()}/f/${shortId}`;
+}
+
 export async function libraryQrCode(url: string, format: 'svg' | 'png'): Promise<string | Buffer> {
   // Error-correction level M survives a smudged print; the 4-module quiet
   // zone is what scanners need around the code.

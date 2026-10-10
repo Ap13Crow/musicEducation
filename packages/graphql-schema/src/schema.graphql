@@ -717,6 +717,42 @@ type LibraryItem {
   ingestedAt: DateTime!
 }
 
+# A user's own Library folder (nested via parentId). shareUrl is set only
+# while the folder is public, which only an ADMIN can switch on.
+type LibraryFolder {
+  id: ID!
+  shortId: String!
+  name: String!
+  parentId: ID
+  isPublic: Boolean!
+  shareUrl: String
+  itemCount: Int!
+  createdAt: DateTime!
+}
+
+# The viewer's own relation to one Library item - drives the star and the
+# "add to folder" checkmarks on cards.
+type LibraryItemState {
+  itemId: ID!
+  isFavorite: Boolean!
+  folderIds: [ID!]!
+}
+
+# A public (admin-shared) folder as anyone sees it at /f/<shortId>.
+type PublicLibraryFolder {
+  shortId: String!
+  name: String!
+  shareUrl: String!
+  subfolders: [PublicLibraryFolderLink!]!
+  items: [LibraryItem!]!
+}
+
+type PublicLibraryFolderLink {
+  shortId: String!
+  name: String!
+  itemCount: Int!
+}
+
 # What a permanent /l/<shortId> link resolves to. available is false once an
 # admin has hidden the item - the link then shows a "no longer available"
 # page instead of breaking.
@@ -1762,6 +1798,13 @@ type Query {
   libraryItems(filter: LibraryItemFilterInput, page: Int, limit: Int): LibraryItemConnection!
   libraryItem(id: ID!): LibraryItem
   libraryPermalink(shortId: String!): LibraryPermalink
+  # Signed-in user's own favorites and folders (any role).
+  myLibraryFolders: [LibraryFolder!]!
+  myLibraryFavorites(page: Int, limit: Int): LibraryItemConnection!
+  myLibraryFolderItems(folderId: ID!, page: Int, limit: Int): LibraryItemConnection!
+  myLibraryItemStates(itemIds: [ID!]!): [LibraryItemState!]!
+  # Public, no login - only folders an admin has made public.
+  publicLibraryFolder(shortId: String!): PublicLibraryFolder
   # ADMIN only - one status per openly licensed source.
   libraryImportStatuses: [LibraryImportStatus!]!
   # ADMIN only - live-reconstructed from LibraryItem, no run-history table.
@@ -1884,6 +1927,18 @@ type Mutation {
   # and parts where the corpus has them) from GitHub, pinned to the corpus's
   # current commit. Idempotent. Defaults to LIEDER.
   runOpenScoreIngest(corpus: OpenScoreCorpus): LibraryIngestResult!
+
+  # Favorites and folders - signed-in users, own data only.
+  setLibraryFavorite(itemId: ID!, favorite: Boolean!): LibraryItemState!
+  createLibraryFolder(name: String!, parentId: ID): LibraryFolder!
+  renameLibraryFolder(id: ID!, name: String!): LibraryFolder!
+  # parentId null moves the folder to the top level; a move into its own
+  # subtree is rejected.
+  moveLibraryFolder(id: ID!, parentId: ID): LibraryFolder!
+  deleteLibraryFolder(id: ID!): Boolean!
+  setLibraryItemInFolder(folderId: ID!, itemId: ID!, included: Boolean!): LibraryItemState!
+  # ADMIN only - exposes the folder (and its subfolders) at /f/<shortId>.
+  setLibraryFolderPublic(id: ID!, isPublic: Boolean!): LibraryFolder!
   # ADMIN only - starts a background import of an openly licensed source
   # (OpenScore, Musopen, Mutopia); poll libraryImportStatuses for progress.
   # CONFLICT while that source is already running.

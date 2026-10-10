@@ -18,7 +18,7 @@ import { fetchScoreBytes, isAllowedScoreSource } from './lib/openscore.js';
 import { MUTOPIA_FTP_PREFIX } from './lib/openSources.js';
 import { startLibraryImport } from './lib/libraryImports.js';
 import { getLibraryAudioTrack, getLibraryManifest, getLibraryPageImage, sendWithRange } from './lib/libraryMedia.js';
-import { libraryQrCode, libraryShareUrl } from './lib/libraryLinks.js';
+import { libraryFolderShareUrl, libraryQrCode, libraryShareUrl } from './lib/libraryLinks.js';
 import { bnfLibraryMediaEnabled } from '@my-music-coach/bnf-gallica';
 import type { GraphQLContext } from './types.js';
 
@@ -408,6 +408,24 @@ async function main() {
       return res.send(body);
     } catch (error) {
       logger.error({ error, id: req.params.id }, 'Library QR code generation failed');
+      return res.status(500).send('QR code unavailable');
+    }
+  });
+
+  // QR code of a public folder's /f/<shortId> link - 404 unless an admin has
+  // made the folder public, so a private folder's id reveals nothing.
+  app.get('/library/folders/:id/qr.:format(svg|png)', async (req, res) => {
+    try {
+      const folder = await prisma.libraryFolder.findUnique({ where: { id: req.params.id }, select: { shortId: true, isPublic: true } });
+      if (!folder?.isPublic) return res.status(404).send('Not found');
+      const format = req.params.format as 'svg' | 'png';
+      const body = await libraryQrCode(libraryFolderShareUrl(folder.shortId), format);
+      res.setHeader('content-type', format === 'svg' ? 'image/svg+xml' : 'image/png');
+      res.setHeader('cache-control', 'no-store');
+      if (req.query.download) res.setHeader('content-disposition', `attachment; filename="mymusic-coach-folder-${folder.shortId}.${format}"`);
+      return res.send(body);
+    } catch (error) {
+      logger.error({ error, id: req.params.id }, 'Library folder QR code generation failed');
       return res.status(500).send('QR code unavailable');
     }
   });

@@ -10,8 +10,12 @@ export function GallicaEmbed({ url, title, audio }: { url: string; title: string
         src={url}
         title={`${title} - Gallica`}
         loading="lazy"
-        allow="autoplay; fullscreen"
-        sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
+        // web-share/clipboard-write: the player's own share button calls the
+        // native share sheet (iOS) or copies a link - both throw inside a
+        // cross-origin frame unless delegated here. Popups (e.g. "open on
+        // Gallica") must escape the sandbox or the opened page breaks.
+        allow="autoplay; fullscreen; web-share; clipboard-write"
+        sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation"
         className={`block w-full border-0 ${audio ? 'h-36' : 'h-[75vh] min-h-[32rem]'}`}
       />
     </section>

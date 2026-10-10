@@ -10,6 +10,8 @@ import { GallicaViewer } from '@/components/library/GallicaViewer';
 import { GallicaEmbed } from '@/components/library/GallicaEmbed';
 import { PdfViewer } from '@/components/library/PdfViewer';
 import { CopyLinkButton, QrCodeButton, ShareBar, useIsAdmin } from '@/components/library/ShareBar';
+import { AddToFolderButton, FavoriteButton } from '@/components/library/ItemCollectionActions';
+import { useItemStates } from '@/components/library/LibraryCollections';
 import { SOURCE_LABELS } from '../sources';
 
 const GET_LIBRARY_ITEM = gql`
@@ -28,6 +30,7 @@ export default function LibraryItemView() {
   const id = params.id as string;
   const { data, loading, error } = useQuery(GET_LIBRARY_ITEM, { variables: { id } });
   const item = data?.libraryItem;
+  useItemStates(item ? [item.id] : []);
   const source = item ? SOURCE_LABELS[item.source] ?? SOURCE_LABELS.BNF : null;
   const files: any[] = item?.files ?? [];
   // 1-based position in item.files - the <n> of the file's /l/<shortId>/<n> link.
@@ -59,7 +62,9 @@ export default function LibraryItemView() {
               <p className="mt-2 text-gray-600">
                 {[item.creator, item.date, item.documentType].filter(Boolean).join(' · ')}
               </p>
-              <div className="mt-4">
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <FavoriteButton itemId={item.id} />
+                <AddToFolderButton itemId={item.id} />
                 <ShareBar itemId={item.id} shareUrl={item.shareUrl} title={item.title} />
               </div>
             </header>
@@ -98,7 +103,7 @@ export default function LibraryItemView() {
                       </a>
                       <CopyLinkButton url={file.shareUrl} label="Link" />
                       {isAdmin && (
-                        <QrCodeButton itemId={item.id} fileNumber={file.number} shareUrl={file.shareUrl} title={`${item.title} – ${file.label}`} compact />
+                        <QrCodeButton qrBase={`/api/library/items/${item.id}/qr`} fileNumber={file.number} shareUrl={file.shareUrl} title={`${item.title} – ${file.label}`} compact />
                       )}
                     </li>
                   ))}

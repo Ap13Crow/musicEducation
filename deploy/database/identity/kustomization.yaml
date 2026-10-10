@@ -48,3 +48,4 @@ configMapGenerator:
       - 041-library-open-sources.sql
       - 042-library-item-thumbnail.sql
       - 043-library-item-short-id.sql
+      - 044-library-favorites-folders.sql
