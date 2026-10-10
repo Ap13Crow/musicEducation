@@ -1,6 +1,6 @@
 # Composer courses (Beethoven, Schubert)
 
-Two 4-week first-level courses by Jens Apel, sold at CHF 10 (free with
+Two 4-week first-level courses, written for Jens Apel and taught by Helene (Camille) Bruneau (teacher profile cmtagq6za000lmhras87yoj4r), sold at CHF 10 (free with
 mymusic.coach Plus, for the teacher's subscribers and students, and for
 invited people - apps/api/src/lib/courseAccess.ts).
 
