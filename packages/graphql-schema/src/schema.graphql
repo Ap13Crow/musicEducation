@@ -582,6 +582,9 @@ type Lesson {
   # Populated for contentType SLIDES - ordered slide deck, each slide its
   # own uploaded file (image or single-page PDF) in object storage.
   slides: [LessonSlide!]!
+  # Library items and folders the teacher attached - same access as the
+  # lesson's video and slides.
+  libraryReferences: [LessonLibraryReference!]!
   # Slide ids the current caller has viewed in this lesson - [] when signed
   # out or not enrolled. Drives the slide viewer's progress bar.
   myViewedSlideIds: [ID!]!
@@ -589,6 +592,32 @@ type Lesson {
   # uploaded/linked by the teacher - null for teacher-authored content.
   sourceUrl: String
   attribution: String
+}
+
+# A Library folder attached to a lesson, with its current items (the folder
+# and every folder below it).
+type LessonLibraryFolder {
+  id: ID!
+  name: String!
+  items: [LibraryItem!]!
+}
+
+# One Library item or one folder attached to a lesson. item is null when the
+# item has since been removed from the Library.
+type LessonLibraryReference {
+  id: ID!
+  note: String
+  order: Int!
+  item: LibraryItem
+  folder: LessonLibraryFolder
+}
+
+input AddLessonLibraryReferenceInput {
+  lessonId: ID!
+  # Exactly one of itemId / folderId (your own folder).
+  itemId: ID
+  folderId: ID
+  note: String
 }
 
 type LessonSlide {
@@ -2226,6 +2255,13 @@ type Mutation {
   # Downloads the asset server-side and re-hosts it in our own object
   # storage (never a Gallica URL stored directly) - see resolvers/bnf.ts.
   importBnfSlide(lessonId: ID!, libraryItemId: ID!, page: Int!): LessonSlide!
+  # TEACHER/ADMIN, own courses only - Library items/folders as lesson
+  # references. Adding one that is already attached keeps it (updating the
+  # note if given).
+  addLessonLibraryReference(input: AddLessonLibraryReferenceInput!): LessonLibraryReference!
+  updateLessonLibraryReference(id: ID!, note: String): LessonLibraryReference!
+  removeLessonLibraryReference(id: ID!): Boolean!
+  reorderLessonLibraryReferences(lessonId: ID!, ids: [ID!]!): [LessonLibraryReference!]!
   importBnfAudio(lessonId: ID!, libraryItemId: ID!, page: Int): Lesson!
 
   # Library ingestion (admin on-demand pull) - ADMIN only. Shares the same

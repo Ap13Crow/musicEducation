@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import Link from 'next/link';
 import {
-  ChevronDown, ChevronRight, Folder, FolderOpen, Globe, Library, MoreHorizontal, Pencil, Plus, Star, Trash2, X,
+  ChevronDown, ChevronRight, ExternalLink, Folder, FolderOpen, Globe, Library, MoreHorizontal, Plus, Star, Trash2, X,
 } from 'lucide-react';
 import { childFolders, folderPath, isDescendant, useLibraryCollections, type LibraryFolder } from './LibraryCollections';
-import { CopyLinkButton, QrCodeButton, useIsAdmin } from './ShareBar';
+import { CopyLinkButton, QrCodePanel, useIsAdmin } from './ShareBar';
 
 export type LibraryView = { kind: 'all' } | { kind: 'favorites' } | { kind: 'folder'; id: string };
 
@@ -44,85 +46,170 @@ function NameForm({ initial, onSubmit, onCancel, placeholder }: {
   );
 }
 
-function FolderMenu({ folder, onClose, onRename, onNewSubfolder }: {
-  folder: LibraryFolder;
-  onClose(): void;
-  onRename(): void;
-  onNewSubfolder(): void;
-}) {
-  const { folders, moveFolder, deleteFolder, setFolderPublic } = useLibraryCollections();
+// Everything you can do with one folder, in a proper dialog (a bottom sheet
+// on phones) - the sidebar is too narrow for forms, and a QR code shown
+// inside it got trapped there. Rendered at the end of <body>.
+export function FolderDialog({ folder, onClose, onOpenFolder }: { folder: LibraryFolder; onClose(): void; onOpenFolder(id: string): void }) {
+  const { folders, renameFolder, createFolder, moveFolder, deleteFolder, setFolderPublic } = useLibraryCollections();
   const isAdmin = useIsAdmin();
-  const ref = useRef<HTMLDivElement>(null);
+  const [name, setName] = useState(folder.name);
+  const [subfolder, setSubfolder] = useState('');
+  const [busy, setBusy] = useState(false);
   const moveTargets = folders.filter((target) => target.id !== folder.id && !isDescendant(folders, folder.id, target.id));
+  const path = folderPath(folders, folder.id).map((part) => part.name).join(' / ');
 
   useEffect(() => {
-    const close = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) onClose();
+    const escape = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
+    document.addEventListener('keydown', escape);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', escape);
+      document.body.style.overflow = previous;
     };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
   }, [onClose]);
 
-  const itemClass = 'flex min-h-[2.5rem] w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-gray-50';
-  return (
-    <div ref={ref} className="absolute right-0 top-full z-40 mt-1 w-64 rounded-xl border border-gray-200 bg-white p-1 shadow-xl">
-      <button type="button" className={itemClass} onClick={() => { onClose(); onNewSubfolder(); }}>
-        <Plus className="h-4 w-4" /> New subfolder
-      </button>
-      <button type="button" className={itemClass} onClick={() => { onClose(); onRename(); }}>
-        <Pencil className="h-4 w-4" /> Rename
-      </button>
-      <label className="block px-2 py-1 text-xs text-gray-500">
-        Move to
-        <select
-          className="input mt-1 w-full py-1 text-sm"
-          value={folder.parentId ?? ''}
-          onChange={(event) => { void moveFolder(folder.id, event.target.value || null); onClose(); }}
-        >
-          <option value="">Top level</option>
-          {moveTargets.map((target) => (
-            <option key={target.id} value={target.id}>
-              {folderPath(folders, target.id).map((part) => part.name).join(' / ')}
-            </option>
-          ))}
-        </select>
-      </label>
-      {isAdmin && (
-        <div className="mt-1 border-t border-gray-100 pt-1">
-          <button type="button" className={itemClass} onClick={() => void setFolderPublic(folder.id, !folder.isPublic)}>
-            <Globe className="h-4 w-4" /> {folder.isPublic ? 'Make private' : 'Make public (share link)'}
-          </button>
-          {folder.isPublic && folder.shareUrl && (
-            <div className="flex flex-wrap gap-2 px-2 py-1">
-              <CopyLinkButton url={folder.shareUrl} label="Copy link" />
-              <QrCodeButton qrBase={`/api/library/folders/${folder.id}/qr`} shareUrl={folder.shareUrl} title={folder.name} />
-            </div>
-          )}
-        </div>
-      )}
-      <button
-        type="button"
-        className={`${itemClass} mt-1 border-t border-gray-100 text-red-600`}
-        onClick={() => {
-          if (window.confirm(`Delete "${folder.name}" and its subfolders? The library items themselves stay.`)) void deleteFolder(folder.id);
-          onClose();
-        }}
+  async function act(action: () => Promise<unknown>) {
+    setBusy(true);
+    try {
+      await action();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const sectionTitle = 'mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500';
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 sm:items-center sm:p-4" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label={`Folder ${folder.name}`}
+        className="flex max-h-[90vh] w-full flex-col rounded-t-2xl bg-white shadow-2xl sm:max-w-lg sm:rounded-2xl"
+        onClick={(event) => event.stopPropagation()}
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <Trash2 className="h-4 w-4" /> Delete folder
-      </button>
-    </div>
+        <div className="flex items-start justify-between gap-3 border-b border-gray-100 p-4">
+          <div className="min-w-0">
+            <h2 className="flex items-center gap-2 text-lg font-semibold">
+              <Folder className="h-5 w-5 shrink-0 text-primary-600" /> <span className="truncate">{folder.name}</span>
+              {folder.isPublic && <Globe className="h-4 w-4 shrink-0 text-green-600" aria-label="Public" />}
+            </h2>
+            <p className="truncate text-sm text-gray-500">{path} · {folder.itemCount} {folder.itemCount === 1 ? 'item' : 'items'}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
+          <button type="button" onClick={() => { onOpenFolder(folder.id); onClose(); }} className="btn-primary inline-flex w-full items-center justify-center gap-2">
+            <FolderOpen className="h-4 w-4" /> Open folder
+          </button>
+
+          <section>
+            <h3 className={sectionTitle}>Name</h3>
+            <form
+              className="flex gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (name.trim() && name.trim() !== folder.name) void act(() => renameFolder(folder.id, name.trim()));
+              }}
+            >
+              <input value={name} maxLength={80} onChange={(event) => setName(event.target.value)} aria-label="Folder name" className="input min-w-0 flex-1 text-base sm:text-sm" />
+              <button type="submit" disabled={busy || !name.trim() || name.trim() === folder.name} className="rounded-lg border border-gray-300 px-3 text-sm hover:bg-gray-50 disabled:opacity-50">Rename</button>
+            </form>
+          </section>
+
+          <section>
+            <h3 className={sectionTitle}>New subfolder</h3>
+            <form
+              className="flex gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const value = subfolder.trim();
+                if (value) void act(async () => { await createFolder(value, folder.id); setSubfolder(''); });
+              }}
+            >
+              <input value={subfolder} maxLength={80} placeholder="Subfolder name" onChange={(event) => setSubfolder(event.target.value)} aria-label="Subfolder name" className="input min-w-0 flex-1 text-base sm:text-sm" />
+              <button type="submit" disabled={busy || !subfolder.trim()} className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 text-sm hover:bg-gray-50 disabled:opacity-50">
+                <Plus className="h-4 w-4" /> Create
+              </button>
+            </form>
+          </section>
+
+          <section>
+            <h3 className={sectionTitle}>Move to</h3>
+            <select
+              className="input w-full text-base sm:text-sm"
+              value={folder.parentId ?? ''}
+              aria-label="Move folder to"
+              onChange={(event) => void act(() => moveFolder(folder.id, event.target.value || null))}
+            >
+              <option value="">Top level</option>
+              {moveTargets.map((target) => (
+                <option key={target.id} value={target.id}>{folderPath(folders, target.id).map((part) => part.name).join(' / ')}</option>
+              ))}
+            </select>
+          </section>
+
+          {isAdmin && (
+            <section>
+              <h3 className={sectionTitle}>Sharing</h3>
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-3">
+                <input
+                  type="checkbox"
+                  checked={folder.isPublic}
+                  disabled={busy}
+                  onChange={() => void act(() => setFolderPublic(folder.id, !folder.isPublic))}
+                  className="mt-0.5 h-5 w-5 rounded border-gray-300"
+                />
+                <span className="text-sm">
+                  <span className="font-medium">Public folder</span>
+                  <span className="block text-xs text-gray-500">Anyone with the link can see this folder and its subfolders, without signing in.</span>
+                </span>
+              </label>
+              {folder.isPublic && folder.shareUrl && (
+                <div className="mt-4 space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <CopyLinkButton url={folder.shareUrl} label="Copy link" />
+                    <Link href={folder.shareUrl} target="_blank" className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:border-primary-300 hover:text-primary-700">
+                      <ExternalLink className="h-4 w-4" /> Open public page
+                    </Link>
+                  </div>
+                  <QrCodePanel qrBase={`/api/library/folders/${folder.id}/qr`} shareUrl={folder.shareUrl} />
+                </div>
+              )}
+            </section>
+          )}
+
+          <section className="border-t border-gray-100 pt-4">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm(`Delete "${folder.name}" and its subfolders? The library items themselves stay.`)) {
+                  void act(() => deleteFolder(folder.id)).then(onClose);
+                }
+              }}
+              className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-lg px-3 text-sm text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="h-4 w-4" /> Delete folder
+            </button>
+          </section>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
 function FolderRow({ folder, depth, view, onSelect }: { folder: LibraryFolder; depth: number; view: LibraryView; onSelect(view: LibraryView): void }) {
-  const { folders, renameFolder, createFolder, addToFolder, moveFolder } = useLibraryCollections();
+  const { folders, addToFolder, moveFolder } = useLibraryCollections();
   const children = childFolders(folders, folder.id);
   const selected = view.kind === 'folder' && view.id === folder.id;
   const containsSelection = view.kind === 'folder' && isDescendant(folders, folder.id, view.id);
   const [expanded, setExpanded] = useState(containsSelection);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [addingChild, setAddingChild] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [dropActive, setDropActive] = useState(false);
 
   useEffect(() => {
@@ -140,12 +227,7 @@ function FolderRow({ folder, depth, view, onSelect }: { folder: LibraryFolder; d
 
   return (
     <li>
-      {renaming ? (
-        <div style={{ paddingLeft: `${depth * 0.75 + 1.5}rem` }}>
-          <NameForm initial={folder.name} placeholder="Folder name" onCancel={() => setRenaming(false)} onSubmit={(name) => { setRenaming(false); void renameFolder(folder.id, name); }} />
-        </div>
-      ) : (
-        <div
+      <div
           draggable
           onDragStart={(event) => event.dataTransfer.setData(FOLDER_DRAG_TYPE, folder.id)}
           onDragOver={(event) => { event.preventDefault(); setDropActive(true); }}
@@ -172,35 +254,28 @@ function FolderRow({ folder, depth, view, onSelect }: { folder: LibraryFolder; d
           </button>
           <button
             type="button"
-            aria-label={`Folder actions for ${folder.name}`}
-            onClick={() => setMenuOpen((value) => !value)}
-            className="flex h-9 w-8 shrink-0 items-center justify-center rounded text-gray-400 hover:text-gray-800 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+            aria-label={`Folder settings for ${folder.name}`}
+            aria-haspopup="dialog"
+            onClick={() => setDialogOpen(true)}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded text-gray-500 hover:bg-gray-200 hover:text-gray-900"
           >
             <MoreHorizontal className="h-4 w-4" />
           </button>
-          {menuOpen && (
-            <FolderMenu
-              folder={folder}
-              onClose={() => setMenuOpen(false)}
-              onRename={() => setRenaming(true)}
-              onNewSubfolder={() => { setExpanded(true); setAddingChild(true); }}
-            />
-          )}
         </div>
-      )}
-      {(expanded || addingChild) && (
+      {expanded && children.length > 0 && (
         <ul>
-          {expanded && children.map((child) => <FolderRow key={child.id} folder={child} depth={depth + 1} view={view} onSelect={onSelect} />)}
-          {addingChild && (
-            <li style={{ paddingLeft: `${(depth + 1) * 0.75 + 1.5}rem` }}>
-              <NameForm
-                placeholder="Subfolder name"
-                onCancel={() => setAddingChild(false)}
-                onSubmit={(name) => { setAddingChild(false); void createFolder(name, folder.id); }}
-              />
-            </li>
-          )}
+          {children.map((child) => <FolderRow key={child.id} folder={child} depth={depth + 1} view={view} onSelect={onSelect} />)}
         </ul>
+      )}
+      {dialogOpen && (
+        <FolderDialog
+          folder={folder}
+          onClose={() => setDialogOpen(false)}
+          onOpenFolder={(id) => {
+            setExpanded(true);
+            onSelect({ kind: 'folder', id });
+          }}
+        />
       )}
     </li>
   );

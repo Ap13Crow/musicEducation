@@ -3,10 +3,10 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
-import { Folder, PanelLeft, Star } from 'lucide-react';
+import { Folder, PanelLeft, Settings2, Star } from 'lucide-react';
 import { childFolders, folderPath, useLibraryCollections } from '@/components/library/LibraryCollections';
 import { FolderBreadcrumb } from '@/components/library/ItemCollectionActions';
-import { LibrarySidebar, type LibraryView } from '@/components/library/LibrarySidebar';
+import { FolderDialog, LibrarySidebar, type LibraryView } from '@/components/library/LibrarySidebar';
 import { CARD_FIELDS, ItemGrid, LoadingGrid } from '@/components/library/LibraryCards';
 import { LibrarySearchView } from '@/components/library/LibrarySearchView';
 import { LibraryRecommendations } from '@/components/library/LibraryRecommendations';
@@ -59,6 +59,7 @@ function FolderView({ folderId, onSelect }: { folderId: string; onSelect(view: L
   const { folders } = useLibraryCollections();
   const [page, setPage] = useState(1);
   const folder = folders.find((candidate) => candidate.id === folderId);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const { data, loading, error } = useQuery(GET_FOLDER_ITEMS, {
     variables: { folderId, page, limit: PAGE_SIZE },
     fetchPolicy: 'cache-and-network',
@@ -71,7 +72,19 @@ function FolderView({ folderId, onSelect }: { folderId: string; onSelect(view: L
   return (
     <>
       <FolderBreadcrumb path={folderPath(folders, folderId)} onSelect={select} />
-      <h2 className="mb-4 mt-1 text-2xl font-bold">{folder?.name ?? 'Folder'}</h2>
+      <div className="mb-4 mt-1 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-2xl font-bold">{folder?.name ?? 'Folder'}</h2>
+        {folder && (
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-lg border border-gray-200 px-3 text-sm text-gray-700 hover:border-primary-300 hover:text-primary-700"
+          >
+            <Settings2 className="h-4 w-4" /> Folder settings{folder.isPublic ? ' · public' : ''}
+          </button>
+        )}
+      </div>
+      {settingsOpen && folder && <FolderDialog folder={folder} onClose={() => setSettingsOpen(false)} onOpenFolder={select} />}
       {subfolders.length > 0 && (
         <div className="mb-6 flex flex-wrap gap-2">
           {subfolders.map((child) => (

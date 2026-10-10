@@ -12,6 +12,7 @@ import { GallicaEmbed } from '@/components/library/GallicaEmbed';
 import { PdfViewer } from '@/components/library/PdfViewer';
 import { CopyLinkButton, QrCodeButton, ShareBar, useIsAdmin } from '@/components/library/ShareBar';
 import { AddToFolderButton, FavoriteButton } from '@/components/library/ItemCollectionActions';
+import { AddToLessonButton } from '@/components/library/AddToLessonButton';
 import { useItemStates } from '@/components/library/LibraryCollections';
 import { useLibraryEngagement, type EngagementMode } from '@/components/library/useLibraryEngagement';
 import { EngagementChip } from '@/components/library/EngagementChip';
@@ -37,9 +38,17 @@ export default function LibraryItemView() {
   const source = item ? SOURCE_LABELS[item.source] ?? SOURCE_LABELS.BNF : null;
   const files: any[] = item?.files ?? [];
   // 1-based position in item.files - the <n> of the file's /l/<shortId>/<n> link.
-  const pdfFiles = files
+  // The same score in two paper sizes (Mutopia's A4 + US Letter) is one
+  // PDF to the reader - printers scale it - so only the A4 copy is offered.
+  const allPdfs = files
     .map((file, index) => ({ ...file, number: index + 1 }))
     .filter((file) => file.contentType === 'application/pdf');
+  const pdfFiles = allPdfs
+    .filter((file) => !(/,\s*Letter\)/i.test(file.label) && allPdfs.some((other) => other.label === file.label.replace(/Letter\)/i, 'A4)'))))
+    .map((file) => ({ ...file, label: file.label.replace(/,\s*(A4|Letter)\)/i, ')') }));
+  // Per-file links only when the files differ (score + parts); one file is
+  // already covered by the item's own link and QR code above.
+  const perFileSharing = pdfFiles.length > 1;
   const audioTracks = [
     ...(item?.audioUrl ? [{ title: item.title, url: item.audioUrl }] : []),
     ...files
@@ -104,6 +113,7 @@ export default function LibraryItemView() {
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <FavoriteButton itemId={item.id} />
                 <AddToFolderButton itemId={item.id} />
+                <AddToLessonButton itemId={item.id} itemTitle={item.title} />
                 <ShareBar itemId={item.id} shareUrl={item.shareUrl} title={item.title} />
               </div>
               {item.description && (
@@ -168,7 +178,9 @@ export default function LibraryItemView() {
 
             {pdfFiles.length > 0 && (
               <section className="card p-4" data-testid="library-files">
-                <h2 className="mb-2 text-sm font-semibold text-gray-800">{item.category === 'SHEET_MUSIC' ? 'Scores and parts' : 'Files'}</h2>
+                <h2 className="mb-2 text-sm font-semibold text-gray-800">
+                  {pdfFiles.length === 1 ? 'Download' : item.category === 'SHEET_MUSIC' ? 'Scores and parts' : 'Files'}
+                </h2>
                 <ul className="flex flex-wrap gap-2">
                   {pdfFiles.map((file: any) => (
                     <li key={file.url} className="flex items-center gap-1">
@@ -180,8 +192,8 @@ export default function LibraryItemView() {
                       >
                         <FileText className="h-4 w-4" /> {file.label}
                       </a>
-                      <CopyLinkButton url={file.shareUrl} label="Link" />
-                      {isAdmin && (
+                      {perFileSharing && <CopyLinkButton url={file.shareUrl} label="Link" />}
+                      {perFileSharing && isAdmin && (
                         <QrCodeButton qrBase={`/api/library/items/${item.id}/qr`} fileNumber={file.number} shareUrl={file.shareUrl} title={`${item.title} – ${file.label}`} compact />
                       )}
                     </li>

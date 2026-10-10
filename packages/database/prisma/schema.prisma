@@ -556,6 +556,7 @@ model Lesson {
   quizQuestions QuizQuestion[]
   quizAttempts  QuizAttempt[]
   slides        LessonSlide[]
+  libraryReferences LessonLibraryReference[]
 }
 
 // Ordered slide deck for a contentType SLIDES lesson - each slide its own
@@ -1570,6 +1571,7 @@ model LibraryItem {
   folderEntries      LibraryFolderItem[]
   media              LibraryItemMedia[]
   engagements        LibraryEngagement[]
+  lessonReferences   LessonLibraryReference[]
   // Local copy (lib/libraryMirror.ts): set once every file of the item is in
   // our own store, so the Library no longer needs the source to be reachable.
   mirroredAt         DateTime?
@@ -1693,6 +1695,7 @@ model LibraryFolder {
   parent   LibraryFolder?      @relation("LibraryFolderTree", fields: [parentId], references: [id], onDelete: Cascade)
   children LibraryFolder[]     @relation("LibraryFolderTree")
   items    LibraryFolderItem[]
+  lessonReferences LessonLibraryReference[]
 
   @@index([ownerId])
   @@index([parentId])
@@ -1715,4 +1718,26 @@ model LibraryItemThumbnail {
   contentType String
   bytes       Bytes
   createdAt   DateTime    @default(now())
+}
+
+// A Library item or a whole Library folder a teacher attached to a lesson
+// (exactly one of itemId / folderId - a CHECK constraint in migration 050).
+// A folder reference stays live: the lesson shows the folder's current items.
+model LessonLibraryReference {
+  id        String   @id @default(cuid())
+  lessonId  String
+  itemId    String?
+  folderId  String?
+  note      String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  lesson Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  item   LibraryItem?   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  folder LibraryFolder? @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@unique([lessonId, itemId])
+  @@unique([lessonId, folderId])
+  @@index([itemId])
+  @@index([folderId])
 }

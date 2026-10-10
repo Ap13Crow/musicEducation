@@ -2,13 +2,14 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { gql, useLazyQuery, useMutation, useQuery } from '@apollo/client';
+import { gql, useMutation, useQuery } from '@apollo/client';
 import { useEffect, useState } from 'react';
 import RoleGate from '@/components/auth/RoleGate';
 import { BookOpen, HelpCircle, Library, Plus, Save, Trash2 } from 'lucide-react';
 import { uploadFileToStorage } from '@/lib/upload';
+import { LESSON_LIBRARY_REFERENCE_FIELDS, LessonLibraryPicker } from '@/components/library/LessonLibraryPicker';
 
-const GET=gql`query CourseBuilder($id:ID!){storageConfigured bnfCommercialReuseConfigured course(id:$id){id slug title description shortSummary level price currency isFreeTier language instruments musicStyles thumbnailUrl status sections{id title order lessons{id title description videoUrl contentType durationMin isFreePreview order xpReward feedbackMode sourceUrl attribution quizQuestions{id text type points order options{id text} correctOptionIds} slides{id order fileUrl title sourceUrl attribution}}}}}`;
+const GET=gql`query CourseBuilder($id:ID!){storageConfigured bnfCommercialReuseConfigured course(id:$id){id slug title description shortSummary level price currency isFreeTier language instruments musicStyles thumbnailUrl status sections{id title order lessons{id title description videoUrl contentType durationMin isFreePreview order xpReward feedbackMode sourceUrl attribution quizQuestions{id text type points order options{id text} correctOptionIds} slides{id order fileUrl title sourceUrl attribution} libraryReferences{${LESSON_LIBRARY_REFERENCE_FIELDS}}}}}}`;
 const UPDATE=gql`mutation UpdateCourseBuilder($id:ID!,$input:UpdateCourseInput!){updateCourse(id:$id,input:$input){id title description shortSummary level price currency thumbnailUrl status}}`;
 const ADD_SECTION=gql`mutation AddSection($input:CreateSectionInput!){createSection(input:$input){id}}`;
 const DELETE_SECTION=gql`mutation DeleteSection($id:ID!){deleteSection(id:$id)}`;
@@ -27,14 +28,6 @@ const REQUEST_UPLOAD_URL=gql`mutation RequestSlideUploadUrl($purpose:UploadPurpo
 const ADD_LESSON_SLIDE=gql`mutation AddLessonSlideFromBuilder($input:AddLessonSlideInput!){addLessonSlide(input:$input){id order fileUrl title}}`;
 const DELETE_LESSON_SLIDE=gql`mutation DeleteLessonSlideFromBuilder($id:ID!){deleteLessonSlide(id:$id)}`;
 const REORDER_LESSON_SLIDES=gql`mutation ReorderLessonSlidesFromBuilder($lessonId:ID!,$slideIds:[ID!]!){reorderLessonSlides(lessonId:$lessonId,slideIds:$slideIds){id order}}`;
-// BnF/Gallica cultural-heritage content - see docs/integration-architecture.md.
-// Search/preview always work; the two import mutations reject NOT_CONFIGURED
-// until bnfCommercialReuseConfigured is true (BnF's commercial-reuse license).
-const SEARCH_BNF=gql`query SearchBnfForBuilder($query:String!,$documentType:String){searchBnfCatalogue(query:$query,documentType:$documentType){ark title creator date documentType isPublicDomainWork permalink}}`;
-const BNF_MANIFEST=gql`query BnfManifestForBuilder($ark:String!){bnfManifest(ark:$ark){ark title permalink pages{pageNumber label thumbnailUrl}}}`;
-const IMPORT_BNF_SLIDE=gql`mutation ImportBnfSlideFromBuilder($lessonId:ID!,$ark:String!,$page:Int!){importBnfSlide(lessonId:$lessonId,ark:$ark,page:$page){id order fileUrl title sourceUrl attribution}}`;
-const IMPORT_BNF_AUDIO=gql`mutation ImportBnfAudioFromBuilder($lessonId:ID!,$ark:String!,$page:Int){importBnfAudio(lessonId:$lessonId,ark:$ark,page:$page){id videoUrl sourceUrl attribution}}`;
-const BNF_DOCUMENT_TYPES=[{value:'',label:'Any'},{value:'partition',label:'Sheet music'},{value:'document sonore',label:'Audio recording'}];
 
 const CONTENT_TYPES=[{value:'VIDEO',label:'Video'},{value:'YOUTUBE',label:'YouTube'},{value:'AUDIO',label:'Audio'},{value:'SLIDES',label:'Slides'}];
 const CONTENT_TYPE_LABELS:Record<string,string>={VIDEO:'Video',YOUTUBE:'YouTube',AUDIO:'Audio',SLIDES:'Slides'};
@@ -51,11 +44,7 @@ export default function CourseBuilderPage(){
  const [addQuizQuestion]=useMutation(ADD_QUIZ_QUESTION);const [deleteQuizQuestion]=useMutation(DELETE_QUIZ_QUESTION);
  const [requestUploadUrl]=useMutation(REQUEST_UPLOAD_URL);const [addLessonSlide]=useMutation(ADD_LESSON_SLIDE);const [deleteLessonSlide]=useMutation(DELETE_LESSON_SLIDE);const [reorderLessonSlides]=useMutation(REORDER_LESSON_SLIDES);
  const [slidesLessonId,setSlidesLessonId]=useState<string|null>(null);const [uploadingSlide,setUploadingSlide]=useState(false);const [slideUploadError,setSlideUploadError]=useState<string|null>(null);
- const [bnfLessonId,setBnfLessonId]=useState<string|null>(null);const [bnfQuery,setBnfQuery]=useState('');const [bnfDocType,setBnfDocType]=useState('');
- const [bnfSelected,setBnfSelected]=useState<any>(null);const [bnfImportingPage,setBnfImportingPage]=useState<number|null>(null);const [bnfError,setBnfError]=useState<string|null>(null);
- const [searchBnf,{data:bnfSearchData,loading:bnfSearching}]=useLazyQuery(SEARCH_BNF);
- const [loadBnfManifest,{data:bnfManifestData,loading:bnfManifestLoading}]=useLazyQuery(BNF_MANIFEST);
- const [importBnfSlide]=useMutation(IMPORT_BNF_SLIDE);const [importBnfAudio]=useMutation(IMPORT_BNF_AUDIO);
+ const [libraryLessonId,setLibraryLessonId]=useState<string|null>(null);
  const {data:enrollmentData,refetch:refetchEnrollments}=useQuery(GET_ENROLLMENTS,{variables:{courseId},skip:!courseId});
  const {data:boundsData}=useQuery(GET_XP_BOUNDS);
  const [awardXp,{loading:awarding}]=useMutation(AWARD_XP);
@@ -107,19 +96,7 @@ export default function CourseBuilderPage(){
   setUploadingSlide(false);
  }
  async function removeSlide(id:string){await deleteLessonSlide({variables:{id}});await refetch();}
- const bnfLesson=course?.sections?.flatMap((s:any)=>s.lessons??[]).find((l:any)=>l.id===bnfLessonId);
- function runBnfSearch(e:React.FormEvent){e.preventDefault();if(!bnfQuery.trim())return;setBnfSelected(null);void searchBnf({variables:{query:bnfQuery.trim(),documentType:bnfDocType||null}});}
- function selectBnfResult(result:any){setBnfSelected(result);void loadBnfManifest({variables:{ark:result.ark}});}
- async function importBnfPage(pageNumber:number){
-  if(!bnfLessonId||!bnfSelected)return;
-  setBnfError(null);setBnfImportingPage(pageNumber);
-  try{
-   if(bnfLesson.contentType==='AUDIO')await importBnfAudio({variables:{lessonId:bnfLessonId,ark:bnfSelected.ark,page:pageNumber}});
-   else await importBnfSlide({variables:{lessonId:bnfLessonId,ark:bnfSelected.ark,page:pageNumber}});
-   await refetch();
-  }catch(e:any){setBnfError(e.message??'Import failed.');}
-  setBnfImportingPage(null);
- }
+ const libraryLesson=course?.sections?.flatMap((s:any)=>s.lessons??[]).find((l:any)=>l.id===libraryLessonId);
  async function moveSlide(slideId:string,direction:-1|1){
   if(!slidesLessonId)return;
   const ids=(slidesLesson?.slides??[]).map((s:any)=>s.id);
@@ -150,7 +127,7 @@ export default function CourseBuilderPage(){
   <section className="mt-8"><div className="flex items-center gap-2"><BookOpen className="h-5 w-5"/><h2 className="text-2xl font-semibold">Sections and units</h2></div>
    <form onSubmit={createSection} className="mt-4 flex gap-2"><input className="input flex-1" placeholder="New section title" value={sectionTitle} onChange={e=>setSectionTitle(e.target.value)}/><button className="btn-secondary inline-flex items-center gap-2 rounded-lg px-4"><Plus className="h-4 w-4"/>Add section</button></form>
    <div className="mt-5 space-y-5">{course.sections?.map((section:any)=><article key={section.id} className="card p-6"><div className="flex items-center justify-between"><h3 className="text-lg font-semibold">{section.title}</h3><button className="text-red-600" onClick={async()=>{if(confirm('Delete this section and all its units?')){await deleteSection({variables:{id:section.id}});await refetch();}}}><Trash2 className="h-4 w-4"/></button></div>
-    <div className="mt-4 space-y-2">{section.lessons?.map((lesson:any)=><div key={lesson.id} className="flex items-center justify-between rounded-lg border p-3"><div><p className="font-medium">{lesson.title}</p><p className="text-xs text-gray-500">{CONTENT_TYPE_LABELS[lesson.contentType as string]??'Video'} · {lesson.durationMin} min{lesson.isFreePreview?' · Free preview':''}{lesson.quizQuestions?.length?` · ${lesson.quizQuestions.length} quiz question${lesson.quizQuestions.length===1?'':'s'}`:''}{lesson.contentType==='SLIDES'?` · ${lesson.slides?.length??0} slide${(lesson.slides?.length??0)===1?'':'s'}`:''}{lesson.attribution?` · ${lesson.attribution}`:''}</p></div><div className="flex gap-3">{lesson.contentType==='SLIDES'&&<button className="inline-flex items-center gap-1 text-sm text-primary-700" onClick={()=>{setSlidesLessonId(lesson.id);setSlideUploadError(null);}}><Plus className="h-4 w-4"/>Slides</button>}{(lesson.contentType==='SLIDES'||lesson.contentType==='AUDIO')&&<button className="inline-flex items-center gap-1 text-sm text-primary-700" onClick={()=>{setBnfLessonId(lesson.id);setBnfQuery('');setBnfDocType(lesson.contentType==='AUDIO'?'document sonore':'partition');setBnfSelected(null);setBnfError(null);}}><Library className="h-4 w-4"/>BnF</button>}<button className="inline-flex items-center gap-1 text-sm text-primary-700" onClick={()=>setQuizLessonId(lesson.id)}><HelpCircle className="h-4 w-4"/>Quiz</button><button className="text-sm text-primary-700" onClick={()=>setEditing({...lesson})}>Edit</button><button className="text-red-600" onClick={async()=>{await deleteLesson({variables:{id:lesson.id}});await refetch();}}><Trash2 className="h-4 w-4"/></button></div></div>)}</div>
+    <div className="mt-4 space-y-2">{section.lessons?.map((lesson:any)=><div key={lesson.id} className="flex items-center justify-between rounded-lg border p-3"><div><p className="font-medium">{lesson.title}</p><p className="text-xs text-gray-500">{CONTENT_TYPE_LABELS[lesson.contentType as string]??'Video'} · {lesson.durationMin} min{lesson.isFreePreview?' · Free preview':''}{lesson.quizQuestions?.length?` · ${lesson.quizQuestions.length} quiz question${lesson.quizQuestions.length===1?'':'s'}`:''}{lesson.contentType==='SLIDES'?` · ${lesson.slides?.length??0} slide${(lesson.slides?.length??0)===1?'':'s'}`:''}{lesson.attribution?` · ${lesson.attribution}`:''}</p></div><div className="flex gap-3">{lesson.contentType==='SLIDES'&&<button className="inline-flex items-center gap-1 text-sm text-primary-700" onClick={()=>{setSlidesLessonId(lesson.id);setSlideUploadError(null);}}><Plus className="h-4 w-4"/>Slides</button>}<button className="inline-flex items-center gap-1 text-sm text-primary-700" onClick={()=>setLibraryLessonId(lesson.id)}><Library className="h-4 w-4"/>Library{lesson.libraryReferences?.length?` (${lesson.libraryReferences.length})`:''}</button><button className="inline-flex items-center gap-1 text-sm text-primary-700" onClick={()=>setQuizLessonId(lesson.id)}><HelpCircle className="h-4 w-4"/>Quiz</button><button className="text-sm text-primary-700" onClick={()=>setEditing({...lesson})}>Edit</button><button className="text-red-600" onClick={async()=>{await deleteLesson({variables:{id:lesson.id}});await refetch();}}><Trash2 className="h-4 w-4"/></button></div></div>)}</div>
     <div className="mt-4 grid gap-2 rounded-xl bg-gray-50 p-4 sm:grid-cols-2"><input className="input" placeholder="Unit title" value={lessonDraft[section.id]?.title??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],title:e.target.value}})}/><input type="number" min="0" className="input" placeholder="Length in minutes" value={lessonDraft[section.id]?.durationMin??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],durationMin:e.target.value}})}/><textarea className="input" placeholder="Unit description or written material" value={lessonDraft[section.id]?.description??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],description:e.target.value}})}/><select className="input" value={lessonDraft[section.id]?.contentType??'VIDEO'} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],contentType:e.target.value}})}>{CONTENT_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select>{(lessonDraft[section.id]?.contentType??'VIDEO')!=='SLIDES'&&<input type="url" className="input" placeholder={URL_PLACEHOLDERS[lessonDraft[section.id]?.contentType??'VIDEO']} value={lessonDraft[section.id]?.videoUrl??''} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],videoUrl:e.target.value}})}/>}<label className="text-sm"><input type="checkbox" checked={Boolean(lessonDraft[section.id]?.isFreePreview)} onChange={e=>setLessonDraft({...lessonDraft,[section.id]:{...lessonDraft[section.id],isFreePreview:e.target.checked}})}/> Free preview</label><button className="btn-secondary rounded-lg px-4 py-2" onClick={()=>void createLesson(section.id)}>Add unit</button></div>
    </article>)}</div>
   </section>
@@ -196,5 +173,6 @@ export default function CourseBuilderPage(){
     {uploadingSlide&&<p className="text-xs text-gray-500">Uploading…</p>}</>:<p className="text-xs text-gray-500">Slide uploads aren&rsquo;t enabled on this deployment yet.</p>}
    </div>
   </section></div>}
+  {libraryLesson&&<LessonLibraryPicker lessonId={libraryLesson.id} lessonTitle={libraryLesson.title} references={libraryLesson.libraryReferences??[]} onChanged={()=>refetch()} onClose={()=>setLibraryLessonId(null)}/>}
   </>}</main></RoleGate>;
 }

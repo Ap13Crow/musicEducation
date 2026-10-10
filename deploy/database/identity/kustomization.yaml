@@ -54,3 +54,4 @@ configMapGenerator:
       - 047-library-dnb-source.sql
       - 048-library-search.sql
       - 049-library-tags.sql
+      - 050-lesson-library-references.sql

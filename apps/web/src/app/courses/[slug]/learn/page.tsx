@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { signIn, useSession } from 'next-auth/react';
 import { ArrowLeft, CheckCircle, Circle, Lock, PlayCircle } from 'lucide-react';
 import { toYouTubeEmbedUrl } from '@/lib/youtube';
+import { LESSON_LIBRARY_LIST_FIELDS, LessonLibraryList } from '@/components/library/LessonLibraryList';
 
 const GET_COURSE = gql`
   query GetCourseForLearning($slug: String) {
@@ -23,6 +24,7 @@ const GET_COURSE = gql`
           quizQuestions { id text type points order options { id text } }
           slides { id order fileUrl title }
           myViewedSlideIds
+          ${LESSON_LIBRARY_LIST_FIELDS}
         }
       }
     }
@@ -372,6 +374,8 @@ export default function CourseLearnPage() {
                 {currentLesson.description && (
                   <p className="mt-4 whitespace-pre-line text-sm text-gray-600">{currentLesson.description}</p>
                 )}
+
+                <LessonLibraryList references={currentLesson.libraryReferences ?? []} />
 
                 {enrolled && !hasQuiz && (
                   <div className="mt-6 flex items-center gap-3">
