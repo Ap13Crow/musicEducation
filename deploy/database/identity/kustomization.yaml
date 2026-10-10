@@ -57,3 +57,4 @@ configMapGenerator:
       - 050-lesson-library-references.sql
       - 051-library-audio-sources.sql
       - 052-course-access.sql
+      - 053-lesson-source-attribution.sql
