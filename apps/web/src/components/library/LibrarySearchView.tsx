@@ -41,6 +41,8 @@ const SOURCE_NAMES: Record<string, string> = {
   OPENSCORE: 'OpenScore',
   MUTOPIA: 'Mutopia',
   MUSOPEN: 'Musopen',
+  INTERNET_ARCHIVE: 'Internet Archive (78 rpm)',
+  EUROPEANA: 'Europeana',
 };
 const FORMAT_NAMES: Record<string, string> = { MUSICXML: 'Interactive score', PDF: 'PDF', AUDIO: 'Audio', SCANS: 'Page scans' };
 const LICENSE_NAMES: Record<string, string> = {

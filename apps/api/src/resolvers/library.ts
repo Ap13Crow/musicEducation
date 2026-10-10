@@ -35,7 +35,7 @@ export const libraryResolvers = {
   LibraryItem: {
     shareUrl: (item: { shortId: string }) => libraryShareUrl(item.shortId),
     availableHere: (item: { source: string; mirroredAt?: Date | null }) =>
-      (item.source !== 'BNF' && item.source !== 'DNB') || Boolean(item.mirroredAt),
+      !['BNF', 'DNB', 'EUROPEANA'].includes(item.source) || Boolean(item.mirroredAt),
     // Same-origin route (apps/web proxies /api/library/* to apps/api's
     // /library/*), so the browser never fetches the upstream file itself.
     scoreUrl: (item: { id: string; musicXmlSourceUrl?: string | null }) =>
@@ -54,20 +54,22 @@ export const libraryResolvers = {
     // Once the item has a local copy (lib/libraryMirror.ts) every file is
     // served from our own store.
     files: (item: { id: string; shortId: string; files?: unknown; mirroredAt?: Date | null }) =>
-      (Array.isArray(item.files) ? item.files : []).map((file: any, index: number) => {
+      (Array.isArray(item.files) ? item.files : []).flatMap((file: any, index: number) => {
         const contentType = String(file?.contentType ?? 'application/pdf');
         const audio = contentType.startsWith('audio/');
         const direct = audio && String(file?.sourceUrl ?? '').startsWith(ARCHIVE_DOWNLOAD_PREFIX);
+        // Other hosts' audio (Europeana) plays only from our own copy.
+        if (audio && !item.mirroredAt && !direct) return [];
         const url = audio && item.mirroredAt
           ? `/api/library/items/${item.id}/files/${index}.audio`
           : direct ? file.sourceUrl : `/api/library/items/${item.id}/files/${index}.pdf`;
-        return {
+        return [{
           label: String(file?.label ?? `File ${index + 1}`),
           url,
           contentType,
           durationSeconds: Number.isFinite(file?.durationSeconds) ? file.durationSeconds : null,
           shareUrl: libraryShareUrl(item.shortId, index + 1),
-        };
+        }];
       }),
     // Only from our local copy: our server never fetches Gallica for a
     // visitor (Gallica blocks IPs that send unattended bursts). Until the

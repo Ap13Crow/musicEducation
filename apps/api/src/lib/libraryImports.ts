@@ -4,6 +4,8 @@ import { fetchMusopenRecords, fetchMutopiaRecords, upsertOpenSourceRecords } fro
 import { backfillLibraryThumbnails } from './libraryThumbnails.js';
 import { runLibraryMirror } from './libraryMirror.js';
 import { libraryMediaStoreConfigured } from './libraryMediaStore.js';
+import { importArchive78 } from './archive78.js';
+import { europeanaConfigured, importEuropeana } from './europeana.js';
 import { logger } from '../utils/logger.js';
 
 // Admin-started imports of the openly licensed Library sources. They run in
@@ -17,7 +19,9 @@ import { logger } from '../utils/logger.js';
 // for every item still missing one (lib/libraryThumbnails.ts). MIRROR
 // downloads every item's files into the local media store
 // (lib/libraryMirror.ts) - it runs for hours, paced per source.
-export const LIBRARY_IMPORT_SOURCES = ['OPENSCORE_LIEDER', 'OPENSCORE_STRING_QUARTETS', 'MUSOPEN', 'MUTOPIA', 'THUMBNAILS', 'MIRROR'] as const;
+// ARCHIVE_78 and EUROPEANA also run by themselves every night
+// (scheduleNightlyLibraryImports) - only new recordings are added.
+export const LIBRARY_IMPORT_SOURCES = ['OPENSCORE_LIEDER', 'OPENSCORE_STRING_QUARTETS', 'MUSOPEN', 'MUTOPIA', 'ARCHIVE_78', 'EUROPEANA', 'THUMBNAILS', 'MIRROR'] as const;
 export type LibraryImportSource = (typeof LIBRARY_IMPORT_SOURCES)[number];
 
 export interface LibraryImportStatus {
@@ -68,7 +72,7 @@ async function runImport(prisma: PrismaClient, source: LibraryImportSource, stat
   const progress = async (done: number, total: number) => {
     // Every 40 pieces is plenty for a polling admin card; MIRROR items are
     // slow (a Gallica book is minutes), so it reports every item.
-    if (done === total || done % 40 === 0 || source === 'MIRROR') {
+    if (done === total || done % 40 === 0 || source === 'MIRROR' || source === 'ARCHIVE_78' || source === 'EUROPEANA') {
       await saveStatus(prisma, { ...status, done, total, heartbeatAt: new Date().toISOString() });
     }
   };
@@ -100,6 +104,19 @@ async function runImport(prisma: PrismaClient, source: LibraryImportSource, stat
         upserted: result.mirrored,
         message: `Local copies: ${result.mirrored} items stored${result.failed ? `, ${result.failed} failed` : ''}.${blocked}`,
       };
+    }
+    case 'ARCHIVE_78': {
+      const result = await importArchive78(prisma, progress);
+      return {
+        total: result.total,
+        upserted: result.upserted,
+        message: `Internet Archive 78s: ${result.upserted} new recordings (published up to ${result.cutoffYear}); ${result.total} works in total.`,
+      };
+    }
+    case 'EUROPEANA': {
+      if (!europeanaConfigured()) throw new Error('Europeana needs an API key first (EUROPEANA_API_KEY).');
+      const result = await importEuropeana(prisma, progress);
+      return { total: result.total, upserted: result.upserted, message: `Europeana: ${result.upserted} new recordings (${result.total} open recordings checked).` };
     }
     case 'MUTOPIA': {
       const records = await fetchMutopiaRecords(progress);
@@ -140,4 +157,23 @@ export async function startLibraryImport(prisma: PrismaClient, source: LibraryIm
 export async function requestLibraryImport(prisma: PrismaClient, source: LibraryImportSource): Promise<void> {
   const started = await startLibraryImport(prisma, source);
   if (!started) rerunRequested.add(source);
+}
+
+// Nightly, around 03:00 UTC: new historic 78s and Europeana recordings,
+// then (as after every import) card images and local copies. Remembered in
+// AdminSetting so a restart doesn't run it twice in one night.
+const NIGHTLY_KEY = 'library_import:nightly_last_run';
+
+export function scheduleNightlyLibraryImports(prisma: PrismaClient): void {
+  const tick = async () => {
+    const now = new Date();
+    if (now.getUTCHours() !== 3) return;
+    const today = now.toISOString().slice(0, 10);
+    const last = await prisma.adminSetting.findUnique({ where: { key: NIGHTLY_KEY } });
+    if (last?.value === today) return;
+    await prisma.adminSetting.upsert({ where: { key: NIGHTLY_KEY }, create: { key: NIGHTLY_KEY, value: today }, update: { value: today } });
+    await startLibraryImport(prisma, 'ARCHIVE_78');
+    if (europeanaConfigured()) await startLibraryImport(prisma, 'EUROPEANA');
+  };
+  setInterval(() => void tick().catch((error) => logger.warn({ error }, 'Nightly library import skipped')), 10 * 60 * 1000).unref();
 }

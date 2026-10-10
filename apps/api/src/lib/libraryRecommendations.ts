@@ -196,7 +196,7 @@ export async function recommendLibraryItems(prisma: PrismaClient, userId: string
       hiddenAt: null,
       id: { notIn: [...affinity.seen] },
       // Only what opens here (Gallica/DNB items once copied).
-      OR: [{ source: { notIn: ['BNF', 'DNB'] } }, { mirroredAt: { not: null } }],
+      OR: [{ source: { notIn: ['BNF', 'DNB', 'EUROPEANA'] } }, { mirroredAt: { not: null } }],
       AND: [
         {
           OR: [

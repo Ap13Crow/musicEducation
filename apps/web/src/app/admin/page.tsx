@@ -609,9 +609,51 @@ const OPEN_SOURCES = [
   { source: 'OPENSCORE_STRING_QUARTETS', name: 'OpenScore String Quartets', detail: '~200 works · MusicXML + PDF score & parts · CC0' },
   { source: 'MUSOPEN', name: 'Musopen', detail: '~250 recordings (symphonies, quartets, Chopin) · public domain' },
   { source: 'MUTOPIA', name: 'Mutopia Project', detail: '~1,300 engraved PDF scores · PD / CC BY(-SA) · takes a few minutes' },
+  { source: 'ARCHIVE_78', name: 'Internet Archive 78s', detail: 'Historic classical 78 rpm recordings published up to the cut-off year below · new ones every night' },
+  { source: 'EUROPEANA', name: 'Europeana', detail: 'Openly licensed recordings from European archives (needs a free API key) · new ones every night' },
   { source: 'THUMBNAILS', name: 'Card thumbnails', detail: 'Score pages and opening bars for every item still missing one (Gallica covers come with the local copy) · runs after each import' },
   { source: 'MIRROR', name: 'Local copies', detail: 'Downloads every item’s files into our own storage once, paced per source · runs after each import and hourly; Gallica pauses 6 h whenever it refuses us' },
 ] as const;
+
+// Up to which publication year historic recordings (78s) are imported
+// automatically - API lib/archive78.ts, default 1925.
+const HISTORIC_CUTOFF_KEY = 'library.historicRecordingsCutoffYear';
+const HISTORIC_SETTINGS = gql`
+  query HistoricCutoffSetting { adminSettings { key value } }
+`;
+const SAVE_HISTORIC_SETTING = gql`
+  mutation SaveHistoricCutoff($key: String!, $value: String!) { updateAdminSetting(key: $key, value: $value) { key value } }
+`;
+
+function HistoricCutoffSetting() {
+  const { data } = useQuery(HISTORIC_SETTINGS, { fetchPolicy: 'cache-and-network' });
+  const [save, { loading, error }] = useMutation(SAVE_HISTORIC_SETTING);
+  const stored = data?.adminSettings?.find((setting: any) => setting.key === HISTORIC_CUTOFF_KEY)?.value ?? '1925';
+  const [value, setValue] = useState<string | null>(null);
+  const current = value ?? stored;
+  const valid = /^(18|19)\d\d$/.test(current);
+  return (
+    <form
+      className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (valid) void save({ variables: { key: HISTORIC_CUTOFF_KEY, value: current } }).then(() => setValue(null));
+      }}
+    >
+      <label className="flex flex-wrap items-center gap-2 font-medium">
+        Import historic recordings published up to
+        <input value={current} onChange={(event) => setValue(event.target.value)} inputMode="numeric" maxLength={4} aria-label="Cut-off year" className="w-20 rounded-md border border-amber-300 bg-white px-2 py-1" />
+        <button type="submit" disabled={!valid || loading || current === stored} className="rounded-md border border-amber-300 bg-white px-3 py-1 hover:bg-amber-100 disabled:opacity-50">Save</button>
+      </label>
+      <p className="mt-1 text-xs">
+        Recordings up to 1925 are public domain in the US, the EU and Switzerland. European and Swiss rules free considerably
+        later recordings too (roughly 70 years after publication) - check before raising the year, since US visitors may still
+        be covered by US protection.
+      </p>
+      {error && <p className="mt-1 text-xs text-red-700">{error.message}</p>}
+    </form>
+  );
+}
 
 // Openly licensed Library sources, imported in the background by the API
 // (lib/libraryImports.ts) - this card starts them and polls their progress.
@@ -645,6 +687,7 @@ function OpenSourcesCard() {
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error.message}</div>
       )}
+      <HistoricCutoffSetting />
       <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
         {OPEN_SOURCES.map((item) => {
           const status = statuses[item.source];

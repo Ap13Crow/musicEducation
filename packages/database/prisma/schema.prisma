@@ -1485,6 +1485,11 @@ enum LibrarySource {
   // Deutsche Nationalbibliothek - free online music titles (scores, theses,
   // musicology); ark = the DNB record id (IDN), file = its archive copy.
   DNB
+  // Internet Archive 78 rpm recordings (Great 78 Project); ark = the first
+  // side's archive identifier, files = the sides.
+  INTERNET_ARCHIVE
+  // Europeana open sound recordings; ark = the Europeana record id.
+  EUROPEANA
 }
 
 enum LibraryItemCategory {

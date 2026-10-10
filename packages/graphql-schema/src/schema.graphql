@@ -651,6 +651,10 @@ enum LibrarySource {
   MUTOPIA
   # Deutsche Nationalbibliothek - free online music titles.
   DNB
+  # Internet Archive 78 rpm recordings (Great 78 Project).
+  INTERNET_ARCHIVE
+  # Europeana open sound recordings.
+  EUROPEANA
 }
 
 enum LibraryItemCategory {
@@ -681,6 +685,10 @@ enum LibraryImportSource {
   THUMBNAILS
   # Not a source: downloads every item's files into the local media store.
   MIRROR
+  # Historic classical 78 rpm recordings up to the cut-off year.
+  ARCHIVE_78
+  # Open sound recordings from Europeana (needs EUROPEANA_API_KEY).
+  EUROPEANA
 }
 
 enum LibraryImportState {
@@ -766,6 +774,8 @@ type LibraryItem {
 enum LibraryImportSearchSource {
   BNF
   DNB
+  INTERNET_ARCHIVE
+  EUROPEANA
 }
 
 enum LibrarySearchMode {

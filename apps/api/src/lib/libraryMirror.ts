@@ -4,6 +4,7 @@ import { libraryMediaStoreConfigured, storeLibraryObject } from './libraryMediaS
 import { ARCHIVE_DOWNLOAD_PREFIX, MUTOPIA_FTP_PREFIX } from './openSources.js';
 import { isAllowedScoreSource } from './openscore.js';
 import { dnbArchiveUrl, isDnbIdn } from './dnb.js';
+import { isPublicMediaUrl } from './europeana.js';
 import { listZipEntries, readZipEntry, renderPdfFirstPage } from './libraryThumbnails.js';
 import { logger } from '../utils/logger.js';
 
@@ -39,6 +40,8 @@ const PACING_MS: Record<string, () => number> = {
   MUTOPIA: () => 500,
   MUSOPEN: () => 1000,
   DNB: () => 1000,
+  INTERNET_ARCHIVE: () => 1000,
+  EUROPEANA: () => 1500,
   BNF: bnfInterval,
 };
 
@@ -93,6 +96,31 @@ async function downloadOpen(url: string, fallbackType: string, maxBytes = MAX_FI
   }
 }
 
+// Europeana media lives on many providers' servers - any public web
+// address, but only real audio is kept (some point at a sleeve picture).
+async function downloadExternalAudio(url: string): Promise<{ bytes: Buffer; contentType: string }> {
+  if (!isPublicMediaUrl(url)) throw new PermanentMirrorError(`Not a public media address: ${url}`);
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(120_000),
+    redirect: 'follow',
+    headers: { 'User-Agent': 'MyMusicCoach/1.0 (+https://mymusic.coach; library mirror)' },
+  });
+  if (response.url && !isPublicMediaUrl(response.url)) throw new PermanentMirrorError(`Redirected to a non-public address: ${response.url}`);
+  if (response.status === 403 || response.status === 429) throw new SourceBlockedError(`HTTP ${response.status} from ${new URL(url).host}`);
+  if (response.status === 404 || response.status === 410) throw new PermanentMirrorError(`Gone at the source (HTTP ${response.status}): ${url}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+  const contentType = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? '';
+  if (!contentType.startsWith('audio/')) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new PermanentMirrorError(`Not an audio file (${contentType || 'unknown type'}): ${url}`);
+  }
+  const declared = Number(response.headers.get('content-length') ?? 0);
+  if (declared > MAX_FILE_BYTES) throw new PermanentMirrorError(`File too large (${declared} bytes): ${url}`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length > MAX_FILE_BYTES) throw new PermanentMirrorError(`File too large (${bytes.length} bytes): ${url}`);
+  return { bytes, contentType: contentType === 'audio/mp3' ? 'audio/mpeg' : contentType };
+}
+
 function isGallicaBlock(error: unknown): boolean {
   return /HTTP (403|429)|rate-limited/i.test(error instanceof Error ? error.message : String(error));
 }
@@ -115,7 +143,10 @@ export async function planItemFiles(item: MirrorItem): Promise<PlannedFile[]> {
     label: file?.label ?? null,
     durationSeconds: Number.isFinite(file?.durationSeconds) ? file.durationSeconds : null,
     sourceUrl: String(file?.sourceUrl ?? ''),
-    download: () => downloadOpen(String(file?.sourceUrl ?? ''), String(file?.contentType ?? 'application/pdf')),
+    download: () =>
+      item.source === 'EUROPEANA'
+        ? downloadExternalAudio(String(file?.sourceUrl ?? ''))
+        : downloadOpen(String(file?.sourceUrl ?? ''), String(file?.contentType ?? 'application/pdf')),
   }));
   if (item.musicXmlSourceUrl) {
     const url = item.musicXmlSourceUrl;

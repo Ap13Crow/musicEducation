@@ -174,8 +174,9 @@ const FORMATS_SQL = Prisma.sql`array_remove(ARRAY[
   CASE WHEN "source" = 'BNF' AND "category" <> 'AUDIO_RECORDING' THEN 'SCANS' END
 ], NULL)`;
 
-// Gallica and DNB items can be shown here only once we hold a copy.
-export const AVAILABLE_SQL = Prisma.sql`("source" NOT IN ('BNF', 'DNB') OR "mirroredAt" IS NOT NULL)`;
+// Gallica, DNB and Europeana items can be shown here only once we hold a
+// copy; Internet Archive recordings stream from archive.org until then.
+export const AVAILABLE_SQL = Prisma.sql`("source" NOT IN ('BNF', 'DNB', 'EUROPEANA') OR "mirroredAt" IS NOT NULL)`;
 
 const LICENSE_SQL = Prisma.sql`CASE
   WHEN "license" ILIKE 'CC0%' OR "license" ILIKE 'Public Domain%' THEN 'PUBLIC_DOMAIN'

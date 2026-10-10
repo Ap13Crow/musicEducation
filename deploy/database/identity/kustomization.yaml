@@ -55,3 +55,4 @@ configMapGenerator:
       - 048-library-search.sql
       - 049-library-tags.sql
       - 050-lesson-library-references.sql
+      - 051-library-audio-sources.sql

@@ -51,12 +51,14 @@ const IMPORT = gql`
   }
 `;
 
-type SourceKey = 'BNF' | 'DNB';
+type SourceKey = 'BNF' | 'DNB' | 'INTERNET_ARCHIVE' | 'EUROPEANA';
 const SOURCES: { key: SourceKey; label: string; hint: string }[] = [
   { key: 'BNF', label: 'Gallica (BnF)', hint: 'Scans and recordings; French terms match best' },
   { key: 'DNB', label: 'Deutsche Nationalbibliothek', hint: 'Free online music titles: scores, books, theses (PDF)' },
+  { key: 'INTERNET_ARCHIVE', label: 'Internet Archive 78s', hint: 'Historic classical 78 rpm recordings; sides of one work are grouped' },
+  { key: 'EUROPEANA', label: 'Europeana', hint: 'Openly licensed recordings from European archives and broadcasters' },
 ];
-const SOURCE_NAME: Record<string, string> = { BNF: 'Gallica', DNB: 'DNB' };
+const SOURCE_NAME: Record<string, string> = { BNF: 'Gallica', DNB: 'DNB', INTERNET_ARCHIVE: 'Internet Archive', EUROPEANA: 'Europeana' };
 
 const CATEGORIES = [
   { value: '', label: 'Any type' },
@@ -98,7 +100,7 @@ function yearValue(text: string): number | null {
 export function LibraryImportSearch() {
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState('ALL');
-  const [sources, setSources] = useState<SourceKey[]>(['BNF', 'DNB']);
+  const [sources, setSources] = useState<SourceKey[]>(['BNF', 'DNB', 'INTERNET_ARCHIVE', 'EUROPEANA']);
   const [category, setCategory] = useState('');
   const [yearFrom, setYearFrom] = useState('');
   const [yearTo, setYearTo] = useState('');
@@ -178,10 +180,10 @@ export function LibraryImportSearch() {
     <div className="card space-y-4 p-5" data-testid="library-import-search">
       <div>
         <h3 className="flex items-center gap-2 font-semibold">
-          <BookOpen className="h-4 w-4 text-blue-600" /> Import from Gallica and the DNB
+          <BookOpen className="h-4 w-4 text-blue-600" /> Import from Gallica, the DNB, the Internet Archive and Europeana
         </h3>
         <p className="mt-1 text-sm text-gray-600">
-          Search both libraries at once, page through every result and tick what belongs in the Library. Items already imported can&rsquo;t be picked twice; files are copied to our own storage in the background.
+          Search all four at once, page through every result and tick what belongs in the Library. Items already imported can&rsquo;t be picked twice; files are copied to our own storage in the background.
         </p>
       </div>
 

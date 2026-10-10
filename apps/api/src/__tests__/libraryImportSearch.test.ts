@@ -7,6 +7,12 @@ jest.mock('@my-music-coach/bnf-gallica', () => ({
   fetchPageImage: jest.fn(),
   fetchPageAudio: jest.fn(),
 }));
+jest.mock('../lib/archive78', () => ({
+  ...jest.requireActual('../lib/archive78'),
+  searchSides: jest.fn(async () => ({ total: 0, sides: [] })),
+  historicCutoffYear: jest.fn(async () => 1925),
+}));
+jest.mock('../lib/europeana', () => ({ ...jest.requireActual('../lib/europeana'), europeanaConfigured: () => false }));
 jest.mock('../lib/dnb', () => ({
   ...jest.requireActual('../lib/dnb'),
   searchDnb: jest.fn(),
@@ -74,7 +80,7 @@ describe('searchImportSources', () => {
     expect(searchDnb).toHaveBeenCalledWith(expect.objectContaining({ query: 'Gute Nacht', category: 'SHEET_MUSIC', yearFrom: 1800 }), 2, 25);
     expect(searchCataloguePage).toHaveBeenCalledWith(expect.objectContaining({ documentType: 'partition', yearFrom: 1800 }), 2, 25);
     expect(result.totalPages).toBe(5);
-    expect(result.sources.map((source) => [source.source, source.total])).toEqual([['BNF', 120], ['DNB', 66]]);
+    expect(result.sources.map((source) => [source.source, source.total])).toEqual([['BNF', 120], ['DNB', 66], ['INTERNET_ARCHIVE', 0], ['EUROPEANA', 0]]);
   });
 
   it('flags rows already in the Library and lookalikes from the other source', async () => {

@@ -9,6 +9,8 @@ import {
 import { DNB_MAX_PAGE_SIZE, fetchDnbRecords, isDnbIdn, searchDnb, type DnbRecord } from './dnb.js';
 import { possiblySameWork, titleKey } from './libraryMatch.js';
 import { bnfPausedUntil, pauseBnf } from './libraryMirror.js';
+import { archiveQuery, groupSides, historicCutoffYear, searchSides, tidyTitle, upsertArchiveRecord, type Archive78Record } from './archive78.js';
+import { EUROPEANA_MAX_PAGE_SIZE, europeanaConfigured, europeanaItemData, searchEuropeana, type EuropeanaRecord } from './europeana.js';
 
 // The admin's federated import: one query runs against Gallica and the DNB
 // side by side, page by page, and the admin ticks what to bring into the
@@ -20,8 +22,8 @@ import { bnfPausedUntil, pauseBnf } from './libraryMirror.js';
 // looks like a work we already hold from another source is marked as a
 // possible duplicate for the admin to decide.
 
-export type ImportSource = 'BNF' | 'DNB';
-export const IMPORT_SOURCES: ImportSource[] = ['BNF', 'DNB'];
+export type ImportSource = 'BNF' | 'DNB' | 'INTERNET_ARCHIVE' | 'EUROPEANA';
+export const IMPORT_SOURCES: ImportSource[] = ['BNF', 'DNB', 'INTERNET_ARCHIVE', 'EUROPEANA'];
 export type SearchMode = 'ALL' | 'ANY' | 'PHRASE';
 export type Category = 'SHEET_MUSIC' | 'AUDIO_RECORDING' | 'BOOK' | 'OTHER';
 
@@ -50,7 +52,11 @@ export interface ImportCandidate {
   permalink: string;
   publicDomain: boolean;
   // Kept for the import step (never sent to the browser).
-  raw: { kind: 'BNF'; record: BnfCatalogueRecord } | { kind: 'DNB'; record: DnbRecord };
+  raw:
+    | { kind: 'BNF'; record: BnfCatalogueRecord }
+    | { kind: 'DNB'; record: DnbRecord }
+    | { kind: 'INTERNET_ARCHIVE'; record: Archive78Record }
+    | { kind: 'EUROPEANA'; record: EuropeanaRecord };
 }
 
 export interface ItemRef {
@@ -111,6 +117,42 @@ export function fromDnb(record: DnbRecord): ImportCandidate {
   };
 }
 
+export function fromArchive(record: Archive78Record, cutoffYear: number): ImportCandidate {
+  const performers = [...new Set(record.sides.flatMap((side) => side.creators))].map(tidyTitle);
+  return {
+    source: 'INTERNET_ARCHIVE',
+    externalId: record.ark,
+    title: record.title,
+    creator: performers.join(', ') || null,
+    date: record.date,
+    category: 'AUDIO_RECORDING',
+    documentType: `78 rpm${record.publisher ? ` · ${record.publisher}` : ''} · ${record.sides.length} side${record.sides.length === 1 ? '' : 's'}`,
+    format: 'Audio',
+    // Dated up to the cut-off year: public domain in the US, EU and CH.
+    summary: record.date ? null : 'Undated recording - check its rights before importing.',
+    permalink: record.permalink,
+    publicDomain: Boolean(record.date && Number(record.date) <= cutoffYear),
+    raw: { kind: 'INTERNET_ARCHIVE', record },
+  };
+}
+
+export function fromEuropeana(record: EuropeanaRecord): ImportCandidate {
+  return {
+    source: 'EUROPEANA',
+    externalId: record.id,
+    title: record.title,
+    creator: record.creator,
+    date: record.year,
+    category: 'AUDIO_RECORDING',
+    documentType: [record.provider, record.license].filter(Boolean).join(' · '),
+    format: 'Audio',
+    summary: record.description,
+    permalink: record.permalink,
+    publicDomain: /Public Domain|CC0/.test(record.license),
+    raw: { kind: 'EUROPEANA', record },
+  };
+}
+
 // Search results stay here for a few hours, so importing a ticked Gallica
 // row never needs a second Gallica request (one API replica; after a
 // restart the admin simply searches again). DNB rows are re-read from the
@@ -158,6 +200,21 @@ async function searchSource(
         pageSize,
       );
       return { total: result.total, error: null, candidates: result.records.map(fromDnb) };
+    }
+    if (source === 'INTERNET_ARCHIVE' || source === 'EUROPEANA') {
+      // Recordings only.
+      if (input.category && input.category !== 'AUDIO_RECORDING') return { total: 0, error: null, candidates: [] };
+      if (source === 'EUROPEANA') {
+        if (!europeanaConfigured()) return { total: 0, error: 'Europeana is not set up yet - it needs a free API key (EUROPEANA_API_KEY).', candidates: [] };
+        const result = await searchEuropeana(input.query, { page, rows: Math.min(pageSize, EUROPEANA_MAX_PAGE_SIZE), yearFrom: input.yearFrom, yearTo: input.yearTo });
+        return { total: result.total, error: null, candidates: result.records.map(fromEuropeana) };
+      }
+      // Sorted by title so the sides of one work arrive together and are
+      // grouped into one candidate; a page holds about pageSize sides.
+      const terms = mode === 'ANY' ? input.query.split(/\s+/).join(' OR ') : input.query;
+      const result = await searchSides(archiveQuery(terms, input.yearFrom, input.yearTo), page, pageSize);
+      const cutoffYear = await historicCutoffYear(prisma);
+      return { total: result.total, error: null, candidates: groupSides(result.sides).map((record) => fromArchive(record, cutoffYear)) };
     }
     const pausedUntil = await bnfPausedUntil(prisma);
     if (pausedUntil > Date.now()) {
@@ -260,6 +317,7 @@ export interface ImportSelectionResult {
 }
 
 export const MAX_IMPORT_SELECTION = 500;
+const MAX_ARCHIVE_PER_IMPORT = 40;
 
 function itemData(candidate: ImportCandidate, seedQuery: string | null) {
   if (candidate.raw.kind === 'BNF') {
@@ -279,6 +337,11 @@ function itemData(candidate: ImportCandidate, seedQuery: string | null) {
       seedQuery,
     };
   }
+  if (candidate.raw.kind === 'EUROPEANA') {
+    const data = europeanaItemData(candidate.raw.record, seedQuery);
+    return { source: 'EUROPEANA' as const, ark: candidate.raw.record.id, ...data, files: data.files as any };
+  }
+  if (candidate.raw.kind !== 'DNB') throw new Error('Unsupported source.');
   const record = candidate.raw.record;
   return {
     source: 'DNB' as const,
@@ -308,6 +371,7 @@ export async function importSelection(
   const unique = [...new Map(selections.map((selection) => [cacheKey(selection.source, selection.externalId), selection])).values()];
   if (unique.length > MAX_IMPORT_SELECTION) throw new Error(`Import at most ${MAX_IMPORT_SELECTION} items at a time.`);
   const result: ImportSelectionResult = { imported: [], alreadyInLibrary: [], failed: [] };
+  let archiveImports = 0;
 
   const existing = await prisma.libraryItem.findMany({
     where: { OR: IMPORT_SOURCES.map((source) => ({ source, ark: { in: unique.filter((s) => s.source === source).map((s) => s.externalId) } })) } as any,
@@ -344,11 +408,27 @@ export async function importSelection(
         continue;
       }
     } else {
-      candidate = recall('BNF', selection.externalId);
+      candidate = recall(selection.source, selection.externalId);
       if (!candidate) {
         result.failed.push({ ...selection, reason: 'Search results expired - search again, then import.' });
         continue;
       }
+    }
+
+    if (candidate.raw.kind === 'INTERNET_ARCHIVE') {
+      // Reads each side's details from the archive - a few seconds per work.
+      if (++archiveImports > MAX_ARCHIVE_PER_IMPORT) {
+        result.failed.push({ ...selection, reason: `Import at most ${MAX_ARCHIVE_PER_IMPORT} 78 rpm works at a time - import this one in the next round.` });
+        continue;
+      }
+      try {
+        const item = await upsertArchiveRecord(prisma, candidate.raw.record, await historicCutoffYear(prisma), seedQuery);
+        if (item) result.imported.push(item as ItemRef);
+        else result.failed.push({ ...selection, reason: 'No playable file found at the Internet Archive.' });
+      } catch (error) {
+        result.failed.push({ ...selection, reason: errorMessage(error) });
+      }
+      continue;
     }
 
     try {

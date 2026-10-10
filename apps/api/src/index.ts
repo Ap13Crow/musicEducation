@@ -16,7 +16,7 @@ import { handleStripeWebhook, handleStripeV2Webhook } from './resolvers/payments
 import { buildUserCalendarFeed } from './lib/calendarFeed.js';
 import { fetchScoreBytes, isAllowedScoreSource } from './lib/openscore.js';
 import { MUTOPIA_FTP_PREFIX } from './lib/openSources.js';
-import { startLibraryImport } from './lib/libraryImports.js';
+import { scheduleNightlyLibraryImports, startLibraryImport } from './lib/libraryImports.js';
 import { libraryFolderShareUrl, libraryQrCode, libraryShareUrl } from './lib/libraryLinks.js';
 import { libraryMediaStoreConfigured, sendLibraryObject } from './lib/libraryMediaStore.js';
 import { libraryMirrorPending } from './lib/libraryMirror.js';
@@ -577,7 +577,7 @@ async function main() {
   // an admin click. Delayed to keep startup and readiness fast.
   setTimeout(() => {
     prisma.libraryItem
-      .count({ where: { thumbnailUrl: null, hiddenAt: null, source: { in: ['OPENSCORE', 'MUTOPIA'] } } })
+      .count({ where: { thumbnailUrl: null, hiddenAt: null, source: { in: ['OPENSCORE', 'MUTOPIA', 'INTERNET_ARCHIVE'] } } })
       .then((missing: number) => (missing > 0 ? startLibraryImport(prisma, 'THUMBNAILS') : null))
       .catch((error: unknown) => logger.warn({ error }, 'Thumbnail backfill on startup skipped'));
   }, 60_000).unref();
@@ -593,6 +593,7 @@ async function main() {
   };
   setTimeout(resumeMirror, 90_000).unref();
   setInterval(resumeMirror, 60 * 60 * 1000).unref();
+  scheduleNightlyLibraryImports(prisma);
 }
 
 async function shutdown(signal: string) {

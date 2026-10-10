@@ -57,7 +57,7 @@ export function LibraryCard({ item, note }: { item: any; note?: string }) {
               className="inline-block w-fit rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"
               title="We don't hold a copy of this item yet - it opens at the source."
             >
-              At {item.source === 'DNB' ? 'the DNB' : 'Gallica'} only
+              At {item.source === 'DNB' ? 'the DNB' : item.source === 'EUROPEANA' ? 'Europeana' : 'Gallica'} only
             </span>
           )}
           {item.availableHere !== false && (item.pagesUrl || item.embedUrl) && (

@@ -134,6 +134,11 @@ export async function generateThumbnail(item: ThumbnailSourceItem): Promise<Thum
       }
       return png ? { bytes: png, contentType: 'image/png' } : null;
     }
+    case 'INTERNET_ARCHIVE': {
+      // The archive's own small photo of the record label.
+      const jpg = await fetchBytes(`https://archive.org/download/${encodeURIComponent(item.ark)}/__ia_thumb.jpg`);
+      return jpg ? { bytes: jpg, contentType: 'image/jpeg' } : null;
+    }
     default:
       return null;
   }
@@ -144,6 +149,7 @@ export async function generateThumbnail(item: ThumbnailSourceItem): Promise<Thum
 const PACING: Record<string, { concurrency: number; pauseMs: number }> = {
   OPENSCORE: { concurrency: 6, pauseMs: 0 },
   MUTOPIA: { concurrency: 3, pauseMs: 250 },
+  INTERNET_ARCHIVE: { concurrency: 2, pauseMs: 500 },
   // No BNF: Gallica blocks IPs that send unattended bursts, so this job
   // (which also runs after every API start) never calls it. BnF thumbnails
   // come from the copy downloaded at import time.
