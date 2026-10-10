@@ -12,7 +12,7 @@ jest.mock('@my-music-coach/bnf-gallica', () => ({
 
 jest.mock('../lib/openscore', () => ({ ingestOpenScoreCorpus: jest.fn() }));
 
-import { ingestLibraryTopic, acquireLibraryIngestLock, releaseLibraryIngestLock, bnfLibraryMediaEnabled } from '@my-music-coach/bnf-gallica';
+import { ingestLibraryTopic, acquireLibraryIngestLock, releaseLibraryIngestLock } from '@my-music-coach/bnf-gallica';
 import { ingestOpenScoreCorpus } from '../lib/openscore';
 import { libraryResolvers } from '../resolvers/library';
 
@@ -182,12 +182,8 @@ describe('LibraryItem.embedUrl', () => {
 });
 
 describe('LibraryItem.pagesUrl', () => {
-  it('is null for BnF items until library media is enabled, and never set for other sources', () => {
-    (bnfLibraryMediaEnabled as jest.Mock).mockReturnValue(false);
-    expect(libraryResolvers.LibraryItem.pagesUrl({ id: 'b1', source: 'BNF' })).toBeNull();
-    (bnfLibraryMediaEnabled as jest.Mock).mockReturnValue(true);
-    expect(libraryResolvers.LibraryItem.pagesUrl({ id: 'b1', source: 'BNF' })).toBe('/api/library/items/b1/pages.json');
-    expect(libraryResolvers.LibraryItem.pagesUrl({ id: 'o1', source: 'OPENSCORE' })).toBeNull();
+  it('is always null - the server no longer fetches Gallica for visitors', () => {
+    expect(libraryResolvers.LibraryItem.pagesUrl()).toBeNull();
   });
 });
 

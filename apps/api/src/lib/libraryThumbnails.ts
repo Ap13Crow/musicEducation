@@ -5,7 +5,6 @@ import { join } from 'path';
 import { promisify } from 'util';
 import { inflateRawSync } from 'zlib';
 import type { PrismaClient } from '@my-music-coach/database';
-import { bnfLibraryMediaEnabled, fetchPageImage } from '@my-music-coach/bnf-gallica';
 import { MUTOPIA_FTP_PREFIX } from './openSources.js';
 
 // Library card thumbnails, generated once per item and stored in
@@ -116,15 +115,6 @@ export async function generateThumbnail(item: ThumbnailSourceItem): Promise<Thum
       }
       return png ? { bytes: png, contentType: 'image/png' } : null;
     }
-    case 'BNF': {
-      // Same operator switch as the Gallica viewer itself.
-      if (!bnfLibraryMediaEnabled() || !/^[a-z0-9]+$/i.test(item.ark)) return null;
-      const image = await fetchPageImage(
-        { pageNumber: 1, imageUrl: `https://gallica.bnf.fr/iiif/ark:/12148/${item.ark}/f1/full/full/0/native.jpg`, thumbnailUrl: '', audioUrl: '' },
-        { width: THUMB_WIDTH },
-      );
-      return { bytes: image.bytes, contentType: image.contentType };
-    }
     default:
       return null;
   }
@@ -135,7 +125,9 @@ export async function generateThumbnail(item: ThumbnailSourceItem): Promise<Thum
 const PACING: Record<string, { concurrency: number; pauseMs: number }> = {
   OPENSCORE: { concurrency: 6, pauseMs: 0 },
   MUTOPIA: { concurrency: 3, pauseMs: 250 },
-  BNF: { concurrency: 1, pauseMs: 1500 },
+  // No BNF: Gallica blocks IPs that send unattended bursts, so this job
+  // (which also runs after every API start) never calls it. BnF thumbnails
+  // come from the copy downloaded at import time.
 };
 
 export async function backfillLibraryThumbnails(

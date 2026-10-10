@@ -455,8 +455,12 @@ async function main() {
   // Gallica scans/recordings for the public Library viewer - see
   // lib/libraryMedia.ts. 404 (not 403) when the feature is off, so the URLs
   // simply don't exist until bnfLibraryMediaEnabled().
+  // Off: these routes fetched Gallica on every uncached visitor request, and
+  // Gallica blocks IPs that send such unattended bursts. They come back
+  // serving only the copy downloaded at import time.
+  const BNF_VISITOR_FETCH_ENABLED = false;
   async function findBnfMediaItem(id: string) {
-    if (!bnfLibraryMediaEnabled()) return null;
+    if (!BNF_VISITOR_FETCH_ENABLED || !bnfLibraryMediaEnabled()) return null;
     const item = await prisma.libraryItem.findUnique({ where: { id }, select: { source: true, ark: true, category: true, hiddenAt: true } });
     if (!item || item.hiddenAt || item.source !== 'BNF' || !/^[a-z0-9]+$/i.test(item.ark)) return null;
     return item;
@@ -557,7 +561,7 @@ async function main() {
   // an admin click. Delayed to keep startup and readiness fast.
   setTimeout(() => {
     prisma.libraryItem
-      .count({ where: { thumbnailUrl: null, hiddenAt: null, source: { in: ['OPENSCORE', 'MUTOPIA', 'BNF'] } } })
+      .count({ where: { thumbnailUrl: null, hiddenAt: null, source: { in: ['OPENSCORE', 'MUTOPIA'] } } })
       .then((missing: number) => (missing > 0 ? startLibraryImport(prisma, 'THUMBNAILS') : null))
       .catch((error: unknown) => logger.warn({ error }, 'Thumbnail backfill on startup skipped'));
   }, 60_000).unref();

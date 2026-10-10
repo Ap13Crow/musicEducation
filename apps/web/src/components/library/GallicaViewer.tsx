@@ -36,8 +36,9 @@ async function loadPagesFromGallica(ark: string, audio: boolean): Promise<Gallic
     return [{
       pageNumber,
       label: canvas?.label && canvas.label !== 'null' ? String(canvas.label) : null,
-      // Same 1600 px scaled copy our own route serves.
-      imageUrl: imageUrl.replace('/full/full/', '/full/1600,/'),
+      // BnF caps IIIF images wider than 1000 px at 5 calls/minute per IP
+      // (api.bnf.fr) - 1000 px keeps quick page turning under that cap.
+      imageUrl: imageUrl.replace('/full/full/', '/full/1000,/'),
       audioUrl: audio ? `https://gallica.bnf.fr/ark:/12148/${ark}/f${pageNumber}.audio` : null,
     }];
   });
@@ -56,7 +57,7 @@ export function GallicaViewer({
   audio,
   fallbackEmbedUrl,
 }: {
-  pagesUrl: string;
+  pagesUrl?: string | null;
   ark?: string | null;
   title: string;
   audio: boolean;
@@ -71,7 +72,7 @@ export function GallicaViewer({
     setPages(null);
     setFailed(false);
     setIndex(0);
-    fetch(pagesUrl)
+    (pagesUrl ? fetch(pagesUrl) : Promise.reject(new Error('no pagesUrl')))
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
       .then((data) => data.pages ?? [])
       .catch(() => (ark ? loadPagesFromGallica(ark, audio) : Promise.reject(new Error('no ark'))))

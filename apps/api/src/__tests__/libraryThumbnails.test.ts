@@ -7,7 +7,7 @@ jest.mock('@my-music-coach/bnf-gallica', () => ({
 }));
 
 import { deflateRawSync } from 'zlib';
-import { bnfLibraryMediaEnabled, fetchPageImage } from '@my-music-coach/bnf-gallica';
+import { fetchPageImage } from '@my-music-coach/bnf-gallica';
 import { backfillLibraryThumbnails, generateThumbnail, readZipEntry } from '../lib/libraryThumbnails';
 
 // Builds a real zip: one local header + data per entry, a central
@@ -91,17 +91,9 @@ describe('generateThumbnail', () => {
     expect(thumbnail).toEqual({ bytes: PNG, contentType: 'image/png' });
   });
 
-  it('asks Gallica for page 1 at thumbnail width, only while BnF library media is enabled', async () => {
-    (fetchPageImage as jest.Mock).mockResolvedValue({ bytes: Buffer.from('jpg'), contentType: 'image/jpeg' });
-    await expect(generateThumbnail({ id: 'b1', source: 'BNF', ark: 'btv1b52500519p', files: [], musicXmlSourceUrl: null })).resolves.toEqual({
-      bytes: Buffer.from('jpg'), contentType: 'image/jpeg',
-    });
-    expect(fetchPageImage).toHaveBeenCalledWith(
-      expect.objectContaining({ imageUrl: 'https://gallica.bnf.fr/iiif/ark:/12148/btv1b52500519p/f1/full/full/0/native.jpg' }),
-      { width: 360 },
-    );
-    (bnfLibraryMediaEnabled as jest.Mock).mockReturnValueOnce(false);
+  it('never contacts Gallica for a BnF item', async () => {
     await expect(generateThumbnail({ id: 'b1', source: 'BNF', ark: 'btv1b52500519p', files: [], musicXmlSourceUrl: null })).resolves.toBeNull();
+    expect(fetchPageImage).not.toHaveBeenCalled();
   });
 
   it('has nothing to fetch for a Musopen recording', async () => {

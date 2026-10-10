@@ -72,7 +72,7 @@ export default function LibraryItemView() {
             {audioTracks.length > 0 && <AudioPlayer tracks={audioTracks} attribution={item.attribution} />}
 
             {item.scoreUrl && <ScoreViewer url={item.scoreUrl} title={item.title} />}
-            {item.pagesUrl && (
+            {(item.pagesUrl || (item.source === 'BNF' && item.ark)) && (
               <GallicaViewer
                 pagesUrl={item.pagesUrl}
                 ark={item.ark}
@@ -81,7 +81,7 @@ export default function LibraryItemView() {
                 fallbackEmbedUrl={item.embedUrl}
               />
             )}
-            {!item.pagesUrl && item.embedUrl && (
+            {!item.pagesUrl && !(item.source === 'BNF' && item.ark) && item.embedUrl && (
               <GallicaEmbed url={item.embedUrl} title={item.title} audio={item.category === 'AUDIO_RECORDING'} />
             )}
 

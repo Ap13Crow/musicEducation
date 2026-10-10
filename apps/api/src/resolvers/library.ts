@@ -8,7 +8,6 @@ import { requireRole } from '../middleware/auth.js';
 import { ingestOpenScoreCorpus } from '../lib/openscore.js';
 import { ARCHIVE_DOWNLOAD_PREFIX } from '../lib/openSources.js';
 import { LIBRARY_IMPORT_SOURCES, getLibraryImportStatus, startLibraryImport } from '../lib/libraryImports.js';
-import { bnfLibraryMediaEnabled } from '@my-music-coach/bnf-gallica';
 import { SHORT_ID_PATTERN, libraryShareUrl } from '../lib/libraryLinks.js';
 import type { GraphQLContext } from '../types.js';
 
@@ -59,8 +58,10 @@ export const libraryResolvers = {
           shareUrl: libraryShareUrl(item.shortId, index + 1),
         };
       }),
-    pagesUrl: (item: { id: string; source: string }) =>
-      item.source === 'BNF' && bnfLibraryMediaEnabled() ? `/api/library/items/${item.id}/pages.json` : null,
+    // Our server no longer fetches Gallica on a visitor's behalf (Gallica
+    // blocks IPs that send unattended bursts): the viewer loads Gallica in
+    // the visitor's browser until the import-time copy exists.
+    pagesUrl: () => null,
   },
 
   Query: {
