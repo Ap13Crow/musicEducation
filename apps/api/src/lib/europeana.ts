@@ -32,6 +32,7 @@ export interface EuropeanaRecord {
   id: string;
   title: string;
   creator: string | null;
+  performers: string[];
   year: string | null;
   provider: string | null;
   rights: string;
@@ -61,6 +62,39 @@ const first = (value: unknown): string | null => {
   return typeof text === 'string' && text.trim() ? text.replace(/ /g, ' ').trim() : null;
 };
 
+// Every value once, in the default language ("def") when the record has
+// language variants - the plain field repeats each name per language.
+function names(item: any, field: string): string[] {
+  const values = item?.[`${field}LangAware`]?.def ?? item?.[field] ?? [];
+  return [...new Set((Array.isArray(values) ? values : [values]).filter((value: unknown) => typeof value === 'string' && value.trim()).map((value: string) => value.trim()))];
+}
+
+// "Benefelde, Ada, 1887-1967" -> Ada Benefelde (died 1967);
+// "Beethoven, Ludwig van (1770-1827). Composer" -> Ludwig van Beethoven.
+export function europeanaPerson(raw: string): { name: string; died: number | null } {
+  const text = raw.replace(/\.\s*(Auteur ou responsable intellectuel|Author or intellectual leader|Compositeur|Composer|Interprète|Performer)\s*$/i, '').trim();
+  const life = text.match(/[,(]\s*\d{4}\s*-\s*(\d{4})?\s*\)?\s*$/);
+  const died = life?.[1] ? Number(life[1]) : null;
+  const bare = (life ? text.slice(0, life.index) : text).replace(/[.,\s]+$/, '').trim();
+  const [last, ...rest] = bare.split(/\s*,\s*/);
+  const name = rest.length === 1 && last && rest[0] ? `${rest[0].replace(/\.$/, '')} ${last}` : bare;
+  return { name, died };
+}
+
+// Creators are the composers; a contributor who died before records were
+// sold (1900) is an arranger or composer too (Gounod in Bach's Ave Maria),
+// everyone else performs.
+export function europeanaPeople(item: any): { composers: string[]; performers: string[] } {
+  const composers = names(item, 'dcCreator').map((raw) => europeanaPerson(raw).name);
+  const performers: string[] = [];
+  for (const raw of names(item, 'dcContributor')) {
+    const person = europeanaPerson(raw);
+    const list = person.died !== null && person.died < 1900 ? composers : performers;
+    if (!list.includes(person.name)) list.push(person.name);
+  }
+  return { composers: [...new Set(composers)], performers };
+}
+
 // Only public web addresses: the media URL comes from a third party, and
 // our server is the one fetching it.
 export function isPublicMediaUrl(url: string): boolean {
@@ -86,12 +120,13 @@ export function parseEuropeanaItem(item: any): EuropeanaRecord | null {
   const provider = first(item?.dataProvider);
   if (!id || !/^[\w./-]+$/.test(id) || !title || !license || !mediaUrl || !isPublicMediaUrl(mediaUrl)) return null;
   if (provider && EXCLUDED_PROVIDERS.includes(provider)) return null;
-  const creator = first(item?.dcCreator)?.replace(/\.\s*(Auteur ou responsable intellectuel|Author or intellectual leader|Compositeur|Composer)\s*$/i, '') ?? null;
+  const { composers, performers } = europeanaPeople(item);
   const year = first(item?.year);
   return {
     id,
     title,
-    creator,
+    creator: composers.length ? composers.join('; ') : null,
+    performers,
     year: year && /^\d{4}$/.test(year) ? year : null,
     provider,
     rights,
@@ -131,17 +166,17 @@ export async function searchEuropeana(
   };
 }
 
-export function europeanaItemData(record: EuropeanaRecord, seedQuery: string | null) {
+export function europeanaItemData(record: EuropeanaRecord, seedQuery: string | null, durationSeconds?: number | null) {
   return {
     category: 'AUDIO_RECORDING' as const,
     title: record.title,
     creator: record.creator,
     date: record.year,
-    documentType: 'Sound recording',
+    documentType: `Sound recording${record.performers.length ? ` · ${record.performers.join('; ')}` : ''}`,
     isPublicDomainWork: /Public Domain|CC0/.test(record.license),
     permalink: record.permalink,
     description: record.description,
-    files: [{ label: 'Recording', sourceUrl: record.mediaUrl, contentType: 'audio/mpeg' }],
+    files: [{ label: 'Recording', sourceUrl: record.mediaUrl, contentType: 'audio/mpeg', ...(durationSeconds ? { durationSeconds } : {}) }],
     license: record.license,
     attribution: `${record.provider ?? 'Europeana'} · via Europeana`,
     seedQuery,
@@ -149,6 +184,46 @@ export function europeanaItemData(record: EuropeanaRecord, seedQuery: string | n
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// ebucore:duration is meant to be milliseconds; some providers write
+// microseconds (Latvian National Library: 162840000 for 2:43). No single
+// record side runs for hours, so scale down until it is plausible.
+export function europeanaSeconds(value: unknown): number | null {
+  let seconds = Number(value) / 1000;
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  while (seconds > 4 * 3600) seconds /= 1000;
+  return Math.round(seconds);
+}
+
+// The recording's length from its record (the search API doesn't give it) -
+// how two catalogue entries for one recording are told apart from two
+// recordings. Null when the provider doesn't say or the lookup fails.
+export async function fetchEuropeanaDetails(id: string, mediaUrl?: string | null): Promise<{ durationSeconds: number | null; record: any } | null> {
+  const key = process.env.EUROPEANA_API_KEY;
+  if (!key || !/^[\w./-]+$/.test(id)) return null;
+  try {
+    const response = await fetch(`https://api.europeana.eu/record/v2/${id}.json?wskey=${encodeURIComponent(key)}`, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) return null;
+    const object: any = ((await response.json()) as any)?.object ?? {};
+    const resources: any[] = (object.aggregations ?? []).flatMap((aggregation: any) => aggregation.webResources ?? []);
+    const audio = resources.filter((resource) => String(resource.ebucoreHasMimeType ?? '').startsWith('audio'));
+    const resource = audio.find((entry) => entry.about === mediaUrl) ?? audio[0];
+    return { durationSeconds: europeanaSeconds(resource?.ebucoreDuration), record: object };
+  } catch {
+    return null;
+  }
+}
+
+// Record-API proxies carry the same people fields as search items, keyed by
+// language ({ def: [...], en: [...] }).
+export function europeanaPeopleFromRecord(object: any): { composers: string[]; performers: string[] } {
+  const proxy = (object?.proxies ?? []).find((entry: any) => !entry.europeanaProxy) ?? {};
+  const pick = (field: any) => field?.def ?? Object.values(field ?? {}).flat();
+  return europeanaPeople({ dcCreator: pick(proxy.dcCreator), dcContributor: pick(proxy.dcContributor) });
+}
 
 // The automatic import: new open sound recordings for each query.
 export async function importEuropeana(
@@ -167,7 +242,9 @@ export async function importEuropeana(
       for (const record of result.records) {
         if (existing.has(record.id)) continue;
         existing.add(record.id);
-        const data = europeanaItemData(record, `europeana:${query}`);
+        const details = await fetchEuropeanaDetails(record.id, record.mediaUrl);
+        const data = europeanaItemData(record, `europeana:${query}`, details?.durationSeconds);
+        await sleep(150);
         await prisma.libraryItem.create({ data: { source: 'EUROPEANA' as any, ark: record.id, ...data, files: data.files as any } }).then(
           () => (upserted += 1),
           () => undefined,

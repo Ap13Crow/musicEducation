@@ -1,5 +1,5 @@
-import { archiveItemData, archiveQuery, groupSides, tidyTitle, workTitle } from '../lib/archive78';
-import { europeanaLicense, isPublicMediaUrl, parseEuropeanaItem } from '../lib/europeana';
+import { archiveItemData, archiveQuery, groupSides, matrixNumber, parseLength, tidyTitle, workTitle } from '../lib/archive78';
+import { europeanaLicense, europeanaPeople, europeanaPerson, europeanaSeconds, isPublicMediaUrl, parseEuropeanaItem } from '../lib/europeana';
 
 describe('Internet Archive 78s', () => {
   it('tidies all-caps titles and keeps mixed case alone', () => {
@@ -72,9 +72,40 @@ describe('Europeana', () => {
       dataProvider: ['Romanian Radio Broadcasting Company'],
       edmIsShownBy: ['https://resource.culturalia.ro/public/moon.mp3'],
     };
-    expect(parseEuropeanaItem(item)).toMatchObject({ id: '2048128/618580', creator: 'Beethoven, Ludwig van (1770-1827)', year: '1931', license: 'CC BY-SA 4.0' });
+    expect(parseEuropeanaItem(item)).toMatchObject({ id: '2048128/618580', creator: 'Ludwig van Beethoven', performers: [], year: '1931', license: 'CC BY-SA 4.0' });
     expect(parseEuropeanaItem({ ...item, edmIsShownBy: undefined })).toBeNull();
     expect(parseEuropeanaItem({ ...item, dataProvider: ['National Library of France'] })).toBeNull();
     expect(parseEuropeanaItem({ ...item, rights: ['http://rightsstatements.org/vocab/InC/1.0/'] })).toBeNull();
+  });
+});
+
+describe('recording details', () => {
+  it('reads archive lengths in seconds and as a clock, and matrix numbers', () => {
+    expect(parseLength('276.26')).toBe(276);
+    expect(parseLength('04:46')).toBe(286);
+    expect(parseLength('1:02:03')).toBe(3723);
+    expect(parseLength('')).toBeUndefined();
+    expect(matrixNumber(['urn:matrix_no:3815-c-13'])).toBe('3815-C-13');
+    expect(matrixNumber(['urn:upc:123'])).toBeNull();
+  });
+
+  it('tells Europeana composers from performers', () => {
+    expect(europeanaPerson('Benefelde, Ada, 1887-1967')).toEqual({ name: 'Ada Benefelde', died: 1967 });
+    expect(europeanaPerson('Taube, Verners')).toEqual({ name: 'Verners Taube', died: null });
+    expect(europeanaPerson('Beethoven, Ludwig van (1770-1827). Composer')).toEqual({ name: 'Ludwig van Beethoven', died: 1827 });
+    // The plain field repeats names per language; Gounod (d. 1893) arranged, he didn't sing.
+    expect(
+      europeanaPeople({
+        dcCreator: ['Bach, Johann Sebastian, 1685-1750', 'Bach, Johann Sebastian, 1685-1750'],
+        dcContributor: ['Gounod, Charles, 1818-1893', 'Kārkliņa-Olava, Marina, 1908-', 'Karklin-Olava, Marina, 1908-'],
+        dcContributorLangAware: { def: ['Gounod, Charles, 1818-1893', 'Kārkliņa-Olava, Marina, 1908-'], en: ['Karklin-Olava, Marina, 1908-'] },
+      }),
+    ).toEqual({ composers: ['Johann Sebastian Bach', 'Charles Gounod'], performers: ['Marina Kārkliņa-Olava'] });
+  });
+
+  it('scales Europeana durations to seconds', () => {
+    expect(europeanaSeconds('162840')).toBe(163);
+    expect(europeanaSeconds('162840000')).toBe(163);
+    expect(europeanaSeconds(undefined)).toBeNull();
   });
 });

@@ -38,6 +38,9 @@ export interface SideFile {
   composer: string | null;
   performer: string | null;
   partLabel: string | null;
+  // The disc's matrix number ("2-07980", Edison "3815-C-13"): one recorded
+  // take. Two transfers with the same matrix are the same recording.
+  matrix?: string | null;
 }
 
 export interface Archive78Record {
@@ -179,6 +182,25 @@ function descriptionField(description: string, label: string): string | null {
   return match ? match[1].trim() : null;
 }
 
+// File lengths come as seconds ("276.26") or as a clock ("04:46").
+export function parseLength(value: unknown): number | undefined {
+  const text = String(value ?? '').trim();
+  if (!text) return undefined;
+  const seconds = /^\d+(:\d{1,2}){1,2}(\.\d+)?$/.test(text)
+    ? text.split(':').reduce((total, part) => total * 60 + Number(part), 0)
+    : Number(text);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds) : undefined;
+}
+
+// "urn:matrix_no:3815-C-13" in external-identifier.
+export function matrixNumber(identifiers: string[]): string | null {
+  for (const identifier of identifiers) {
+    const match = identifier.match(/matrix_no:\s*(.+)$/i);
+    if (match && match[1].trim()) return match[1].trim().toUpperCase();
+  }
+  return null;
+}
+
 export async function fetchSideFile(identifier: string): Promise<SideFile | null> {
   const data = await getJson(`https://archive.org/metadata/${encodeURIComponent(identifier)}`);
   const files: any[] = data?.files ?? [];
@@ -186,11 +208,13 @@ export async function fetchSideFile(identifier: string): Promise<SideFile | null
   const mp3 = files.find((file) => file.format === 'VBR MP3' && !/_(restored|78)\./i.test(file.name)) ?? files.find((file) => String(file.name).endsWith('.mp3'));
   if (!mp3) return null;
   const description = asArray(data?.metadata?.description).join(' ');
-  const length = Number(mp3.length);
+  // The mp3's own length, else the transfer's (the FLAC master's).
+  const durationSeconds = parseLength(mp3.length) ?? files.map((file) => parseLength(file.length)).find((length) => length !== undefined);
   return {
     identifier,
     mp3: mp3.name,
-    durationSeconds: Number.isFinite(length) && length > 0 ? Math.round(length) : undefined,
+    durationSeconds,
+    matrix: matrixNumber(asArray(data?.metadata?.['external-identifier'])),
     composer: descriptionField(description, 'Writer') ?? descriptionField(description, 'Composer'),
     performer: descriptionField(description, 'Performer'),
     partLabel: workTitle(String(asArray(data?.metadata?.title)[0] ?? '')).part,
@@ -223,6 +247,7 @@ export function archiveItemData(record: Archive78Record, files: SideFile[], cuto
       sourceUrl: sideFileUrl(file),
       contentType: 'audio/mpeg',
       ...(file.durationSeconds ? { durationSeconds: file.durationSeconds } : {}),
+      ...(file.matrix ? { matrix: file.matrix } : {}),
     })),
     license: pd ? `Public domain (published ${record.date})` : 'Historic recording - rights checked by admin',
     attribution: `Great 78 Project · Internet Archive${record.publisher ? ` · ${record.publisher}` : ''}`,
@@ -251,6 +276,29 @@ export async function upsertArchiveRecord(prisma: PrismaClient, record: Archive7
     update: { ...data, files: data.files as any },
     select: { id: true, shortId: true, title: true, source: true },
   });
+}
+
+// Fills in side lengths and matrix numbers on an item imported before they
+// were read (or whose mp3 length was a clock string). Returns the new files,
+// or null when nothing changed.
+export async function refreshArchiveFiles(files: any[]): Promise<any[] | null> {
+  let changed = false;
+  const next = [];
+  for (const file of files) {
+    const identifier = typeof file?.sourceUrl === 'string' && file.sourceUrl.startsWith(ARCHIVE_DOWNLOAD_PREFIX)
+      ? decodeURIComponent(file.sourceUrl.slice(ARCHIVE_DOWNLOAD_PREFIX.length).split('/')[0])
+      : null;
+    const side = identifier ? await fetchSideFile(identifier) : null;
+    if (identifier) await sleep(METADATA_PAUSE_MS);
+    const updated = {
+      ...file,
+      ...(side?.durationSeconds && !file.durationSeconds ? { durationSeconds: side.durationSeconds } : {}),
+      ...(side?.matrix && !file.matrix ? { matrix: side.matrix } : {}),
+    };
+    changed ||= updated.durationSeconds !== file.durationSeconds || updated.matrix !== file.matrix;
+    next.push(updated);
+  }
+  return changed ? next : null;
 }
 
 // The automatic import: every dated classical 78 up to the cut-off year.

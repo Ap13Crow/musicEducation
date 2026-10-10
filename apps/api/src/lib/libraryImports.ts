@@ -6,6 +6,7 @@ import { runLibraryMirror } from './libraryMirror.js';
 import { libraryMediaStoreConfigured } from './libraryMediaStore.js';
 import { importArchive78 } from './archive78.js';
 import { europeanaConfigured, importEuropeana } from './europeana.js';
+import { hideDuplicateRecordings } from './recordingDuplicates.js';
 import { logger } from '../utils/logger.js';
 
 // Admin-started imports of the openly licensed Library sources. They run in
@@ -107,16 +108,22 @@ async function runImport(prisma: PrismaClient, source: LibraryImportSource, stat
     }
     case 'ARCHIVE_78': {
       const result = await importArchive78(prisma, progress);
+      const duplicates = await hideDuplicateRecordings(prisma, { apply: true });
       return {
         total: result.total,
         upserted: result.upserted,
-        message: `Internet Archive 78s: ${result.upserted} new recordings (published up to ${result.cutoffYear}); ${result.total} works in total.`,
+        message: `Internet Archive 78s: ${result.upserted} new recordings (published up to ${result.cutoffYear}); ${result.total} works in total.${duplicates.hidden ? ` ${duplicates.hidden} second copies hidden.` : ''}`,
       };
     }
     case 'EUROPEANA': {
       if (!europeanaConfigured()) throw new Error('Europeana needs an API key first (EUROPEANA_API_KEY).');
       const result = await importEuropeana(prisma, progress);
-      return { total: result.total, upserted: result.upserted, message: `Europeana: ${result.upserted} new recordings (${result.total} open recordings checked).` };
+      const duplicates = await hideDuplicateRecordings(prisma, { apply: true });
+      return {
+        total: result.total,
+        upserted: result.upserted,
+        message: `Europeana: ${result.upserted} new recordings (${result.total} open recordings checked).${duplicates.hidden ? ` ${duplicates.hidden} second copies hidden.` : ''}`,
+      };
     }
     case 'MUTOPIA': {
       const records = await fetchMutopiaRecords(progress);

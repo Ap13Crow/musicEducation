@@ -10,7 +10,8 @@ import { DNB_MAX_PAGE_SIZE, fetchDnbRecords, isDnbIdn, searchDnb, type DnbRecord
 import { possiblySameWork, titleKey } from './libraryMatch.js';
 import { bnfPausedUntil, pauseBnf } from './libraryMirror.js';
 import { archiveQuery, groupSides, historicCutoffYear, searchSides, tidyTitle, upsertArchiveRecord, type Archive78Record } from './archive78.js';
-import { EUROPEANA_MAX_PAGE_SIZE, europeanaConfigured, europeanaItemData, searchEuropeana, type EuropeanaRecord } from './europeana.js';
+import { EUROPEANA_MAX_PAGE_SIZE, europeanaConfigured, europeanaItemData, fetchEuropeanaDetails, searchEuropeana, type EuropeanaRecord } from './europeana.js';
+import { hideDuplicateRecordings } from './recordingDuplicates.js';
 
 // The admin's federated import: one query runs against Gallica and the DNB
 // side by side, page by page, and the admin ticks what to bring into the
@@ -319,7 +320,7 @@ export interface ImportSelectionResult {
 export const MAX_IMPORT_SELECTION = 500;
 const MAX_ARCHIVE_PER_IMPORT = 40;
 
-function itemData(candidate: ImportCandidate, seedQuery: string | null) {
+function itemData(candidate: ImportCandidate, seedQuery: string | null, durationSeconds?: number | null) {
   if (candidate.raw.kind === 'BNF') {
     const record = candidate.raw.record;
     return {
@@ -338,7 +339,7 @@ function itemData(candidate: ImportCandidate, seedQuery: string | null) {
     };
   }
   if (candidate.raw.kind === 'EUROPEANA') {
-    const data = europeanaItemData(candidate.raw.record, seedQuery);
+    const data = europeanaItemData(candidate.raw.record, seedQuery, durationSeconds);
     return { source: 'EUROPEANA' as const, ark: candidate.raw.record.id, ...data, files: data.files as any };
   }
   if (candidate.raw.kind !== 'DNB') throw new Error('Unsupported source.');
@@ -432,7 +433,10 @@ export async function importSelection(
     }
 
     try {
-      const item = await prisma.libraryItem.create({ data: itemData(candidate, seedQuery) as any, select: REF_SELECT });
+      // Europeana's search doesn't give the length - the record does, and it
+      // is what tells a second catalogue entry from a second recording.
+      const details = candidate.raw.kind === 'EUROPEANA' ? await fetchEuropeanaDetails(candidate.raw.record.id, candidate.raw.record.mediaUrl) : null;
+      const item = await prisma.libraryItem.create({ data: itemData(candidate, seedQuery, details?.durationSeconds) as any, select: REF_SELECT });
       result.imported.push({ id: item.id, shortId: item.shortId, title: item.title, source: item.source });
     } catch (error: any) {
       // Someone imported it a moment ago.
@@ -445,6 +449,23 @@ export async function importSelection(
         continue;
       }
       result.failed.push({ ...selection, reason: errorMessage(error) });
+    }
+  }
+
+  // A new recording that turns out to be one we hold already (another
+  // transfer of the disc, a second catalogue entry) is hidden at once and
+  // reported as already in the Library, pointing at the copy we keep.
+  const recordings = result.imported.filter((item) => item.source === 'INTERNET_ARCHIVE' || item.source === 'EUROPEANA');
+  if (recordings.length) {
+    const duplicates = await hideDuplicateRecordings(prisma, { apply: true, onlyIds: recordings.map((item) => item.id) });
+    for (const group of duplicates.groups) {
+      const hiddenNew = result.imported.filter((item) => group.hide.some((hidden) => hidden.id === item.id));
+      if (!hiddenNew.length) continue;
+      const keep = await prisma.libraryItem.findUnique({ where: { id: group.keep.id }, select: REF_SELECT });
+      result.imported = result.imported.filter((item) => !hiddenNew.includes(item));
+      if (keep && !result.alreadyInLibrary.some((item) => item.id === keep.id)) {
+        result.alreadyInLibrary.push({ id: keep.id, shortId: keep.shortId, title: keep.title, source: keep.source });
+      }
     }
   }
   return result;
