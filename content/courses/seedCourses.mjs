@@ -65,13 +65,23 @@ for (const folder of readdirSync(root)) {
   for (const [w, week] of manifest.weeks.entries()) {
     const section = await prisma.courseSection.create({ data: { courseId: course.id, title: week.title, order: w } });
     for (const [l, lesson] of week.lessons.entries()) {
+      // An audio lesson can play a Library recording: our own copy once the
+      // mirror has it, the openly licensed source file until then.
+      let videoUrl = lesson.video ?? null;
+      if (lesson.libraryAudio) {
+        const [itemId, index] = lesson.libraryAudio;
+        const item = await prisma.libraryItem.findUnique({ where: { id: itemId }, select: { files: true, mirroredAt: true } });
+        const file = Array.isArray(item?.files) ? item.files[index] : null;
+        if (!file) throw new Error(`Library audio ${itemId}#${index} not found (${lesson.title})`);
+        videoUrl = item.mirroredAt ? `https://mymusic.coach/api/library/items/${itemId}/files/${index}.audio` : file.sourceUrl;
+      }
       const created = await prisma.lesson.create({
         data: {
           sectionId: section.id,
           title: lesson.title,
           description: lesson.description,
           contentType: lesson.type,
-          videoUrl: lesson.video ?? null,
+          videoUrl,
           duration: lesson.minutes ?? null,
           order: l,
           xpReward: lesson.xp ?? 10,
