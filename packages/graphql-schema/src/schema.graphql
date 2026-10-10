@@ -646,6 +646,8 @@ enum LibraryImportSource {
   MUTOPIA
   # Not a source: generates card thumbnails for items still missing one.
   THUMBNAILS
+  # Not a source: downloads every item's files into the local media store.
+  MIRROR
 }
 
 enum LibraryImportState {

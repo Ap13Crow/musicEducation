@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: garage
+  labels: &garageLabels
+    app.kubernetes.io/name: garage
+    app.kubernetes.io/component: object-storage
+    app.kubernetes.io/part-of: mymusic-coach
+spec:
+  serviceName: garage
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: garage
+  template:
+    metadata:
+      labels: *garageLabels
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: garage
+          image: dxflrs/garage:v2.4.1
+          imagePullPolicy: IfNotPresent
+          command: ['/garage', '-c', '/etc/garage/garage.toml', 'server']
+          env:
+            # Secret files are mounted 0440 with the pod's group (fsGroup) -
+            # Garage would otherwise refuse any non-0600 secret file.
+            - name: GARAGE_ALLOW_WORLD_READABLE_SECRETS
+              value: 'true'
+          ports:
+            - name: s3
+              containerPort: 3900
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: s3
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket:
+              port: s3
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: '2'
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: storage
+              mountPath: /var/lib/garage/meta
+              subPath: meta
+            - name: storage
+              mountPath: /var/lib/garage/snapshots
+              subPath: snapshots
+            - name: storage
+              mountPath: /var/lib/garage/data
+              subPath: data
+            - name: config
+              mountPath: /etc/garage/garage.toml
+              subPath: garage.toml
+              readOnly: true
+            - name: secrets
+              mountPath: /etc/garage/secrets
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: garage-config
+        - name: secrets
+          secret:
+            secretName: garage-secrets
+            defaultMode: 0440
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+        labels:
+          app.kubernetes.io/name: garage
+          app.kubernetes.io/component: object-storage
+          app.kubernetes.io/part-of: mymusic-coach
+      spec:
+        accessModes: ['ReadWriteOnce']
+        storageClassName: library-media-local
+        resources:
+          requests:
+            storage: 900Gi

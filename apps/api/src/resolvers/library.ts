@@ -46,22 +46,29 @@ export const libraryResolvers = {
     // PDFs go through our cached same-origin route; archive.org audio is
     // streamed straight from the Internet Archive (public domain, built for
     // direct range-request streaming - no reason to relay MBs through us).
-    files: (item: { id: string; shortId: string; files?: unknown }) =>
+    // Once the item has a local copy (lib/libraryMirror.ts) every file is
+    // served from our own store.
+    files: (item: { id: string; shortId: string; files?: unknown; mirroredAt?: Date | null }) =>
       (Array.isArray(item.files) ? item.files : []).map((file: any, index: number) => {
         const contentType = String(file?.contentType ?? 'application/pdf');
-        const direct = contentType.startsWith('audio/') && String(file?.sourceUrl ?? '').startsWith(ARCHIVE_DOWNLOAD_PREFIX);
+        const audio = contentType.startsWith('audio/');
+        const direct = audio && String(file?.sourceUrl ?? '').startsWith(ARCHIVE_DOWNLOAD_PREFIX);
+        const url = audio && item.mirroredAt
+          ? `/api/library/items/${item.id}/files/${index}.audio`
+          : direct ? file.sourceUrl : `/api/library/items/${item.id}/files/${index}.pdf`;
         return {
           label: String(file?.label ?? `File ${index + 1}`),
-          url: direct ? file.sourceUrl : `/api/library/items/${item.id}/files/${index}.pdf`,
+          url,
           contentType,
           durationSeconds: Number.isFinite(file?.durationSeconds) ? file.durationSeconds : null,
           shareUrl: libraryShareUrl(item.shortId, index + 1),
         };
       }),
-    // Our server no longer fetches Gallica on a visitor's behalf (Gallica
-    // blocks IPs that send unattended bursts): the viewer loads Gallica in
-    // the visitor's browser until the import-time copy exists.
-    pagesUrl: () => null,
+    // Only from our local copy: our server never fetches Gallica for a
+    // visitor (Gallica blocks IPs that send unattended bursts). Until the
+    // copy exists the viewer loads Gallica in the visitor's browser.
+    pagesUrl: (item: { id: string; source: string; mirroredAt?: Date | null }) =>
+      item.source === 'BNF' && item.mirroredAt ? `/api/library/items/${item.id}/pages.json` : null,
   },
 
   Query: {

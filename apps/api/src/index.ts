@@ -17,9 +17,9 @@ import { buildUserCalendarFeed } from './lib/calendarFeed.js';
 import { fetchScoreBytes, isAllowedScoreSource } from './lib/openscore.js';
 import { MUTOPIA_FTP_PREFIX } from './lib/openSources.js';
 import { startLibraryImport } from './lib/libraryImports.js';
-import { getLibraryAudioTrack, getLibraryManifest, getLibraryPageImage, sendWithRange } from './lib/libraryMedia.js';
 import { libraryFolderShareUrl, libraryQrCode, libraryShareUrl } from './lib/libraryLinks.js';
-import { bnfLibraryMediaEnabled } from '@my-music-coach/bnf-gallica';
+import { libraryMediaStoreConfigured, sendLibraryObject } from './lib/libraryMediaStore.js';
+import { libraryMirrorPending } from './lib/libraryMirror.js';
 import type { GraphQLContext } from './types.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -351,8 +351,20 @@ async function main() {
   // Public, no session: library scores are openly licensed (see
   // lib/openscore.ts). Only a stored, allowlisted upstream URL is ever
   // fetched - the client supplies an item id, never a URL.
+  // The local copy (lib/libraryMirror.ts) of an item's file, if stored.
+  async function storedMedia(itemId: string, kind: 'SCORE' | 'FILE' | 'PAGE' | 'TRACK', position: number) {
+    if (!libraryMediaStoreConfigured() || !Number.isInteger(position)) return null;
+    const media = await prisma.libraryItemMedia.findUnique({
+      where: { itemId_kind_position: { itemId, kind, position } },
+      select: { sha256: true, item: { select: { hiddenAt: true } } },
+    });
+    return media && !media.item.hiddenAt ? media : null;
+  }
+
   app.get('/library/items/:id/score.mxl', async (req, res) => {
     try {
+      const local = await storedMedia(req.params.id, 'SCORE', 0);
+      if (local) return await sendLibraryObject(req, res, local.sha256);
       const item = await prisma.libraryItem.findUnique({
         where: { id: req.params.id },
         select: { musicXmlSourceUrl: true, hiddenAt: true },
@@ -432,9 +444,24 @@ async function main() {
 
   // Downloadable files (PDF score/parts) for openly licensed items - same
   // allowlist and cache as the score route above.
+  // Audio files of an item - served only from the local copy (before it
+  // exists, the resolver points browsers at the source directly).
+  app.get('/library/items/:id/files/:index.audio', async (req, res) => {
+    try {
+      const local = await storedMedia(req.params.id, 'FILE', Number(req.params.index));
+      if (!local) return res.status(404).send('Not found');
+      return await sendLibraryObject(req, res, local.sha256);
+    } catch (error) {
+      logger.error({ error, id: req.params.id, index: req.params.index }, 'Library audio file failed');
+      return res.status(502).send('File temporarily unavailable');
+    }
+  });
+
   app.get('/library/items/:id/files/:index.pdf', async (req, res) => {
     try {
       const index = Number(req.params.index);
+      const local = await storedMedia(req.params.id, 'FILE', index);
+      if (local) return await sendLibraryObject(req, res, local.sha256);
       const item = await prisma.libraryItem.findUnique({ where: { id: req.params.id }, select: { files: true, hiddenAt: true } });
       const file = Array.isArray(item?.files) && Number.isInteger(index) ? (item!.files as any[])[index] : null;
       const allowed = file?.sourceUrl && (isAllowedScoreSource(file.sourceUrl) || file.sourceUrl.startsWith(MUTOPIA_FTP_PREFIX));
@@ -452,72 +479,61 @@ async function main() {
     }
   });
 
-  // Gallica scans/recordings for the public Library viewer - see
-  // lib/libraryMedia.ts. 404 (not 403) when the feature is off, so the URLs
-  // simply don't exist until bnfLibraryMediaEnabled().
-  // Off: these routes fetched Gallica on every uncached visitor request, and
-  // Gallica blocks IPs that send such unattended bursts. They come back
-  // serving only the copy downloaded at import time.
-  const BNF_VISITOR_FETCH_ENABLED = false;
-  async function findBnfMediaItem(id: string) {
-    if (!BNF_VISITOR_FETCH_ENABLED || !bnfLibraryMediaEnabled()) return null;
-    const item = await prisma.libraryItem.findUnique({ where: { id }, select: { source: true, ark: true, category: true, hiddenAt: true } });
-    if (!item || item.hiddenAt || item.source !== 'BNF' || !/^[a-z0-9]+$/i.test(item.ark)) return null;
-    return item;
-  }
-
+  // Gallica scans/recordings - served ONLY from the local copy made at
+  // import time (lib/libraryMirror.ts). Visitors never make our server call
+  // Gallica: BnF blocks IPs that send unattended bursts.
   app.get('/library/items/:id/pages.json', async (req, res) => {
     try {
-      const item = await findBnfMediaItem(req.params.id);
-      if (!item) return res.status(404).send('Not found');
-      const manifest = await getLibraryManifest(item.ark);
+      const item = await prisma.libraryItem.findUnique({
+        where: { id: req.params.id },
+        select: { title: true, permalink: true, hiddenAt: true, source: true, mirroredAt: true, category: true },
+      });
+      if (!item || item.hiddenAt || item.source !== 'BNF' || !item.mirroredAt || !libraryMediaStoreConfigured()) {
+        return res.status(404).send('Not found');
+      }
+      const audio = item.category === 'AUDIO_RECORDING';
+      const media = await prisma.libraryItemMedia.findMany({
+        where: { itemId: req.params.id, kind: audio ? 'TRACK' : 'PAGE' },
+        orderBy: { position: 'asc' },
+        select: { position: true, label: true },
+      });
       const base = `/api/library/items/${req.params.id}`;
       res.setHeader('cache-control', 'public, max-age=3600');
       return res.json({
-        title: manifest.title,
-        permalink: manifest.permalink,
-        pages: manifest.pages.map((page) => ({
-          pageNumber: page.pageNumber,
-          label: page.label ?? null,
-          imageUrl: `${base}/pages/${page.pageNumber}.jpg`,
-          audioUrl: item.category === 'AUDIO_RECORDING' ? `${base}/tracks/${page.pageNumber}.mp3` : null,
+        title: item.title,
+        permalink: item.permalink,
+        pages: media.map((row: { position: number; label: string | null }) => ({
+          pageNumber: row.position,
+          label: row.label ?? null,
+          imageUrl: `${base}/pages/${row.position}.jpg`,
+          audioUrl: audio ? `${base}/tracks/${row.position}.mp3` : null,
         })),
       });
     } catch (error) {
-      logger.error({ error, id: req.params.id }, 'Library manifest fetch failed');
-      return res.status(502).send('Gallica is temporarily unavailable');
+      logger.error({ error, id: req.params.id }, 'Library page list failed');
+      return res.status(500).send('Temporarily unavailable');
     }
   });
 
   app.get('/library/items/:id/pages/:page.jpg', async (req, res) => {
     try {
-      const item = await findBnfMediaItem(req.params.id);
-      const pageNumber = Number(req.params.page);
-      if (!item || !Number.isInteger(pageNumber) || pageNumber < 1) return res.status(404).send('Not found');
-      const image = await getLibraryPageImage(item.ark, pageNumber);
-      if (!image) return res.status(404).send('Not found');
-      res.setHeader('content-type', image.contentType);
-      res.setHeader('cache-control', 'public, max-age=604800');
-      return res.send(image.bytes);
+      const local = await storedMedia(req.params.id, 'PAGE', Number(req.params.page));
+      if (!local) return res.status(404).send('Not found');
+      return await sendLibraryObject(req, res, local.sha256);
     } catch (error) {
-      logger.error({ error, id: req.params.id, page: req.params.page }, 'Library page image fetch failed');
-      return res.status(502).send('Gallica is temporarily unavailable');
+      logger.error({ error, id: req.params.id, page: req.params.page }, 'Library page image failed');
+      return res.status(502).send('Temporarily unavailable');
     }
   });
 
   app.get('/library/items/:id/tracks/:page.mp3', async (req, res) => {
     try {
-      const item = await findBnfMediaItem(req.params.id);
-      const pageNumber = Number(req.params.page);
-      if (!item || item.category !== 'AUDIO_RECORDING' || !Number.isInteger(pageNumber) || pageNumber < 1) {
-        return res.status(404).send('Not found');
-      }
-      const track = await getLibraryAudioTrack(item.ark, pageNumber);
-      if (!track) return res.status(404).send('Not found');
-      return sendWithRange(req, res, track.bytes, track.contentType);
+      const local = await storedMedia(req.params.id, 'TRACK', Number(req.params.page));
+      if (!local) return res.status(404).send('Not found');
+      return await sendLibraryObject(req, res, local.sha256);
     } catch (error) {
-      logger.error({ error, id: req.params.id, page: req.params.page }, 'Library audio fetch failed');
-      return res.status(502).send('Gallica is temporarily unavailable');
+      logger.error({ error, id: req.params.id, page: req.params.page }, 'Library audio track failed');
+      return res.status(502).send('Temporarily unavailable');
     }
   });
 
@@ -565,6 +581,18 @@ async function main() {
       .then((missing: number) => (missing > 0 ? startLibraryImport(prisma, 'THUMBNAILS') : null))
       .catch((error: unknown) => logger.warn({ error }, 'Thumbnail backfill on startup skipped'));
   }, 60_000).unref();
+
+  // Keep the local media copies complete without anyone clicking: resume the
+  // mirror shortly after start and hourly (a no-op when nothing is pending or
+  // a run is still going; Gallica stays paused while it refuses us).
+  const resumeMirror = () => {
+    if (!libraryMediaStoreConfigured()) return;
+    libraryMirrorPending(prisma)
+      .then((pending: number) => (pending > 0 ? startLibraryImport(prisma, 'MIRROR') : null))
+      .catch((error: unknown) => logger.warn({ error }, 'Library mirror resume skipped'));
+  };
+  setTimeout(resumeMirror, 90_000).unref();
+  setInterval(resumeMirror, 60 * 60 * 1000).unref();
 }
 
 async function shutdown(signal: string) {

@@ -2,6 +2,8 @@ import type { PrismaClient } from '@my-music-coach/database';
 import { ingestOpenScoreCorpus } from './openscore.js';
 import { fetchMusopenRecords, fetchMutopiaRecords, upsertOpenSourceRecords } from './openSources.js';
 import { backfillLibraryThumbnails } from './libraryThumbnails.js';
+import { runLibraryMirror } from './libraryMirror.js';
+import { libraryMediaStoreConfigured } from './libraryMediaStore.js';
 import { logger } from '../utils/logger.js';
 
 // Admin-started imports of the openly licensed Library sources. They run in
@@ -12,8 +14,10 @@ import { logger } from '../utils/logger.js';
 // as a crashed run and may be restarted.
 
 // THUMBNAILS isn't a source but runs the same way: it fills in card images
-// for every item still missing one (lib/libraryThumbnails.ts).
-export const LIBRARY_IMPORT_SOURCES = ['OPENSCORE_LIEDER', 'OPENSCORE_STRING_QUARTETS', 'MUSOPEN', 'MUTOPIA', 'THUMBNAILS'] as const;
+// for every item still missing one (lib/libraryThumbnails.ts). MIRROR
+// downloads every item's files into the local media store
+// (lib/libraryMirror.ts) - it runs for hours, paced per source.
+export const LIBRARY_IMPORT_SOURCES = ['OPENSCORE_LIEDER', 'OPENSCORE_STRING_QUARTETS', 'MUSOPEN', 'MUTOPIA', 'THUMBNAILS', 'MIRROR'] as const;
 export type LibraryImportSource = (typeof LIBRARY_IMPORT_SOURCES)[number];
 
 export interface LibraryImportStatus {
@@ -25,6 +29,9 @@ export interface LibraryImportStatus {
   message: string | null;
   startedAt: string | null;
   finishedAt: string | null;
+  // Bumped on every progress save - a long run (MIRROR) stays "running" as
+  // long as it keeps reporting, however long ago it started.
+  heartbeatAt?: string | null;
 }
 
 const STALE_MS = 30 * 60 * 1000;
@@ -50,13 +57,17 @@ async function saveStatus(prisma: PrismaClient, status: LibraryImportStatus) {
 }
 
 function isRunning(status: LibraryImportStatus): boolean {
-  return status.state === 'running' && !!status.startedAt && Date.now() - new Date(status.startedAt).getTime() < STALE_MS;
+  const lastSign = status.heartbeatAt ?? status.startedAt;
+  return status.state === 'running' && !!lastSign && Date.now() - new Date(lastSign).getTime() < STALE_MS;
 }
 
 async function runImport(prisma: PrismaClient, source: LibraryImportSource, status: LibraryImportStatus) {
   const progress = async (done: number, total: number) => {
-    // Every 40 pieces is plenty for a polling admin card.
-    if (done === total || done % 40 === 0) await saveStatus(prisma, { ...status, done, total });
+    // Every 40 pieces is plenty for a polling admin card; MIRROR items are
+    // slow (a Gallica book is minutes), so it reports every item.
+    if (done === total || done % 40 === 0 || source === 'MIRROR') {
+      await saveStatus(prisma, { ...status, done, total, heartbeatAt: new Date().toISOString() });
+    }
   };
   switch (source) {
     case 'OPENSCORE_LIEDER':
@@ -78,6 +89,15 @@ async function runImport(prisma: PrismaClient, source: LibraryImportSource, stat
         message: `Thumbnails: ${result.created} created${result.failed ? `, ${result.failed} without an image` : ''}.`,
       };
     }
+    case 'MIRROR': {
+      const result = await runLibraryMirror(prisma, progress);
+      const blocked = result.blocked.length ? ` Paused (source refused us): ${result.blocked.join(', ')}.` : '';
+      return {
+        total: result.total,
+        upserted: result.mirrored,
+        message: `Local copies: ${result.mirrored} items stored${result.failed ? `, ${result.failed} failed` : ''}.${blocked}`,
+      };
+    }
     case 'MUTOPIA': {
       const records = await fetchMutopiaRecords(progress);
       const upserted = await upsertOpenSourceRecords(prisma, 'MUTOPIA', records);
@@ -95,8 +115,10 @@ export async function startLibraryImport(prisma: PrismaClient, source: LibraryIm
   void runImport(prisma, source, status)
     .then(async ({ total, upserted, message }) => {
       await saveStatus(prisma, { ...status, state: 'done', done: total, total, upserted, message, finishedAt: new Date().toISOString() });
-      // New items need card images - Musopen has none to fetch.
-      if (source !== 'THUMBNAILS' && source !== 'MUSOPEN') await startLibraryImport(prisma, 'THUMBNAILS');
+      // New items need card images - Musopen has none to fetch - and a
+      // local copy of their files.
+      if (source !== 'THUMBNAILS' && source !== 'MUSOPEN' && source !== 'MIRROR') await startLibraryImport(prisma, 'THUMBNAILS');
+      if (source !== 'MIRROR' && libraryMediaStoreConfigured()) await startLibraryImport(prisma, 'MIRROR');
     })
     .catch(async (error) => {
       logger.error({ error, source }, 'Library import failed');

@@ -756,7 +756,8 @@ const OPEN_SOURCES = [
   { source: 'OPENSCORE_STRING_QUARTETS', name: 'OpenScore String Quartets', detail: '~200 works · MusicXML + PDF score & parts · CC0' },
   { source: 'MUSOPEN', name: 'Musopen', detail: '~250 recordings (symphonies, quartets, Chopin) · public domain' },
   { source: 'MUTOPIA', name: 'Mutopia Project', detail: '~1,300 engraved PDF scores · PD / CC BY(-SA) · takes a few minutes' },
-  { source: 'THUMBNAILS', name: 'Card thumbnails', detail: 'Score pages, opening bars and Gallica covers for every item still missing one · runs after each import' },
+  { source: 'THUMBNAILS', name: 'Card thumbnails', detail: 'Score pages and opening bars for every item still missing one (Gallica covers come with the local copy) · runs after each import' },
+  { source: 'MIRROR', name: 'Local copies', detail: 'Downloads every item’s files into our own storage once, paced per source · runs after each import and hourly; Gallica pauses 6 h whenever it refuses us' },
 ] as const;
 
 // Openly licensed Library sources, imported in the background by the API

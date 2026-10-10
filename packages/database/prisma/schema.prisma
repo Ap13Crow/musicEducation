@@ -1548,6 +1548,12 @@ model LibraryItem {
   thumbnail          LibraryItemThumbnail?
   favorites          LibraryFavorite[]
   folderEntries      LibraryFolderItem[]
+  media              LibraryItemMedia[]
+  // Local copy (lib/libraryMirror.ts): set once every file of the item is in
+  // our own store, so the Library no longer needs the source to be reachable.
+  mirroredAt         DateTime?
+  mirrorError        String?
+  mirrorAttempts     Int      @default(0)
   ingestedAt         DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -1559,6 +1565,48 @@ model LibraryItem {
 // (apps/api/src/lib/libraryThumbnails.ts) and served from our own
 // /library/items/:id/thumbnail route - so the Library grid never hits
 // Gallica/GitHub/Mutopia per visitor. LibraryItem.thumbnailUrl points at it.
+enum LibraryMediaKind {
+  // MusicXML score (OpenScore)
+  SCORE
+  // An entry of LibraryItem.files, same position (PDF score/part, audio track)
+  FILE
+  // Gallica page scan / recording track, position = Gallica page number
+  PAGE
+  TRACK
+}
+
+// One stored file in the local media store (Garage), addressed by its
+// content hash: identical bytes are stored exactly once, whichever item or
+// source they came from.
+model LibraryMediaObject {
+  sha256      String   @id
+  contentType String
+  size        Int
+  createdAt   DateTime @default(now())
+
+  uses LibraryItemMedia[]
+}
+
+// Which stored file plays which role for an item - the item's own
+// /library/items/:id/... routes are served from these rows.
+model LibraryItemMedia {
+  id              String           @id @default(cuid())
+  itemId          String
+  kind            LibraryMediaKind
+  position        Int
+  label           String?
+  durationSeconds Int?
+  sha256          String
+  sourceUrl       String
+  createdAt       DateTime         @default(now())
+
+  item   LibraryItem        @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  object LibraryMediaObject @relation(fields: [sha256], references: [sha256])
+
+  @@unique([itemId, kind, position])
+  @@index([sha256])
+}
+
 // A user's starred Library items - separate from folders: starring needs no
 // decision about where an item belongs.
 model LibraryFavorite {

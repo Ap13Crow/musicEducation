@@ -16,4 +16,5 @@ spec:
         memory: 8Gi
     - type: PersistentVolumeClaim
       max:
-        storage: 200Gi
+        # The Library media store (deploy/platform/library-storage) claims 900Gi.
+        storage: 1Ti

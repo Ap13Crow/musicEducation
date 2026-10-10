@@ -1,0 +1,22 @@
+# S3 API reachable only from the application (api, worker); the RPC and
+# admin ports are never exposed beyond the pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: garage-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: garage
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ['api', 'worker']
+      ports:
+        - protocol: TCP
+          port: 3900

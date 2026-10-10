@@ -30,6 +30,12 @@ spec:
           envFrom:
             - secretRef:
                 name: postgres-mymusiccoach
+            # LIBRARY_MEDIA_S3_* for the local Library media store (Garage) -
+            # created by deploy/scripts/bootstrap-library-storage.sh; optional
+            # so the API starts before it exists.
+            - secretRef:
+                name: library-media-s3
+                optional: true
           env:
             - name: NODE_ENV
               value: production
@@ -112,6 +118,13 @@ spec:
             # Off, BnF items fall back to Gallica's own embed player.
             - name: BNF_LIBRARY_MEDIA_ENABLED
               value: 'true'
+            # Local copies of Library media (apps/api/src/lib/libraryMirror.ts):
+            # one Gallica request per interval; on a 403/429 Gallica pauses for
+            # BNF_MIRROR_PAUSE_MS. Raise the rate once BnF allows our IP.
+            - name: BNF_MIRROR_INTERVAL_MS
+              value: '15000'
+            - name: BNF_MIRROR_PAUSE_MS
+              value: '21600000'
             # DeepSeek (preferred) / OpenAI fallback for AI-generated assessment
             # reports (see apps/api/src/lib/ai.ts) - absent, aiChat() returns
             # null and callers fall back to deterministic text.
@@ -235,7 +248,8 @@ spec:
               memory: 192Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              # The Library mirror holds one file (<= 80 MB) in memory at a time.
+              memory: 1Gi
           securityContext:
             runAsUser: 1000
             runAsGroup: 1000

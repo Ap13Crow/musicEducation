@@ -182,8 +182,10 @@ describe('LibraryItem.embedUrl', () => {
 });
 
 describe('LibraryItem.pagesUrl', () => {
-  it('is always null - the server no longer fetches Gallica for visitors', () => {
-    expect(libraryResolvers.LibraryItem.pagesUrl()).toBeNull();
+  it('points at our own copy of a BnF item once it is stored, never at Gallica', () => {
+    expect(libraryResolvers.LibraryItem.pagesUrl({ id: 'b1', source: 'BNF', mirroredAt: null })).toBeNull();
+    expect(libraryResolvers.LibraryItem.pagesUrl({ id: 'b1', source: 'BNF', mirroredAt: new Date() })).toBe('/api/library/items/b1/pages.json');
+    expect(libraryResolvers.LibraryItem.pagesUrl({ id: 'o1', source: 'OPENSCORE', mirroredAt: new Date() })).toBeNull();
   });
 });
 
@@ -239,5 +241,18 @@ describe('Permanent share links', () => {
     const prisma = fakePrisma({ libraryItem: { findUnique } });
     await expect(libraryResolvers.Query.libraryPermalink(null, { shortId: '../x' }, { prisma } as any)).resolves.toBeNull();
     expect(findUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe('LibraryItem.files with a local copy', () => {
+  it('serves stored audio from our own route instead of the Internet Archive', () => {
+    const url = 'https://archive.org/download/MusopenCollectionAsFlac/Suk_Meditation/a.mp3';
+    const [file] = libraryResolvers.LibraryItem.files({
+      id: 'm1',
+      shortId: 'm1short',
+      mirroredAt: new Date(),
+      files: [{ label: 'Meditation', sourceUrl: url, contentType: 'audio/mpeg' }],
+    });
+    expect(file.url).toBe('/api/library/items/m1/files/0.audio');
   });
 });

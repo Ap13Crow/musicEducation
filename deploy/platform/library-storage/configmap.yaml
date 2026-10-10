@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garage-config
+  labels:
+    app.kubernetes.io/name: garage
+    app.kubernetes.io/part-of: mymusic-coach
+data:
+  garage.toml: |
+    # Single node: one copy of every block. Durability comes from fsync on
+    # every write, 6-hourly metadata snapshots and the encrypted NVMe; the
+    # media itself can always be re-downloaded from its source.
+    replication_factor = 1
+    consistency_mode = "consistent"
+    metadata_dir = "/var/lib/garage/meta"
+    metadata_snapshots_dir = "/var/lib/garage/snapshots"
+    metadata_auto_snapshot_interval = "6h"
+    db_engine = "lmdb"
+    metadata_fsync = true
+    data_fsync = true
+    # Capacity is what Garage may fill; raise it (and the layout) when the
+    # data-vg volume grows.
+    data_dir = [ { path = "/var/lib/garage/data", capacity = "350G" } ]
+    block_size = "1M"
+    # Scans and recordings are already compressed.
+    compression_level = "none"
+    rpc_secret_file = "/etc/garage/secrets/rpc_secret"
+    rpc_bind_addr = "[::]:3901"
+    rpc_public_addr = "127.0.0.1:3901"
+
+    [s3_api]
+    api_bind_addr = "[::]:3900"
+    s3_region = "garage"
+
+    [admin]
+    api_bind_addr = "[::]:3903"
+    admin_token_file = "/etc/garage/secrets/admin_token"

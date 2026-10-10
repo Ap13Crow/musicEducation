@@ -1,0 +1,27 @@
+# Static local volume on the second NVMe (data-vg, mounted at /data) - keeps
+# media I/O off the system/PostgreSQL disk. The directory must exist on the
+# node (bootstrap-library-storage.sh creates it). Retain: deleting the claim
+# never deletes the media.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: library-media-garage
+  labels:
+    app.kubernetes.io/name: garage
+    app.kubernetes.io/part-of: mymusic-coach
+spec:
+  capacity:
+    storage: 900Gi
+  accessModes: ['ReadWriteOnce']
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: library-media-local
+  volumeMode: Filesystem
+  local:
+    path: /data/garage
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: ['acloud6']
