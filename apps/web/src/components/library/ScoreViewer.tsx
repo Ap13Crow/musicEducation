@@ -10,7 +10,16 @@ const ZOOM_STEP = 0.1;
 // Renders a MusicXML (.xml or compressed .mxl) score as engraved notation
 // with OpenSheetMusicDisplay. OSMD touches window/document on import, so it's
 // loaded inside the effect, never during server rendering.
-export function ScoreViewer({ url, title }: { url: string; title: string }) {
+export function ScoreViewer({
+  url,
+  title,
+  onProgress,
+}: {
+  url: string;
+  title: string;
+  // How far down the engraved score the reader has scrolled, for library XP.
+  onProgress?: (update: { progress: number; length: number }) => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const osmdRef = useRef<any>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -50,6 +59,26 @@ export function ScoreViewer({ url, title }: { url: string; title: string }) {
       if (containerRef.current) containerRef.current.innerHTML = '';
     };
   }, [url, title]);
+
+  // Progress = how much of the score has passed the bottom of the screen;
+  // length = the score's height in A4-proportioned pages.
+  useEffect(() => {
+    if (status !== 'ready' || !onProgress) return;
+    const measure = () => {
+      const box = containerRef.current?.getBoundingClientRect();
+      if (!box || box.height <= 0) return;
+      const seen = (window.innerHeight - box.top) / box.height;
+      const pages = Math.max(1, Math.round(box.height / (box.width * 1.414)));
+      onProgress({ progress: Math.min(1, Math.max(0, seen)), length: pages });
+    };
+    measure();
+    window.addEventListener('scroll', measure, { passive: true });
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('scroll', measure);
+      window.removeEventListener('resize', measure);
+    };
+  }, [status, zoom, onProgress]);
 
   function changeZoom(delta: number) {
     const osmd = osmdRef.current;

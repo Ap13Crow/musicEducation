@@ -16,7 +16,7 @@ const DEFAULT_COURSE_BONUS_MAX = 200;
 export async function awardXpOnce(
   prisma: GraphQLContext['prisma'],
   userId: string,
-  reason: 'PROFILE_COMPLETED' | 'TEACHER_FOUND' | 'EVENT_ATTENDED',
+  reason: 'PROFILE_COMPLETED' | 'TEACHER_FOUND' | 'EVENT_ATTENDED' | 'LIBRARY_READ' | 'LIBRARY_LISTEN',
   refId: string,
   amount: number,
 ): Promise<void> {

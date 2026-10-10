@@ -28,8 +28,19 @@ function formatTime(seconds: number | null | undefined): string {
 // Media Session metadata so phone lock screens and headphones control it.
 // The page heading already names the work, so the player only names the
 // current track.
-export function AudioPlayer({ tracks, attribution }: { tracks: AudioTrack[]; attribution?: string | null }) {
+export function AudioPlayer({
+  tracks,
+  attribution,
+  onProgress,
+}: {
+  tracks: AudioTrack[];
+  attribution?: string | null;
+  // Position across the whole recording (all tracks) for library XP.
+  onProgress?: (update: { progress: number; length: number; playing: boolean }) => void;
+}) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  // Every track's length as soon as it is known (metadata or source).
+  const trackSeconds = useRef<Map<number, number>>(new Map());
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
@@ -102,6 +113,19 @@ export function AudioPlayer({ tracks, attribution }: { tracks: AudioTrack[]; att
     }
   }, [track, attribution, index, hasPrevious, hasNext, goTo]);
 
+  useEffect(() => {
+    if (!onProgress || tracks.length === 0) return;
+    const known = tracks.map((entry, position) => trackSeconds.current.get(position) ?? entry.durationSeconds ?? null);
+    const measured = known.filter((value): value is number => value != null && value > 0);
+    // Unknown tracks count as the average of the known ones.
+    const average = measured.length ? measured.reduce((sum, value) => sum + value, 0) / measured.length : 0;
+    const lengths = known.map((value) => (value != null && value > 0 ? value : average));
+    const total = lengths.reduce((sum, value) => sum + value, 0);
+    if (!total) return;
+    const before = lengths.slice(0, index).reduce((sum, value) => sum + value, 0);
+    onProgress({ progress: Math.min(1, (before + time) / total), length: Math.round(total), playing });
+  }, [onProgress, tracks, index, time, playing, duration]);
+
   if (!track) return null;
 
   const iconButton =
@@ -120,7 +144,10 @@ export function AudioPlayer({ tracks, attribution }: { tracks: AudioTrack[]; att
         onTimeUpdate={(event) => setTime(event.currentTarget.currentTime)}
         onLoadedMetadata={(event) => {
           event.currentTarget.playbackRate = speed;
-          if (Number.isFinite(event.currentTarget.duration)) setDuration(event.currentTarget.duration);
+          if (Number.isFinite(event.currentTarget.duration)) {
+            setDuration(event.currentTarget.duration);
+            trackSeconds.current.set(index, event.currentTarget.duration);
+          }
         }}
         onEnded={() => (hasNext ? goTo(index + 1, true) : setPlaying(false))}
         onError={() => setError(true)}

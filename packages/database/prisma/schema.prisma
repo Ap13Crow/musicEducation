@@ -202,6 +202,7 @@ model User {
   weeklyDigestDeliveries StudentWeeklyDigestDelivery[]
   libraryFavorites       LibraryFavorite[]
   libraryFolders         LibraryFolder[]
+  libraryEngagements     LibraryEngagement[]
 }
 
 model UserProfile {
@@ -435,6 +436,9 @@ enum XpAwardReason {
   TEACHER_FOUND
   EVENT_ATTENDED
   COURSE_BONUS
+  // Library: read / listened to the end - refId is the LibraryItem id.
+  LIBRARY_READ
+  LIBRARY_LISTEN
 }
 
 // Audit ledger for every XP grant outside per-lesson (Lesson.xpReward) and
@@ -1549,6 +1553,7 @@ model LibraryItem {
   favorites          LibraryFavorite[]
   folderEntries      LibraryFolderItem[]
   media              LibraryItemMedia[]
+  engagements        LibraryEngagement[]
   // Local copy (lib/libraryMirror.ts): set once every file of the item is in
   // our own store, so the Library no longer needs the source to be reachable.
   mirroredAt         DateTime?
@@ -1605,6 +1610,39 @@ model LibraryItemMedia {
 
   @@unique([itemId, kind, position])
   @@index([sha256])
+}
+
+enum LibraryEngagementMode {
+  READ
+  LISTEN
+}
+
+// How far a signed-in user has read or listened to one Library item - the
+// basis for library XP (lib/libraryEngagement.ts) and, later, for
+// recommendations and the admin usage view. Time is credited by the server
+// from heartbeat spacing, never taken from the client.
+model LibraryEngagement {
+  id              String                @id @default(cuid())
+  userId          String
+  itemId          String
+  mode            LibraryEngagementMode
+  activeSeconds   Int                   @default(0)
+  // Furthest point reached, 0..1.
+  progress        Float                 @default(0)
+  // Pages (READ) or seconds (LISTEN); only ever grows.
+  length          Int?
+  lastHeartbeatAt DateTime?
+  completedAt     DateTime?
+  xpAwarded       Int                   @default(0)
+  startedAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item LibraryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId, mode])
+  @@index([itemId])
+  @@index([userId, updatedAt])
 }
 
 // A user's starred Library items - separate from folders: starring needs no

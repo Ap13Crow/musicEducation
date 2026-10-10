@@ -405,6 +405,8 @@ enum XpAwardReason {
   TEACHER_FOUND
   EVENT_ATTENDED
   COURSE_BONUS
+  LIBRARY_READ
+  LIBRARY_LISTEN
 }
 
 type XpAward {
@@ -717,6 +719,37 @@ type LibraryItem {
   license: String
   attribution: String
   ingestedAt: DateTime!
+}
+
+enum LibraryEngagementMode {
+  READ
+  LISTEN
+}
+
+# A heartbeat from the item page while a signed-in user reads or listens
+# (every 15 s while active). progress = furthest point reached (0..1);
+# length = pages (READ) or seconds (LISTEN). The server credits time from
+# heartbeat spacing, never from the client.
+input LibraryEngagementInput {
+  itemId: ID!
+  mode: LibraryEngagementMode!
+  progress: Float!
+  length: Int!
+  active: Boolean!
+}
+
+# Reading/listening progress toward the item's library XP (1 for short, 2
+# for long works, once per item and mode).
+type LibraryEngagement {
+  itemId: ID!
+  mode: LibraryEngagementMode!
+  activeSeconds: Int!
+  requiredSeconds: Int!
+  progress: Float!
+  length: Int
+  completed: Boolean!
+  xpAwarded: Int!
+  xpAvailable: Int!
 }
 
 # A user's own Library folder (nested via parentId). shareUrl is set only
@@ -1805,6 +1838,7 @@ type Query {
   myLibraryFavorites(page: Int, limit: Int): LibraryItemConnection!
   myLibraryFolderItems(folderId: ID!, page: Int, limit: Int): LibraryItemConnection!
   myLibraryItemStates(itemIds: [ID!]!): [LibraryItemState!]!
+  myLibraryEngagement(itemId: ID!): [LibraryEngagement!]!
   # Public, no login - only folders an admin has made public.
   publicLibraryFolder(shortId: String!): PublicLibraryFolder
   # ADMIN only - one status per openly licensed source.
@@ -1939,6 +1973,7 @@ type Mutation {
   moveLibraryFolder(id: ID!, parentId: ID): LibraryFolder!
   deleteLibraryFolder(id: ID!): Boolean!
   setLibraryItemInFolder(folderId: ID!, itemId: ID!, included: Boolean!): LibraryItemState!
+  recordLibraryEngagement(input: LibraryEngagementInput!): LibraryEngagement!
   # ADMIN only - exposes the folder (and its subfolders) at /f/<shortId>.
   setLibraryFolderPublic(id: ID!, isPublic: Boolean!): LibraryFolder!
   # ADMIN only - starts a background import of an openly licensed source

@@ -50,3 +50,4 @@ configMapGenerator:
       - 043-library-item-short-id.sql
       - 044-library-favorites-folders.sql
       - 045-library-media-store.sql
+      - 046-library-engagement.sql

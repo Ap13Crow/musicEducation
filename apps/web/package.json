@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "node scripts/copy-pdf-worker.mjs",
     "start": "next start",
     "lint": "next lint",
     "test:e2e": "playwright test",
@@ -22,6 +23,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^0.397.0",
     "opensheetmusicdisplay": "^2.2.0",
+    "pdfjs-dist": "4.10.38",
     "react-hook-form": "^7.52.0",
     "zod": "^3.23.8",
     "@hookform/resolvers": "^3.6.0",

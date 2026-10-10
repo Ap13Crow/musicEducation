@@ -12,6 +12,8 @@ import { PdfViewer } from '@/components/library/PdfViewer';
 import { CopyLinkButton, QrCodeButton, ShareBar, useIsAdmin } from '@/components/library/ShareBar';
 import { AddToFolderButton, FavoriteButton } from '@/components/library/ItemCollectionActions';
 import { useItemStates } from '@/components/library/LibraryCollections';
+import { useLibraryEngagement, type EngagementMode } from '@/components/library/useLibraryEngagement';
+import { EngagementChip } from '@/components/library/EngagementChip';
 import { SOURCE_LABELS } from '../sources';
 
 const GET_LIBRARY_ITEM = gql`
@@ -44,6 +46,17 @@ export default function LibraryItemView() {
       .map((file) => ({ title: file.label, url: file.url, durationSeconds: file.durationSeconds })),
   ];
 
+  // One viewer per page earns the item's XP: the player for recordings,
+  // otherwise the score / Gallica pages / first PDF. Gallica's own embed
+  // can't report progress, so it earns none.
+  const gallicaInViewer = Boolean(item && (item.pagesUrl || (item.source === 'BNF' && item.ark)));
+  const isRecording = audioTracks.length > 0 || (item?.category === 'AUDIO_RECORDING' && gallicaInViewer);
+  const trackable = isRecording || Boolean(item?.scoreUrl) || gallicaInViewer || pdfFiles.length > 0;
+  const mode: EngagementMode | null = !item || !trackable ? null : isRecording ? 'LISTEN' : 'READ';
+  const engagement = useLibraryEngagement(item?.id ?? null, mode);
+  const report = engagement.report;
+  const readReport = mode === 'READ' ? report : undefined;
+
   return (
     <main className="px-4 py-8 sm:px-6 sm:py-12">
       <div className="mx-auto max-w-5xl space-y-6">
@@ -67,11 +80,16 @@ export default function LibraryItemView() {
                 <AddToFolderButton itemId={item.id} />
                 <ShareBar itemId={item.id} shareUrl={item.shareUrl} title={item.title} />
               </div>
+              {mode && (
+                <div className="mt-3">
+                  <EngagementChip mode={mode} enabled={engagement.enabled} state={engagement.state} />
+                </div>
+              )}
             </header>
 
-            {audioTracks.length > 0 && <AudioPlayer tracks={audioTracks} attribution={item.attribution} />}
+            {audioTracks.length > 0 && <AudioPlayer tracks={audioTracks} attribution={item.attribution} onProgress={report} />}
 
-            {item.scoreUrl && <ScoreViewer url={item.scoreUrl} title={item.title} />}
+            {item.scoreUrl && <ScoreViewer url={item.scoreUrl} title={item.title} onProgress={readReport} />}
             {(item.pagesUrl || (item.source === 'BNF' && item.ark)) && (
               <GallicaViewer
                 pagesUrl={item.pagesUrl}
@@ -79,6 +97,7 @@ export default function LibraryItemView() {
                 title={item.title}
                 audio={item.category === 'AUDIO_RECORDING'}
                 fallbackEmbedUrl={item.embedUrl}
+                onProgress={item.scoreUrl ? undefined : report}
               />
             )}
             {!item.pagesUrl && !(item.source === 'BNF' && item.ark) && item.embedUrl && (
@@ -86,7 +105,9 @@ export default function LibraryItemView() {
             )}
 
             {/* No engraved MusicXML: show the first PDF score inline. */}
-            {!item.scoreUrl && pdfFiles.length > 0 && <PdfViewer url={pdfFiles[0].url} title={item.title} />}
+            {!item.scoreUrl && pdfFiles.length > 0 && (
+              <PdfViewer url={pdfFiles[0].url} title={item.title} onProgress={gallicaInViewer ? undefined : readReport} />
+            )}
 
             {pdfFiles.length > 0 && (
               <section className="card p-4" data-testid="library-files">

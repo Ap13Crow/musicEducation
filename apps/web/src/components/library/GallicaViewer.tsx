@@ -56,12 +56,15 @@ export function GallicaViewer({
   title,
   audio,
   fallbackEmbedUrl,
+  onProgress,
 }: {
   pagesUrl?: string | null;
   ark?: string | null;
   title: string;
   audio: boolean;
   fallbackEmbedUrl?: string | null;
+  // Furthest page / playback position, for library XP.
+  onProgress?: (update: { progress: number; length: number; playing?: boolean }) => void;
 }) {
   const [pages, setPages] = useState<GallicaPage[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -101,11 +104,12 @@ export function GallicaViewer({
       <AudioPlayer
         tracks={tracks.map((track, position) => ({ title: track.label ?? `Track ${position + 1}`, url: track.audioUrl! }))}
         attribution={ATTRIBUTION}
+        onProgress={onProgress}
       />
     );
   }
 
-  return <PageViewer pages={pages} title={title} index={index} setIndex={setIndex} />;
+  return <PageViewer pages={pages} title={title} index={index} setIndex={setIndex} onProgress={onProgress} />;
 }
 
 function PageViewer({
@@ -113,11 +117,13 @@ function PageViewer({
   title,
   index,
   setIndex,
+  onProgress,
 }: {
   pages: GallicaPage[];
   title: string;
   index: number;
   setIndex: (index: number) => void;
+  onProgress?: (update: { progress: number; length: number }) => void;
 }) {
   const sectionRef = useRef<HTMLElement>(null);
   const [zoom, setZoom] = useState<Zoom>(null);
@@ -129,6 +135,11 @@ function PageViewer({
   const go = useCallback((next: number) => setIndex(Math.max(0, Math.min(pages.length - 1, next))), [pages.length, setIndex]);
 
   useEffect(() => setImageState('loading'), [page.imageUrl]);
+
+  // A page counts as read once its image is actually shown.
+  useEffect(() => {
+    if (imageState === 'ready') onProgress?.({ progress: (index + 1) / pages.length, length: pages.length });
+  }, [imageState, index, pages.length, onProgress]);
 
   // Warm our server cache for the next page once this one is shown.
   useEffect(() => {
