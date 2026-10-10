@@ -40,9 +40,6 @@ const GET_COURSE = gql`
         pageInfo { totalCount }
       }
     }
-    myEnrollments(page: 1, limit: 200) {
-      nodes { id courseId progress createdAt }
-    }
     membershipOffer { available monthlyPrice yearlyPrice currency }
   }
 `;
@@ -70,13 +67,12 @@ export default function CourseDetailPage() {
   const [enrollFree, { loading: enrolling, data: enrollData }] = useMutation(ENROLL_IN_COURSE);
   const [createCheckout, { loading: checkingOut }] = useMutation(CREATE_CHECKOUT_SESSION);
 
-  // Check enrollment from DB (past sessions) OR from the current-session mutation result
-  const enrolledFromDb = (data?.myEnrollments?.nodes ?? []).some(
-    (e: any) => e.courseId === data?.course?.id,
-  );
+  // Course.myAccess is null for visitors who aren't signed in - this query
+  // must not ask for anything that needs a login (myEnrollments did, and
+  // failed the whole page for every visitor).
   const access = data?.course?.myAccess;
   // Enrolled with open lessons; a lapsed membership enrollment needs renewing.
-  const enrolled = Boolean(enrollData?.enrollInCourse) || (access ? access.hasAccess : enrolledFromDb);
+  const enrolled = Boolean(enrollData?.enrollInCourse) || Boolean(access?.hasAccess);
   const freeReason: string | null = access?.freeReason ?? (Number(data?.course?.price) === 0 ? 'FREE' : null);
   const membership = data?.membershipOffer;
 
