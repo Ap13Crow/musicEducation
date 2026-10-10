@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { gql, useMutation, useQuery } from '@apollo/client';
-import { keycloakAdminUrl, keycloakIssuer } from '@/lib/external-links';
+import { keycloakAdminUrl, keycloakIssuer, keycloakSigningInUrl } from '@/lib/external-links';
 import { useSession, signIn } from 'next-auth/react';
 import { hasRole } from '@/lib/roles';
 import { LibraryImportSearch } from '@/components/admin/LibraryImportSearch';
@@ -1161,6 +1161,12 @@ export default function AdminPage() {
             <h1 className="text-2xl font-bold">Admin Dashboard</h1>
           </div>
           <p className="text-sm text-gray-500">Manage users, content, and platform settings. Secrets remain in protected deployment configuration.</p>
+          {/* Students and teachers must use a second factor at login
+              (deploy/scripts/configure-keycloak-2fa.py); admins may opt in. */}
+          <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <Shield className="h-4 w-4 shrink-0" /> Protect your admin account: add a passkey (Face ID, Touch ID, Windows Hello) or an authenticator app.
+            <a href={keycloakSigningInUrl} target="_blank" rel="noopener noreferrer" className="font-medium underline">Set it up</a>
+          </p>
         </div>
       </div>
 

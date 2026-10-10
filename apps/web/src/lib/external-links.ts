@@ -15,7 +15,8 @@ export const liveApiEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_API === 'true'
 export const keycloakIssuer =
   process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER ?? 'https://auth.mymusic.coach/realms/mymusic-coach';
 export const keycloakAccountUrl = `${keycloakIssuer}/account`;
-export const keycloakSigningInUrl = `${keycloakAccountUrl}/#/security/signingIn`;
+// Keycloak 26 account console: passkeys, authenticator app, password.
+export const keycloakSigningInUrl = `${keycloakAccountUrl}/account-security/signing-in`;
 export const keycloakAdminUrl = keycloakIssuer.replace(
   /\/realms\/([^/]+)$/,
   (_match, realm) => `/admin/${realm}/console`,
