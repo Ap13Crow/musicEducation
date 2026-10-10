@@ -806,8 +806,9 @@ const UPDATE_ADMIN_SETTING = gql`
 // mymusic.coach Plus prices (API lib/membership.ts). Empty = that plan is
 // not on sale; the membership page shows "opens soon" while neither is set.
 const MEMBERSHIP_PRICE_FIELDS = [
-  { key: 'membership.monthlyPrice', label: 'Monthly price (CHF)' },
-  { key: 'membership.yearlyPrice', label: 'Yearly price (CHF)' },
+  { key: 'membership.monthlyPrice', label: 'Monthly price (CHF)', placeholder: 'not on sale' },
+  { key: 'membership.yearlyPrice', label: 'Yearly price (CHF)', placeholder: 'not on sale' },
+  { key: 'membership.launchAfterCourses', label: 'On sale after more than … courses', placeholder: 'no minimum' },
 ];
 
 function MembershipPricesCard() {
@@ -818,6 +819,7 @@ function MembershipPricesCard() {
   const stored = (key: string) => data?.adminSettings?.find((setting: any) => setting.key === key)?.value ?? '';
   const value = (key: string) => values[key] ?? stored(key);
   const valid = MEMBERSHIP_PRICE_FIELDS.every(({ key }) => value(key) === '' || (Number(value(key)) > 0 && Number(value(key)) < 10000));
+  const launchAfter = Number(value('membership.launchAfterCourses')) || 0;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -840,14 +842,14 @@ function MembershipPricesCard() {
         </p>
       </div>
       <div className="flex flex-wrap items-end gap-3">
-        {MEMBERSHIP_PRICE_FIELDS.map(({ key, label }) => (
+        {MEMBERSHIP_PRICE_FIELDS.map(({ key, label, placeholder }) => (
           <label key={key} className="flex flex-col gap-1 text-xs text-gray-600">
             {label}
             <input
               inputMode="decimal"
               value={value(key)}
               onChange={(event) => { setSaved(false); setValues((current) => ({ ...current, [key]: event.target.value.replace(',', '.') })); }}
-              placeholder="not on sale"
+              placeholder={placeholder}
               className="w-36 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
             />
           </label>
@@ -855,6 +857,11 @@ function MembershipPricesCard() {
         <button type="submit" disabled={!valid || loading} className="btn-primary">{loading ? 'Saving…' : 'Save prices'}</button>
         <Link href="/membership" target="_blank" className="text-sm text-primary-700 underline">View page</Link>
       </div>
+      {launchAfter > 0 && (
+        <p className="text-xs text-gray-500">
+          The membership goes on sale automatically once more than {launchAfter} courses are published - leave this empty to sell it right away.
+        </p>
+      )}
       {saved && <p className="text-sm text-green-700">Saved.</p>}
       {error && <p className="text-sm text-red-700">{error.message}</p>}
     </form>

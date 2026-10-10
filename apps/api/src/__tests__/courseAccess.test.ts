@@ -87,3 +87,24 @@ describe('membership state', () => {
     expect(real.periodEnd({ items: { data: [{ current_period_end: 1800000500 }] } } as any).getTime()).toBe(1800000500000);
   });
 });
+
+describe('membership launch threshold', () => {
+  const real = jest.requireActual('../lib/membership');
+  const prisma = (settings: Record<string, string>, published: number) =>
+    ({
+      adminSetting: { findMany: jest.fn(async () => Object.entries(settings).map(([key, value]) => ({ key, value }))) },
+      course: { count: jest.fn(async () => published) },
+    }) as any;
+
+  it('stays off sale until more than the threshold of courses is published', async () => {
+    const settings = { 'membership.monthlyPrice': '15', 'membership.yearlyPrice': '150', 'membership.launchAfterCourses': '20' };
+    expect(await real.membershipOffer(prisma(settings, 12))).toMatchObject({ available: false, monthlyPrice: 15, yearlyPrice: 150, publishedCourses: 12, launchAfterCourses: 20 });
+    expect((await real.membershipOffer(prisma(settings, 20))).available).toBe(false);
+    expect((await real.membershipOffer(prisma(settings, 21))).available).toBe(true);
+  });
+
+  it('needs a price, and sells right away without a threshold', async () => {
+    expect((await real.membershipOffer(prisma({}, 50))).available).toBe(false);
+    expect((await real.membershipOffer(prisma({ 'membership.monthlyPrice': '15' }, 0))).available).toBe(true);
+  });
+});

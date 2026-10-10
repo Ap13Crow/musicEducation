@@ -1206,8 +1206,11 @@ type MembershipOffer {
   currency: String!
   monthlyPrice: Float
   yearlyPrice: Float
-  # False until an admin sets a price.
+  # False until an admin sets a price and, when a launch threshold is set,
+  # until more than that many courses are published.
   available: Boolean!
+  publishedCourses: Int!
+  launchAfterCourses: Int
 }
 
 # mymusic.coach Plus - every paid course included while active.

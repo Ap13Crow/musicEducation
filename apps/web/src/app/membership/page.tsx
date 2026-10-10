@@ -11,7 +11,7 @@ import { BookOpen, CheckCircle2, GraduationCap, Library, Sparkles } from 'lucide
 
 const MEMBERSHIP = gql`
   query MembershipPage {
-    membershipOffer { available monthlyPrice yearlyPrice currency }
+    membershipOffer { available monthlyPrice yearlyPrice currency publishedCourses launchAfterCourses }
   }
 `;
 const MY_MEMBERSHIP = gql`
@@ -100,7 +100,8 @@ export default function MembershipPage() {
           </section>
         ) : !offer ? null : !offer.available ? (
           <p className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-4 text-gray-700">
-            The membership opens soon. Until then, each course can be bought on its own.
+            The membership opens soon{offer.launchAfterCourses ? ` - as soon as more than ${offer.launchAfterCourses} courses are online (${offer.publishedCourses} so far)` : ''}
+            {offer.monthlyPrice ? `, at ${offer.currency} ${Number(offer.monthlyPrice).toFixed(2)} a month` : ''}. Until then, each course can be bought on its own.
           </p>
         ) : (
           <section className="grid gap-4 sm:grid-cols-2">

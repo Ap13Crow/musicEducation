@@ -19,6 +19,9 @@ export const MEMBERSHIP_PRICE_KEYS: Record<MembershipPlan, string> = {
   MONTHLY: 'membership.monthlyPrice',
   YEARLY: 'membership.yearlyPrice',
 };
+// On sale only once more than this many courses are published (unset: no
+// minimum) - a membership is only worth it with a real catalogue.
+export const MEMBERSHIP_LAUNCH_KEY = 'membership.launchAfterCourses';
 const ACTIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);
 const RECHECK_MS = 60 * 60 * 1000;
 
@@ -32,17 +35,33 @@ export interface MembershipOffer {
   monthlyPrice: number | null;
   yearlyPrice: number | null;
   available: boolean;
+  // Courses published now, and how many must be passed before launch.
+  publishedCourses: number;
+  launchAfterCourses: number | null;
 }
 
 export async function membershipOffer(prisma: PrismaClient): Promise<MembershipOffer> {
-  const rows = await prisma.adminSetting.findMany({ where: { key: { in: Object.values(MEMBERSHIP_PRICE_KEYS) } } });
+  const [rows, publishedCourses] = await Promise.all([
+    prisma.adminSetting.findMany({ where: { key: { in: [...Object.values(MEMBERSHIP_PRICE_KEYS), MEMBERSHIP_LAUNCH_KEY] } } }),
+    prisma.course.count({ where: { status: 'PUBLISHED' } }),
+  ]);
   const price = (plan: MembershipPlan) => {
     const value = Number(rows.find((row: { key: string }) => row.key === MEMBERSHIP_PRICE_KEYS[plan])?.value);
     return Number.isFinite(value) && value > 0 ? Math.round(value * 100) / 100 : null;
   };
   const monthlyPrice = price('MONTHLY');
   const yearlyPrice = price('YEARLY');
-  return { currency: 'CHF', monthlyPrice, yearlyPrice, available: Boolean(monthlyPrice || yearlyPrice) };
+  const launch = Number(rows.find((row: { key: string }) => row.key === MEMBERSHIP_LAUNCH_KEY)?.value);
+  const launchAfterCourses = Number.isInteger(launch) && launch > 0 ? launch : null;
+  const launched = launchAfterCourses === null || publishedCourses > launchAfterCourses;
+  return {
+    currency: 'CHF',
+    monthlyPrice,
+    yearlyPrice,
+    available: Boolean(monthlyPrice || yearlyPrice) && launched,
+    publishedCourses,
+    launchAfterCourses,
+  };
 }
 
 // Stripe moved current_period_end from the subscription to its items in
@@ -92,7 +111,7 @@ export async function hasActiveMembership(prisma: PrismaClient, userId: string):
 export async function createMembershipCheckout(prisma: PrismaClient, user: { id: string; email?: string | null }, plan: MembershipPlan, frontendUrl: string) {
   const offer = await membershipOffer(prisma);
   const price = plan === 'MONTHLY' ? offer.monthlyPrice : offer.yearlyPrice;
-  if (!price) throw new Error('This membership plan is not on sale yet.');
+  if (!price || !offer.available) throw new Error('This membership plan is not on sale yet.');
   if (await hasActiveMembership(prisma, user.id)) throw new Error('You already have an active membership.');
   const metadata = { userId: user.id, type: 'membership', refId: plan };
   const session = await stripe().checkout.sessions.create({
