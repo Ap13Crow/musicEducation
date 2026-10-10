@@ -8,6 +8,13 @@ import Link from 'next/link';
 
 const INSTRUMENTS = ['Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute', 'Clarinet', 'Oboe', 'Trumpet', 'Organ', 'Harp', 'Percussion', 'Composition', 'Theory'];
 const LEVELS = ['All', 'Beginner', 'Intermediate', 'Advanced', 'Professional'];
+// Course languages, named in their own language ('' = all).
+const LANGUAGES = [
+  { code: '', label: 'All languages' },
+  { code: 'en', label: 'English' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'fr', label: 'Français' },
+];
 
 const GET_COURSES = gql`
   query GetCourses($filter: CourseFilterInput, $page: Int, $limit: Int) {
@@ -15,7 +22,7 @@ const GET_COURSES = gql`
       nodes {
         id slug title shortSummary thumbnailUrl price currency
         level avgRating totalReviews totalEnrollments totalDurationMin
-        instruments isFreeTier
+        instruments isFreeTier language
         teacher { id headline user { displayName avatarUrl } }
       }
       pageInfo { totalCount hasNextPage }
@@ -96,6 +103,7 @@ export default function CoursesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [freeOnly, setFreeOnly] = useState(false);
+  const [activeLanguage, setActiveLanguage] = useState('');
 
   const { data: session } = useSession();
   const liveApiEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_API === 'true';
@@ -105,9 +113,10 @@ export default function CoursesPage() {
   if (activeInstrument) filter.instrument = activeInstrument;
   if (searchQuery) filter.search = searchQuery;
   if (freeOnly) filter.isFreeTier = true;
+  if (activeLanguage) filter.language = activeLanguage;
 
   const { data, loading, error } = useQuery(GET_COURSES, {
-    variables: { filter: Object.keys(filter).length > 0 ? filter : undefined, page: 1, limit: 24 },
+    variables: { filter: Object.keys(filter).length > 0 ? filter : undefined, page: 1, limit: 60 },
     skip: !liveApiEnabled,
   });
   const { data: enrollmentData } = useQuery(GET_MY_ENROLLMENTS, { skip: !liveApiEnabled || !session });
@@ -123,23 +132,25 @@ export default function CoursesPage() {
       if (activeLevel !== 'All' && c.level?.toUpperCase() !== activeLevel.toUpperCase()) return false;
       if (activeInstrument && !c.instruments?.some((i: string) => i.toLowerCase() === activeInstrument.toLowerCase())) return false;
       if (freeOnly && !c.isFreeTier) return false;
+      if (activeLanguage && c.language !== activeLanguage) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         if (!c.title?.toLowerCase().includes(q) && !c.shortSummary?.toLowerCase().includes(q)) return false;
       }
       return true;
     });
-  }, [data, activeLevel, activeInstrument, searchQuery, freeOnly]);
+  }, [data, activeLevel, activeInstrument, searchQuery, freeOnly, activeLanguage]);
 
   const totalCount = data?.courses?.pageInfo?.totalCount ?? filteredCourses.length;
   const usingFallback = false;
-  const hasActiveFilters = activeLevel !== 'All' || !!activeInstrument || !!searchQuery || freeOnly;
+  const hasActiveFilters = activeLevel !== 'All' || !!activeInstrument || !!searchQuery || freeOnly || !!activeLanguage;
 
   function clearFilters() {
     setActiveLevel('All');
     setActiveInstrument('');
     setSearchQuery('');
     setFreeOnly(false);
+    setActiveLanguage('');
   }
 
   return (
@@ -267,6 +278,16 @@ export default function CoursesPage() {
               {level}
             </button>
           ))}
+          <select
+            aria-label="Course language"
+            value={activeLanguage}
+            onChange={(event) => setActiveLanguage(event.target.value)}
+            className="rounded-full border border-gray-200 bg-white px-4 py-1.5 text-sm text-gray-600 hover:border-primary-500 sm:ml-auto"
+          >
+            {LANGUAGES.map((language) => (
+              <option key={language.code} value={language.code}>{language.label}</option>
+            ))}
+          </select>
         </div>
 
         {loading && (

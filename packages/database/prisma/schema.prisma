@@ -506,6 +506,8 @@ model Course {
   status           CourseStatus @default(DRAFT)
   isFreeTier       Boolean      @default(false)
   language         String       @default("en")
+  // Shared by a course and its editions in other languages (054).
+  translationKey   String?
   thumbnailUrl     String?
   categoryId       String?
   teacherProfileId String?
@@ -521,6 +523,8 @@ model Course {
   enrollments    Enrollment[]
   reviews        Review[]
   invitations    CourseInvitation[]
+
+  @@index([translationKey])
 }
 
 model CourseSection {

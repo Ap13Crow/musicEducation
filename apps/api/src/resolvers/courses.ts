@@ -402,6 +402,14 @@ export const courseResolvers = {
   },
 
   Course: {
+    async translations(course: any, _: unknown, { prisma }: GraphQLContext) {
+      if (!course.translationKey) return [];
+      return prisma.course.findMany({
+        where: { translationKey: course.translationKey, status: 'PUBLISHED', id: { not: course.id } },
+        select: { slug: true, language: true, title: true },
+        orderBy: { language: 'asc' },
+      });
+    },
     async teacher(course: any, _: unknown, { prisma }: GraphQLContext) {
       if (!course.teacherProfileId) return null;
       return prisma.teacherProfile.findUnique({ where: { id: course.teacherProfileId } });

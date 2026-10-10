@@ -35,6 +35,10 @@ export interface RecordingFacts {
   ingestedAt: Date;
 }
 
+// The work's main title: "Ave Maria: meditation" and "Ave Maria" are one
+// work catalogued twice (the other checks decide whether it is one recording).
+export const workKey = (title: string) => titleKey(title.split(/\s*[:;]\s*/)[0]);
+
 const fold = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 // "78 rpm record · Edison · Marie Rappold; Albert Spalding" and
@@ -88,8 +92,8 @@ function closeLengths(a: number | null, b: number | null, tolerance: number): bo
 export function sameRecording(a: RecordingFacts, b: RecordingFacts): boolean {
   if (a.id === b.id || a.source !== b.source) return false;
   if (a.sha256s.some((sha) => b.sha256s.includes(sha))) return true;
-  const key = titleKey(a.title);
-  if (key.length < 3 || key !== titleKey(b.title) || a.files.length !== b.files.length) return false;
+  const key = workKey(a.title);
+  if (key.length < 3 || key !== workKey(b.title) || a.files.length !== b.files.length) return false;
   const composersA = creatorTokens(a.creator);
   const composersB = creatorTokens(b.creator);
   if (composersA.size && composersB.size && ![...composersA].some((word) => composersB.has(word))) return false;
@@ -120,7 +124,7 @@ export function sameRecording(a: RecordingFacts, b: RecordingFacts): boolean {
 export function duplicateGroups(items: RecordingFacts[]): RecordingFacts[][] {
   const byTitle = new Map<string, RecordingFacts[]>();
   for (const item of items) {
-    const key = `${item.source}#${titleKey(item.title)}`;
+    const key = `${item.source}#${workKey(item.title)}`;
     byTitle.set(key, [...(byTitle.get(key) ?? []), item]);
   }
   const groups: RecordingFacts[][] = [];
@@ -183,8 +187,8 @@ export interface DuplicateReport {
 export async function hideDuplicateRecordings(prisma: PrismaClient, options: { apply: boolean; onlyIds?: string[] }): Promise<DuplicateReport> {
   let items = await loadRecordingFacts(prisma);
   if (options.onlyIds) {
-    const wanted = new Set(items.filter((item) => options.onlyIds!.includes(item.id)).map((item) => `${item.source}#${titleKey(item.title)}`));
-    items = items.filter((item) => wanted.has(`${item.source}#${titleKey(item.title)}`));
+    const wanted = new Set(items.filter((item) => options.onlyIds!.includes(item.id)).map((item) => `${item.source}#${workKey(item.title)}`));
+    items = items.filter((item) => wanted.has(`${item.source}#${workKey(item.title)}`));
   }
   const report: DuplicateReport = { groups: [], hidden: 0 };
   for (const group of duplicateGroups(items)) {

@@ -41,10 +41,12 @@ export interface MembershipOffer {
 }
 
 export async function membershipOffer(prisma: PrismaClient): Promise<MembershipOffer> {
-  const [rows, publishedCourses] = await Promise.all([
+  const [rows, published] = await Promise.all([
     prisma.adminSetting.findMany({ where: { key: { in: [...Object.values(MEMBERSHIP_PRICE_KEYS), MEMBERSHIP_LAUNCH_KEY] } } }),
-    prisma.course.count({ where: { status: 'PUBLISHED' } }),
+    prisma.course.findMany({ where: { status: 'PUBLISHED' }, select: { id: true, translationKey: true } }),
   ]);
+  // A course in English, German and French is one course, not three.
+  const publishedCourses = new Set(published.map((course: { id: string; translationKey: string | null }) => course.translationKey ?? course.id)).size;
   const price = (plan: MembershipPlan) => {
     const value = Number(rows.find((row: { key: string }) => row.key === MEMBERSHIP_PRICE_KEYS[plan])?.value);
     return Number.isFinite(value) && value > 0 ? Math.round(value * 100) / 100 : null;

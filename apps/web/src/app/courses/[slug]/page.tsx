@@ -18,11 +18,16 @@ const CREATE_CHECKOUT_SESSION = gql`
   }
 `;
 
+// Course languages, named in their own language.
+const LANGUAGE_NAMES: Record<string, string> = { en: 'English', de: 'Deutsch', fr: 'Français' };
+const languageName = (code?: string | null) => (code ? LANGUAGE_NAMES[code] ?? code.toUpperCase() : '');
+
 const GET_COURSE = gql`
   query GetCourse($slug: String) {
     course(slug: $slug) {
       id slug title description shortSummary thumbnailUrl
       price currency level status language
+      translations { slug language title }
       instruments musicStyles isFreeTier
       avgRating totalReviews totalEnrollments totalDurationMin
       myAccess { enrolled hasAccess reason freeReason }
@@ -130,6 +135,16 @@ export default function CourseDetailPage() {
           </div>
           <h1 className="mb-3 text-3xl font-bold sm:text-4xl">{course.title}</h1>
           {course.shortSummary && <p className="mb-4 text-lg text-primary-100">{course.shortSummary}</p>}
+          {course.translations?.length > 0 && (
+            <p className="mb-4 flex flex-wrap items-center gap-2 text-sm text-primary-100" data-testid="course-translations">
+              <span>{languageName(course.language)} ·</span>
+              {course.translations.map((translation: { slug: string; language: string; title: string }) => (
+                <Link key={translation.slug} href={`/courses/${translation.slug}`} lang={translation.language} className="rounded-full border border-white/40 px-3 py-0.5 font-medium text-white hover:bg-white/10">
+                  {languageName(translation.language)}
+                </Link>
+              ))}
+            </p>
+          )}
 
           <div className="flex flex-wrap items-center gap-4 text-sm text-primary-200">
             {course.avgRating > 0 && (
@@ -316,7 +331,7 @@ export default function CourseDetailPage() {
                 </div>
                 <div className="flex justify-between">
                   <span>Language</span>
-                  <span className="font-medium text-gray-900">{course.language?.toUpperCase()}</span>
+                  <span className="font-medium text-gray-900">{languageName(course.language)}</span>
                 </div>
                 {course.musicStyles?.length > 0 && (
                   <div className="flex justify-between">

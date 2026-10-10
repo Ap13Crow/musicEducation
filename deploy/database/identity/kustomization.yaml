@@ -58,3 +58,4 @@ configMapGenerator:
       - 051-library-audio-sources.sql
       - 052-course-access.sql
       - 053-lesson-source-attribution.sql
+      - 054-course-translations.sql

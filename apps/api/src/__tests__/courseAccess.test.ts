@@ -93,7 +93,7 @@ describe('membership launch threshold', () => {
   const prisma = (settings: Record<string, string>, published: number) =>
     ({
       adminSetting: { findMany: jest.fn(async () => Object.entries(settings).map(([key, value]) => ({ key, value }))) },
-      course: { count: jest.fn(async () => published) },
+      course: { findMany: jest.fn(async () => Array.from({ length: published }, (_, index) => ({ id: `c${index}`, translationKey: null }))) },
     }) as any;
 
   it('stays off sale until more than the threshold of courses is published', async () => {
@@ -101,6 +101,13 @@ describe('membership launch threshold', () => {
     expect(await real.membershipOffer(prisma(settings, 12))).toMatchObject({ available: false, monthlyPrice: 15, yearlyPrice: 150, publishedCourses: 12, launchAfterCourses: 20 });
     expect((await real.membershipOffer(prisma(settings, 20))).available).toBe(false);
     expect((await real.membershipOffer(prisma(settings, 21))).available).toBe(true);
+  });
+
+  it('counts a course once across its languages', async () => {
+    const editions = { adminSetting: { findMany: jest.fn(async () => []) }, course: { findMany: jest.fn(async () => [
+      { id: 'a', translationKey: 'bach' }, { id: 'b', translationKey: 'bach' }, { id: 'c', translationKey: 'bach' }, { id: 'd', translationKey: null },
+    ]) } } as any;
+    expect((await real.membershipOffer(editions)).publishedCourses).toBe(2);
   });
 
   it('needs a price, and sells right away without a threshold', async () => {

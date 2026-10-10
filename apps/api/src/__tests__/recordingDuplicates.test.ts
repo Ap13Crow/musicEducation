@@ -51,6 +51,7 @@ describe('duplicate recordings (Ave Maria)', () => {
       rec({ source: 'EUROPEANA', title, date: null, creator: 'Johann Sebastian Bach; Charles Gounod', documentType: `Sound recording${performers ? ` · ${performers}` : ''}`, files: [durationSeconds ? { durationSeconds } : {}] });
     // Marina Kārkliņa-Olava catalogued twice: 162.8 s and 162.1 s.
     expect(sameRecording(lndb('Marina Kārkliņa-Olava', 163), lndb('Marina Kārkliņa-Olava', 162, 'Ave Maria : meditācija'))).toBe(true);
+    expect(duplicateGroups([lndb('Marina Kārkliņa-Olava', 163), lndb('Marina Kārkliņa-Olava', 162, 'Ave Maria: meditation')])).toHaveLength(1);
     // Ada Benefelde's two recordings (166 s, and 214 s with Verners Taube).
     expect(sameRecording(lndb('Ada Benefelde', 166), lndb('Ada Benefelde; Verners Taube', 214))).toBe(false);
     // No performer named, or no length: not enough to merge.

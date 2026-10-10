@@ -543,6 +543,8 @@ type Course {
   status: CourseStatus!
   isFreeTier: Boolean!
   language: String!
+  # The same course in other languages (published editions only).
+  translations: [CourseTranslation!]!
   thumbnailUrl: String
   categoryId: ID
   teacherProfileId: ID
@@ -558,6 +560,12 @@ type Course {
   category: Category
   sections: [CourseSection!]
   reviews(page: Int, limit: Int): ReviewConnection
+}
+
+type CourseTranslation {
+  slug: String!
+  language: String!
+  title: String!
 }
 
 type CourseSection {
