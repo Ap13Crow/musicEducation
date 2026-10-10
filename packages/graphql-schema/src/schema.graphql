@@ -635,6 +635,8 @@ type LibraryFile {
   contentType: String!
   # Audio tracks only, when the source reports it.
   durationSeconds: Int
+  # Permanent public link to this one file (https://<app>/l/<shortId>/<n>).
+  shareUrl: String!
 }
 
 enum LibraryImportSource {
@@ -673,6 +675,10 @@ enum OpenScoreCorpus {
 
 type LibraryItem {
   id: ID!
+  # Immutable handle behind shareUrl - never changes once assigned.
+  shortId: String!
+  # Permanent public link (https://<app>/l/<shortId>) for sharing and QR codes.
+  shareUrl: String!
   source: LibrarySource!
   ark: String!
   category: LibraryItemCategory!
@@ -709,6 +715,16 @@ type LibraryItem {
   license: String
   attribution: String
   ingestedAt: DateTime!
+}
+
+# What a permanent /l/<shortId> link resolves to. available is false once an
+# admin has hidden the item - the link then shows a "no longer available"
+# page instead of breaking.
+type LibraryPermalink {
+  shortId: String!
+  itemId: ID!
+  title: String!
+  available: Boolean!
 }
 
 type LibraryItemConnection {
@@ -1745,6 +1761,7 @@ type Query {
   # Library - public, no login required, matches Query.events.
   libraryItems(filter: LibraryItemFilterInput, page: Int, limit: Int): LibraryItemConnection!
   libraryItem(id: ID!): LibraryItem
+  libraryPermalink(shortId: String!): LibraryPermalink
   # ADMIN only - one status per openly licensed source.
   libraryImportStatuses: [LibraryImportStatus!]!
   # ADMIN only - live-reconstructed from LibraryItem, no run-history table.

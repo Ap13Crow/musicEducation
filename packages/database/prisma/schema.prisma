@@ -1486,6 +1486,10 @@ enum LibraryItemCategory {
 
 model LibraryItem {
   id     String        @id @default(cuid())
+  // Permanent public handle for /l/<shortId> share links and QR codes - set
+  // once by the database default and never changed, so a printed QR code or
+  // a link shared outside mymusic.coach keeps working for good.
+  shortId String       @unique @default(dbgenerated("substr(md5(random()::text || clock_timestamp()::text), 1, 10)"))
   source LibrarySource @default(BNF)
   // Gallica document ARK - always has a real digitized copy: searchCatalogue
   // (packages/bnf-gallica) only returns hits whose dc:identifier resolves to

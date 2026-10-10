@@ -47,3 +47,4 @@ configMapGenerator:
       - 040-library-item-files.sql
       - 041-library-open-sources.sql
       - 042-library-item-thumbnail.sql
+      - 043-library-item-short-id.sql

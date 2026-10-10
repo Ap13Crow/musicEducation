@@ -8,13 +8,13 @@ import { NextRequest, NextResponse } from 'next/server';
 const GRAPHQL_UPSTREAM =
   process.env.GRAPHQL_SERVER_URL ?? process.env.INTERNAL_GRAPHQL_URL ?? 'http://api:4000/graphql';
 const API_ORIGIN = GRAPHQL_UPSTREAM.replace(/\/graphql\/?$/, '');
-const PASSTHROUGH_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control'];
+const PASSTHROUGH_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control', 'content-disposition'];
 
 export async function GET(req: NextRequest, { params }: { params: { path: string[] } }) {
   try {
     const path = params.path.map(encodeURIComponent).join('/');
     const range = req.headers.get('range');
-    const upstream = await fetch(`${API_ORIGIN}/library/${path}`, {
+    const upstream = await fetch(`${API_ORIGIN}/library/${path}${req.nextUrl.search}`, {
       cache: 'no-store',
       headers: range ? { range } : undefined,
     });

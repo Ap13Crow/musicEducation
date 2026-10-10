@@ -9,6 +9,7 @@ import { ingestOpenScoreCorpus } from '../lib/openscore.js';
 import { ARCHIVE_DOWNLOAD_PREFIX } from '../lib/openSources.js';
 import { LIBRARY_IMPORT_SOURCES, getLibraryImportStatus, startLibraryImport } from '../lib/libraryImports.js';
 import { bnfLibraryMediaEnabled } from '@my-music-coach/bnf-gallica';
+import { SHORT_ID_PATTERN, libraryShareUrl } from '../lib/libraryLinks.js';
 import type { GraphQLContext } from '../types.js';
 
 // Library - public, no-login browsing of the persisted LibraryItem catalogue
@@ -30,6 +31,7 @@ let openScoreIngestRunning = false;
 
 export const libraryResolvers = {
   LibraryItem: {
+    shareUrl: (item: { shortId: string }) => libraryShareUrl(item.shortId),
     // Same-origin route (apps/web proxies /api/library/* to apps/api's
     // /library/*), so the browser never fetches the upstream file itself.
     scoreUrl: (item: { id: string; musicXmlSourceUrl?: string | null }) =>
@@ -45,7 +47,7 @@ export const libraryResolvers = {
     // PDFs go through our cached same-origin route; archive.org audio is
     // streamed straight from the Internet Archive (public domain, built for
     // direct range-request streaming - no reason to relay MBs through us).
-    files: (item: { id: string; files?: unknown }) =>
+    files: (item: { id: string; shortId: string; files?: unknown }) =>
       (Array.isArray(item.files) ? item.files : []).map((file: any, index: number) => {
         const contentType = String(file?.contentType ?? 'application/pdf');
         const direct = contentType.startsWith('audio/') && String(file?.sourceUrl ?? '').startsWith(ARCHIVE_DOWNLOAD_PREFIX);
@@ -54,6 +56,7 @@ export const libraryResolvers = {
           url: direct ? file.sourceUrl : `/api/library/items/${item.id}/files/${index}.pdf`,
           contentType,
           durationSeconds: Number.isFinite(file?.durationSeconds) ? file.durationSeconds : null,
+          shareUrl: libraryShareUrl(item.shortId, index + 1),
         };
       }),
     pagesUrl: (item: { id: string; source: string }) =>
@@ -85,6 +88,18 @@ export const libraryResolvers = {
       return item;
     },
 
+    // Resolves a permanent /l/<shortId> link. A hidden item still resolves
+    // (available: false) so the link shows "no longer available", not a 404.
+    async libraryPermalink(_: unknown, { shortId }: { shortId: string }, { prisma }: GraphQLContext) {
+      if (!SHORT_ID_PATTERN.test(shortId)) return null;
+      const item = await prisma.libraryItem.findUnique({
+        where: { shortId },
+        select: { id: true, shortId: true, title: true, hiddenAt: true },
+      });
+      if (!item) return null;
+      return { shortId: item.shortId, itemId: item.id, title: item.title, available: !item.hiddenAt };
+    },
+
     async libraryImportStatuses(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
       requireRole(user, 'ADMIN');
       return Promise.all(LIBRARY_IMPORT_SOURCES.map((source) => getLibraryImportStatus(prisma, source)));
@@ -111,7 +126,7 @@ export const libraryResolvers = {
         ];
       }
       const items = await prisma.libraryItem.findMany({ where, orderBy: { ingestedAt: 'desc' } });
-      const header = 'id,source,ark,category,title,creator,date,documentType,isPublicDomainWork,permalink,hiddenAt';
+      const header = 'id,source,ark,category,title,creator,date,documentType,isPublicDomainWork,permalink,hiddenAt,shareUrl';
       const rows = items.map((item: any) =>
         [
           item.id,
@@ -125,6 +140,7 @@ export const libraryResolvers = {
           String(item.isPublicDomainWork),
           item.permalink,
           item.hiddenAt?.toISOString() ?? '',
+          libraryShareUrl(item.shortId),
         ].join(','),
       );
       return [header, ...rows].join('\n');

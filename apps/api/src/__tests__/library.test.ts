@@ -86,14 +86,16 @@ describe('Query.libraryStats / exportLibraryItemsCsv - ADMIN only', () => {
         isPublicDomainWork: true,
         permalink: 'https://gallica.bnf.fr/ark:/12148/bpt6k1',
         hiddenAt: null,
+        shortId: 'a1b2c3d4e5',
       },
     ]);
     const prisma = fakePrisma({ libraryItem: { findMany } });
 
     const csv = await libraryResolvers.Query.exportLibraryItemsCsv(null, {}, { prisma, user: adminUser } as any);
 
-    expect(csv.split('\n')[0]).toBe('id,source,ark,category,title,creator,date,documentType,isPublicDomainWork,permalink,hiddenAt');
+    expect(csv.split('\n')[0]).toBe('id,source,ark,category,title,creator,date,documentType,isPublicDomainWork,permalink,hiddenAt,shareUrl');
     expect(csv).toContain('"Requiem, K. 626"');
+    expect(csv.split('\n')[1].endsWith(',https://mymusic.coach/l/a1b2c3d4e5')).toBe(true);
   });
 });
 
@@ -193,16 +195,53 @@ describe('LibraryItem.files', () => {
   it('exposes stored files only through our own indexed route', () => {
     const files = libraryResolvers.LibraryItem.files({
       id: 'q1',
+      shortId: 'q1short',
       files: [{ label: 'Full score (PDF)', sourceUrl: 'https://raw.githubusercontent.com/OpenScore/x.pdf', contentType: 'application/pdf' }],
     });
-    expect(files).toEqual([{ label: 'Full score (PDF)', url: '/api/library/items/q1/files/0.pdf', contentType: 'application/pdf', durationSeconds: null }]);
-    expect(libraryResolvers.LibraryItem.files({ id: 'q2', files: null })).toEqual([]);
+    expect(files).toEqual([
+      {
+        label: 'Full score (PDF)',
+        url: '/api/library/items/q1/files/0.pdf',
+        contentType: 'application/pdf',
+        durationSeconds: null,
+        shareUrl: 'https://mymusic.coach/l/q1short/1',
+      },
+    ]);
+    expect(libraryResolvers.LibraryItem.files({ id: 'q2', shortId: 'q2short', files: null })).toEqual([]);
   });
 
   it('streams archive.org audio directly, with its duration', () => {
     const url = 'https://archive.org/download/MusopenCollectionAsFlac/Suk_Meditation/a.mp3';
-    expect(libraryResolvers.LibraryItem.files({ id: 'm1', files: [{ label: 'Meditation', sourceUrl: url, contentType: 'audio/mpeg', durationSeconds: 430 }] })).toEqual([
-      { label: 'Meditation', url, contentType: 'audio/mpeg', durationSeconds: 430 },
-    ]);
+    expect(
+      libraryResolvers.LibraryItem.files({
+        id: 'm1',
+        shortId: 'm1short',
+        files: [{ label: 'Meditation', sourceUrl: url, contentType: 'audio/mpeg', durationSeconds: 430 }],
+      }),
+    ).toEqual([{ label: 'Meditation', url, contentType: 'audio/mpeg', durationSeconds: 430, shareUrl: 'https://mymusic.coach/l/m1short/1' }]);
+  });
+});
+
+describe('Permanent share links', () => {
+  it('builds /l/<shortId> links on the public app origin', () => {
+    expect(libraryResolvers.LibraryItem.shareUrl({ shortId: 'a1b2c3d4e5' })).toBe('https://mymusic.coach/l/a1b2c3d4e5');
+  });
+
+  it('resolves a hidden item as unavailable instead of not found', async () => {
+    const findUnique = jest.fn().mockResolvedValue({ id: 'i1', shortId: 'a1b2c3d4e5', title: 'Erlkönig', hiddenAt: new Date() });
+    const prisma = fakePrisma({ libraryItem: { findUnique } });
+    await expect(libraryResolvers.Query.libraryPermalink(null, { shortId: 'a1b2c3d4e5' }, { prisma } as any)).resolves.toEqual({
+      shortId: 'a1b2c3d4e5',
+      itemId: 'i1',
+      title: 'Erlkönig',
+      available: false,
+    });
+  });
+
+  it('rejects malformed short ids without a database lookup', async () => {
+    const findUnique = jest.fn();
+    const prisma = fakePrisma({ libraryItem: { findUnique } });
+    await expect(libraryResolvers.Query.libraryPermalink(null, { shortId: '../x' }, { prisma } as any)).resolves.toBeNull();
+    expect(findUnique).not.toHaveBeenCalled();
   });
 });

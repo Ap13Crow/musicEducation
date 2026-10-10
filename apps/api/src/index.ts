@@ -18,6 +18,7 @@ import { fetchScoreBytes, isAllowedScoreSource } from './lib/openscore.js';
 import { MUTOPIA_FTP_PREFIX } from './lib/openSources.js';
 import { startLibraryImport } from './lib/libraryImports.js';
 import { getLibraryAudioTrack, getLibraryManifest, getLibraryPageImage, sendWithRange } from './lib/libraryMedia.js';
+import { libraryQrCode, libraryShareUrl } from './lib/libraryLinks.js';
 import { bnfLibraryMediaEnabled } from '@my-music-coach/bnf-gallica';
 import type { GraphQLContext } from './types.js';
 
@@ -382,6 +383,32 @@ async function main() {
     } catch (error) {
       logger.error({ error, id: req.params.id }, 'Library thumbnail fetch failed');
       return res.status(500).send('Thumbnail unavailable');
+    }
+  });
+
+  // QR code of an item's permanent /l/<shortId> link (or one file's, with
+  // ?file=<n>). Public like the link itself; the admin UI is what offers it.
+  app.get('/library/items/:id/qr.:format(svg|png)', async (req, res) => {
+    try {
+      const item = await prisma.libraryItem.findUnique({ where: { id: req.params.id }, select: { shortId: true, files: true } });
+      if (!item) return res.status(404).send('Not found');
+      const fileNumber = req.query.file === undefined ? undefined : Number(req.query.file);
+      const fileCount = Array.isArray(item.files) ? item.files.length : 0;
+      if (fileNumber !== undefined && !(Number.isInteger(fileNumber) && fileNumber >= 1 && fileNumber <= fileCount)) {
+        return res.status(404).send('Not found');
+      }
+      const format = req.params.format as 'svg' | 'png';
+      const body = await libraryQrCode(libraryShareUrl(item.shortId, fileNumber), format);
+      res.setHeader('content-type', format === 'svg' ? 'image/svg+xml' : 'image/png');
+      res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+      if (req.query.download) {
+        const name = `mymusic-coach-${item.shortId}${fileNumber ? `-${fileNumber}` : ''}.${format}`;
+        res.setHeader('content-disposition', `attachment; filename="${name}"`);
+      }
+      return res.send(body);
+    } catch (error) {
+      logger.error({ error, id: req.params.id }, 'Library QR code generation failed');
+      return res.status(500).send('QR code unavailable');
     }
   });
 
