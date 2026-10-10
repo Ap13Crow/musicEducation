@@ -17,18 +17,47 @@ const ATTRIBUTION = 'Source: gallica.bnf.fr / Bibliothèque nationale de France'
 const ZOOM_STEPS = [null, 50, 75, 100, 125, 150, 200] as const;
 type Zoom = (typeof ZOOM_STEPS)[number];
 
+// Gallica (behind Cloudflare) sometimes blocks our server's IP outright
+// (HTTP 403 on every request) while visitors' browsers are served normally.
+// Then the browser reads the IIIF manifest itself - IIIF manifests are served
+// with open CORS - and plays/shows Gallica's files directly, the same way
+// Gallica's own embed would, so our player and page viewer stay in use.
+const CANVAS_PAGE_PATTERN = /\/canvas\/f(\d+)$/i;
+
+async function loadPagesFromGallica(ark: string, audio: boolean): Promise<GallicaPage[]> {
+  const response = await fetch(`https://gallica.bnf.fr/iiif/ark:/12148/${encodeURIComponent(ark)}/manifest.json`);
+  if (!response.ok) throw new Error(String(response.status));
+  const manifest = await response.json();
+  const canvases: any[] = manifest?.sequences?.[0]?.canvases ?? [];
+  return canvases.flatMap((canvas, index) => {
+    const pageNumber = Number(canvas?.['@id']?.match(CANVAS_PAGE_PATTERN)?.[1]) || index + 1;
+    const imageUrl: string | undefined = canvas?.images?.[0]?.resource?.['@id'];
+    if (!imageUrl) return [];
+    return [{
+      pageNumber,
+      label: canvas?.label && canvas.label !== 'null' ? String(canvas.label) : null,
+      // Same 1600 px scaled copy our own route serves.
+      imageUrl: imageUrl.replace('/full/full/', '/full/1600,/'),
+      audioUrl: audio ? `https://gallica.bnf.fr/ark:/12148/${ark}/f${pageNumber}.audio` : null,
+    }];
+  });
+}
+
 // Our own viewer for Gallica scans (sheet music, books) and recordings,
 // served through our cached /api/library routes. One page or track at a
 // time on purpose - every uncached page is an upstream Gallica request and
 // Gallica rate-limits bursts; only the next page is prefetched. When our
-// route can't reach Gallica, falls back to Gallica's own embed player.
+// route can't reach Gallica, the browser loads Gallica directly (above);
+// Gallica's own embed player is the last resort.
 export function GallicaViewer({
   pagesUrl,
+  ark,
   title,
   audio,
   fallbackEmbedUrl,
 }: {
   pagesUrl: string;
+  ark?: string | null;
   title: string;
   audio: boolean;
   fallbackEmbedUrl?: string | null;
@@ -44,12 +73,14 @@ export function GallicaViewer({
     setIndex(0);
     fetch(pagesUrl)
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
-      .then((data) => !cancelled && setPages(data.pages ?? []))
+      .then((data) => data.pages ?? [])
+      .catch(() => (ark ? loadPagesFromGallica(ark, audio) : Promise.reject(new Error('no ark'))))
+      .then((loaded: GallicaPage[]) => !cancelled && setPages(loaded))
       .catch(() => !cancelled && setFailed(true));
     return () => {
       cancelled = true;
     };
-  }, [pagesUrl]);
+  }, [pagesUrl, ark, audio]);
 
   if (failed) {
     return fallbackEmbedUrl ? (

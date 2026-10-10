@@ -17,7 +17,7 @@ import { SOURCE_LABELS } from '../sources';
 const GET_LIBRARY_ITEM = gql`
   query GetLibraryItem($id: ID!) {
     libraryItem(id: $id) {
-      id shortId shareUrl source category title creator date documentType permalink catalogueUrl
+      id shortId shareUrl source ark category title creator date documentType permalink catalogueUrl
       scoreUrl pagesUrl embedUrl audioUrl license attribution
       files { label url contentType durationSeconds shareUrl }
     }
@@ -75,6 +75,7 @@ export default function LibraryItemView() {
             {item.pagesUrl && (
               <GallicaViewer
                 pagesUrl={item.pagesUrl}
+                ark={item.ark}
                 title={item.title}
                 audio={item.category === 'AUDIO_RECORDING'}
                 fallbackEmbedUrl={item.embedUrl}
