@@ -68,8 +68,12 @@ export interface StoredObjectStream {
 
 // Streams an object, or one byte range of it (audio seeking).
 export async function readLibraryObject(sha256: string, range?: string | null): Promise<StoredObjectStream> {
-  const total = await s3().send(new HeadObjectCommand({ Bucket: bucket(), Key: objectKey(sha256) }));
-  const result = await s3().send(new GetObjectCommand({ Bucket: bucket(), Key: objectKey(sha256), Range: range ?? undefined }));
+  return readStoredKey(objectKey(sha256), range);
+}
+
+async function readStoredKey(key: string, range?: string | null): Promise<StoredObjectStream> {
+  const total = await s3().send(new HeadObjectCommand({ Bucket: bucket(), Key: key }));
+  const result = await s3().send(new GetObjectCommand({ Bucket: bucket(), Key: key, Range: range ?? undefined }));
   return {
     body: result.Body as Readable,
     contentType: result.ContentType ?? 'application/octet-stream',
@@ -82,8 +86,24 @@ export async function readLibraryObject(sha256: string, range?: string | null): 
 // Sends a stored object to the browser, honouring a single byte range so
 // audio can seek. Content never changes for a hash, so it caches forever.
 export async function sendLibraryObject(req: Request, res: Response, sha256: string): Promise<void> {
+  return sendStoredKey(req, res, objectKey(sha256));
+}
+
+// Uploaded files (lib/storage.ts, when no external S3 is configured) live
+// in the same store under "uploads/<key>" - never changed once written.
+export const UPLOADS_PREFIX = 'uploads/';
+
+export async function putStoredUpload(key: string, bytes: Buffer, contentType: string): Promise<void> {
+  await s3().send(new PutObjectCommand({ Bucket: bucket(), Key: `${UPLOADS_PREFIX}${key}`, Body: bytes, ContentType: contentType }));
+}
+
+export async function sendStoredUpload(req: Request, res: Response, key: string): Promise<void> {
+  return sendStoredKey(req, res, `${UPLOADS_PREFIX}${key}`);
+}
+
+async function sendStoredKey(req: Request, res: Response, key: string): Promise<void> {
   const range = /^bytes=\d*-\d*$/.test(req.headers.range ?? '') ? req.headers.range! : null;
-  const object = await readLibraryObject(sha256, range);
+  const object = await readStoredKey(key, range);
   res.setHeader('content-type', object.contentType);
   res.setHeader('accept-ranges', 'bytes');
   res.setHeader('cache-control', 'public, max-age=31536000, immutable');

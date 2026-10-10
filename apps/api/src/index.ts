@@ -18,7 +18,8 @@ import { fetchScoreBytes, isAllowedScoreSource } from './lib/openscore.js';
 import { MUTOPIA_FTP_PREFIX } from './lib/openSources.js';
 import { scheduleNightlyLibraryImports, startLibraryImport } from './lib/libraryImports.js';
 import { libraryFolderShareUrl, libraryQrCode, libraryShareUrl } from './lib/libraryLinks.js';
-import { libraryMediaStoreConfigured, sendLibraryObject } from './lib/libraryMediaStore.js';
+import { libraryMediaStoreConfigured, putStoredUpload, sendLibraryObject, sendStoredUpload } from './lib/libraryMediaStore.js';
+import { verifyLocalUploadToken } from './lib/storage.js';
 import { libraryMirrorPending } from './lib/libraryMirror.js';
 import type { GraphQLContext } from './types.js';
 
@@ -446,6 +447,38 @@ async function main() {
   // allowlist and cache as the score route above.
   // Audio files of an item - served only from the local copy (before it
   // exists, the resolver points browsers at the source directly).
+  // Uploads into our own media store when no external S3 is configured
+  // (lib/storage.ts): the browser PUTs the file to the signed link that
+  // requestUploadUrl handed out; files are then served read-only by key.
+  app.put('/uploads/:token', express.raw({ type: () => true, limit: '150mb' }), async (req, res) => {
+    const grant = verifyLocalUploadToken(req.params.token);
+    if (!grant) return res.status(403).send('This upload link is invalid or has expired.');
+    const contentType = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+    if (contentType !== grant.contentType.toLowerCase()) return res.status(415).send('Unexpected file type.');
+    const body = req.body as Buffer;
+    if (!Buffer.isBuffer(body) || body.length === 0) return res.status(400).send('Empty upload.');
+    if (body.length > grant.maxBytes) return res.status(413).send('File too large.');
+    try {
+      await putStoredUpload(grant.key, body, grant.contentType);
+      return res.status(200).send('OK');
+    } catch (error) {
+      logger.error({ error }, 'Upload to the media store failed');
+      return res.status(502).send('Upload failed - please try again.');
+    }
+  });
+
+  app.get('/files/*', async (req, res) => {
+    const key = String((req.params as any)[0] ?? '');
+    if (!key || key.includes('..')) return res.status(404).send('Not found');
+    try {
+      return await sendStoredUpload(req, res, key);
+    } catch (error: any) {
+      if (error?.name === 'NotFound' || error?.$metadata?.httpStatusCode === 404) return res.status(404).send('Not found');
+      logger.error({ error, key }, 'Stored file read failed');
+      return res.status(502).send('File temporarily unavailable');
+    }
+  });
+
   app.get('/library/items/:id/files/:index.audio', async (req, res) => {
     try {
       const local = await storedMedia(req.params.id, 'FILE', Number(req.params.index));

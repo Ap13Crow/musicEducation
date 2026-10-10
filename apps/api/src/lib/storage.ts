@@ -1,16 +1,82 @@
-import { randomUUID } from 'crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { GraphQLError } from 'graphql';
+import { libraryMediaStoreConfigured, putStoredUpload } from './libraryMediaStore.js';
 
-// S3-compatible object storage (DigitalOcean Spaces in production). Absent
-// config means uploads stay disabled rather than crashing the API - callers
-// should check storageConfigured() (exposed as a GraphQL query) before
-// showing upload UI at all.
-export function storageConfigured(): boolean {
+// Uploaded files go to an external S3-compatible bucket when S3_* is set
+// (browser PUTs to a presigned URL). Without it, they go to our own media
+// store (Garage, lib/libraryMediaStore.ts) through the API: the browser PUTs
+// to /api/uploads/<signed token> and the file is served from /api/files/<key>.
+// Neither configured means uploads stay disabled - callers check
+// storageConfigured() (a GraphQL query) before showing upload UI at all.
+function externalS3Configured(): boolean {
   return Boolean(
     process.env.S3_ENDPOINT && process.env.S3_BUCKET && process.env.S3_ACCESS_KEY_ID && process.env.S3_SECRET_ACCESS_KEY,
   );
+}
+
+function localUploadsConfigured(): boolean {
+  return !externalS3Configured() && libraryMediaStoreConfigured() && Boolean(process.env.JWT_SECRET && process.env.FRONTEND_URL);
+}
+
+export function storageConfigured(): boolean {
+  return externalS3Configured() || localUploadsConfigured();
+}
+
+const LOCAL_FILES_PATH = '/api/files/';
+const LOCAL_UPLOAD_TTL_MS = 15 * 60 * 1000;
+// Per purpose: PDFs and images for slides/documents, longer audio.
+const LOCAL_MAX_BYTES: Record<string, number> = { audio: 150 * 1024 * 1024, other: 40 * 1024 * 1024 };
+
+const frontendOrigin = () => process.env.FRONTEND_URL!.replace(/\/$/, '');
+
+export function localFileUrl(key: string): string {
+  return `${frontendOrigin()}${LOCAL_FILES_PATH}${key.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+function sign(payload: string): string {
+  return createHmac('sha256', process.env.JWT_SECRET!).update(`upload:${payload}`).digest('base64url');
+}
+
+// What a signed upload link allows: one key, one content type, until exp.
+export interface LocalUploadGrant {
+  key: string;
+  contentType: string;
+  maxBytes: number;
+  exp: number;
+}
+
+export function createLocalUploadToken(grant: LocalUploadGrant): string {
+  const payload = Buffer.from(JSON.stringify(grant)).toString('base64url');
+  return `${payload}.${sign(payload)}`;
+}
+
+export function verifyLocalUploadToken(token: string, now = Date.now()): LocalUploadGrant | null {
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature || !process.env.JWT_SECRET) return null;
+  const expected = Buffer.from(sign(payload));
+  const given = Buffer.from(signature);
+  if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
+  try {
+    const grant = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as LocalUploadGrant;
+    if (typeof grant.key !== 'string' || !grant.key || grant.key.includes('..') || grant.exp < now) return null;
+    return grant;
+  } catch {
+    return null;
+  }
+}
+
+// Key of a /api/files/... URL on our own site, or null.
+export function localKeyFromUrl(fileUrl: string): string | null {
+  try {
+    const parsed = new URL(fileUrl);
+    if (parsed.search || parsed.hash || parsed.origin !== new URL(frontendOrigin()).origin) return null;
+    if (!parsed.pathname.startsWith(LOCAL_FILES_PATH)) return null;
+    return parsed.pathname.slice(LOCAL_FILES_PATH.length).split('/').map(decodeURIComponent).join('/');
+  } catch {
+    return null;
+  }
 }
 
 let cachedClient: S3Client | null = null;
@@ -103,6 +169,11 @@ export async function createUploadTarget(
   }
 
   const key = `${config.prefix}/${ownerId}/${Date.now()}-${randomUUID()}-${sanitizeFilename(filename)}`;
+  if (localUploadsConfigured()) {
+    const maxBytes = contentType.startsWith('audio/') ? LOCAL_MAX_BYTES.audio : LOCAL_MAX_BYTES.other;
+    const token = createLocalUploadToken({ key, contentType, maxBytes, exp: Date.now() + LOCAL_UPLOAD_TTL_MS });
+    return { uploadUrl: `${frontendOrigin()}/api/uploads/${token}`, fileUrl: localFileUrl(key), key };
+  }
   const command = new PutObjectCommand({ Bucket: process.env.S3_BUCKET!, Key: key, ContentType: contentType });
   const uploadUrl = await getSignedUrl(getClient(), command, { expiresIn: 300 });
   const fileUrl = `${process.env.S3_ENDPOINT!.replace(/\/$/, '')}/${process.env.S3_BUCKET}/${key}`;
@@ -136,6 +207,10 @@ export async function uploadServerFetchedAsset(
   }
 
   const key = `${config.prefix}/${ownerId}/${Date.now()}-${randomUUID()}-${sanitizeFilename(filenameHint)}`;
+  if (localUploadsConfigured()) {
+    await putStoredUpload(key, bytes, contentType);
+    return localFileUrl(key);
+  }
   await getClient().send(new PutObjectCommand({ Bucket: process.env.S3_BUCKET!, Key: key, Body: bytes, ContentType: contentType }));
   return `${process.env.S3_ENDPOINT!.replace(/\/$/, '')}/${process.env.S3_BUCKET}/${key}`;
 }
@@ -159,6 +234,10 @@ export function isOwnedUploadUrl(fileUrl: string, purpose: UploadPurpose, ownerI
   if (!storageConfigured()) return false;
   const config = PURPOSES[purpose];
   if (!config) return false;
+  if (localUploadsConfigured()) {
+    const key = localKeyFromUrl(fileUrl);
+    return Boolean(key && key.startsWith(`${config.prefix}/${ownerId}/`));
+  }
 
   let parsed: URL;
   let endpoint: URL;
