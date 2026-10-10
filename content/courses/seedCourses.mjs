@@ -52,7 +52,10 @@ for (const folder of readdirSync(root)) {
     currency: 'CHF',
     status: 'PUBLISHED',
     isFreeTier: false,
-    language: 'en',
+    // English originals key their editions by their own slug; a German or
+    // French module names its original in COURSE.translationOf.
+    language: info.language ?? 'en',
+    translationKey: info.translationOf ?? info.slug,
     thumbnailUrl,
     categoryId: category.id,
     teacherProfileId: teacher.id,

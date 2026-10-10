@@ -71,6 +71,19 @@ ol.steps li::before { content: counter(step); position: absolute; left: 0; top: 
 """
 
 
+# The few words the templates add themselves, per course language
+# (COURSE['language'], default English).
+LABELS = {
+    'en': {'week': 'Week', 'listen': 'Listen', 'kicker': 'First-level course'},
+    'de': {'week': 'Woche', 'listen': 'Hören', 'kicker': 'Einführungskurs'},
+    'fr': {'week': 'Semaine', 'listen': 'Écouter', 'kicker': "Cours d'initiation"},
+}
+
+
+def labels(module):
+    return LABELS[module.COURSE.get('language', 'en')]
+
+
 def esc(text):
     return html.escape(str(text))
 
@@ -107,10 +120,11 @@ def slide_html(module, slide, label):
         </div></div>"""
     elif kind == 'listen':
         steps = ''.join(f'<li>{esc(p)}</li>' for p in slide['points'])
-        body = f"""<div class="frame listen"><div class="kicker">Listen</div><h2>{esc(slide['title'])}</h2><div><span class="work">{esc(slide['work'])}</span></div><ol class="steps">{steps}</ol></div>"""
+        body = f"""<div class="frame listen"><div class="kicker">{esc(labels(module)['listen'])}</div><h2>{esc(slide['title'])}</h2><div><span class="work">{esc(slide['work'])}</span></div><ol class="steps">{steps}</ol></div>"""
     else:
         raise ValueError(kind)
-    return f'<!doctype html><html><head><meta charset="utf-8"><style>{CSS}</style></head><body><div class="bar"></div>{body}{footer(module, label)}</body></html>'
+    lang = module.COURSE.get('language', 'en')
+    return f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><style>{CSS}</style></head><body><div class="bar"></div>{body}{footer(module, label)}</body></html>'
 
 
 def cover_html(module):
@@ -127,7 +141,7 @@ def cover_html(module):
       .c .brand {{ position: absolute; left: 80px; bottom: 34px; font-size: 20px; color: #9aa0ad; }}
       .c .brand b {{ color: var(--brand); }}
     </style></head><body><div class="bar"></div><div class="c">
-      <div class="left"><div class="kicker">First-level course</div><h1>{esc(cover['title'])}</h1><p>{esc(cover['subtitle'])}</p><span class="tag">{esc(cover['tag'])}</span></div>
+      <div class="left"><div class="kicker">{esc(labels(module)['kicker'])}</div><h1>{esc(cover['title'])}</h1><p>{esc(cover['subtitle'])}</p><span class="tag">{esc(cover['tag'])}</span></div>
       <div class="right">{image_tag(cover['image'])}</div>
       <div class="brand"><b>mymusic.coach</b></div>
     </div></body></html>"""
@@ -151,7 +165,7 @@ def main():
                 entry = {k: v for k, v in lesson.items() if k != 'slides'}
                 entry['slides'] = []
                 for s, slide in enumerate(lesson.get('slides', []), start=1):
-                    label = f'Week {w} · {lesson["title"]}'
+                    label = f'{labels(module)["week"]} {w} · {lesson["title"]}'
                     page.set_content(slide_html(module, slide, label), wait_until='load')
                     page.wait_for_timeout(120)
                     file = f'w{w}-l{l}-s{s}.png'
