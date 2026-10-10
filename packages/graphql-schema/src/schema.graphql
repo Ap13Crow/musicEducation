@@ -620,6 +620,8 @@ enum LibrarySource {
   OPENSCORE
   MUSOPEN
   MUTOPIA
+  # Deutsche Nationalbibliothek - free online music titles.
+  DNB
 }
 
 enum LibraryItemCategory {
@@ -718,7 +720,98 @@ type LibraryItem {
   # Reuse terms (e.g. "CC0-1.0") and credit line for scoreUrl/audioUrl.
   license: String
   attribution: String
+  # Abstract / summary from the source record, when it has one.
+  description: String
   ingestedAt: DateTime!
+}
+
+# ── Library: federated admin import (Gallica + DNB) ─────────
+enum LibraryImportSearchSource {
+  BNF
+  DNB
+}
+
+enum LibrarySearchMode {
+  # every word
+  ALL
+  # any word
+  ANY
+  # the exact phrase
+  PHRASE
+}
+
+input LibraryImportSearchInput {
+  query: String!
+  # Default: all of them.
+  sources: [LibraryImportSearchSource!]
+  mode: LibrarySearchMode
+  category: LibraryItemCategory
+  yearFrom: Int
+  yearTo: Int
+  page: Int
+  # 5-50, default 25 per source.
+  pageSize: Int
+}
+
+type LibraryItemRef {
+  # Empty for a lookalike that is itself only a search result on this page.
+  id: String!
+  shortId: String!
+  title: String!
+  source: String!
+}
+
+type LibraryImportCandidate {
+  source: LibraryImportSearchSource!
+  # Gallica ARK or DNB record id.
+  externalId: String!
+  title: String!
+  creator: String
+  date: String
+  category: LibraryItemCategory!
+  documentType: String
+  # What the Library will hold: "PDF", "Page scans", "Audio".
+  format: String!
+  summary: String
+  permalink: String!
+  publicDomain: Boolean!
+  # Already imported - cannot be selected again.
+  inLibrary: LibraryItemRef
+  # Same main title (and a shared creator name) from another source.
+  possibleDuplicates: [LibraryItemRef!]!
+}
+
+type LibraryImportSourceResults {
+  source: LibraryImportSearchSource!
+  total: Int!
+  # Set when this source failed or is paused; the other sources still answer.
+  error: String
+  candidates: [LibraryImportCandidate!]!
+}
+
+type LibraryImportSearchResult {
+  query: String!
+  page: Int!
+  pageSize: Int!
+  totalPages: Int!
+  sources: [LibraryImportSourceResults!]!
+}
+
+input LibraryImportSelectionInput {
+  source: LibraryImportSearchSource!
+  externalId: String!
+}
+
+type LibraryImportFailure {
+  source: String!
+  externalId: String!
+  reason: String!
+}
+
+type LibraryImportSelectionResult {
+  imported: [LibraryItemRef!]!
+  alreadyInLibrary: [LibraryItemRef!]!
+  failed: [LibraryImportFailure!]!
 }
 
 enum LibraryEngagementMode {
@@ -1843,6 +1936,9 @@ type Query {
   publicLibraryFolder(shortId: String!): PublicLibraryFolder
   # ADMIN only - one status per openly licensed source.
   libraryImportStatuses: [LibraryImportStatus!]!
+  # ADMIN only - one page of Gallica and DNB results side by side, each row
+  # flagged when already in the Library or possibly the same work.
+  searchLibraryImportSources(input: LibraryImportSearchInput!): LibraryImportSearchResult!
   # ADMIN only - live-reconstructed from LibraryItem, no run-history table.
   libraryStats: LibraryStats!
   # ADMIN only - metadata-only CSV export, no commercial-reuse gate needed.
@@ -1980,6 +2076,9 @@ type Mutation {
   # (OpenScore, Musopen, Mutopia); poll libraryImportStatuses for progress.
   # CONFLICT while that source is already running.
   startLibraryImport(source: LibraryImportSource!): LibraryImportStatus!
+  # ADMIN only - imports the ticked search results (at most 500). Never
+  # duplicates or overwrites an item; files are copied in the background.
+  importLibrarySelection(selections: [LibraryImportSelectionInput!]!, query: String): LibraryImportSelectionResult!
 
   # Bookings
   bookSession(input: BookSessionInput!): Booking!

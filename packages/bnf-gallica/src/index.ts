@@ -1,5 +1,5 @@
 export { bnfCommercialReuseConfigured, bnfLibraryMediaEnabled, bnfAttribution } from './config.js';
-export { searchCatalogue } from './sru.js';
+export { searchCatalogue, searchCataloguePage, buildGallicaQuery, GALLICA_MAX_PAGE_SIZE } from './sru.js';
 export { getManifest, fetchPageImage, fetchPageAudio, sizedImageUrl } from './gallica.js';
 export {
   ingestLibraryTopic,
@@ -13,6 +13,7 @@ export { fetchWithRetry } from './retry.js';
 export type {
   BnfCatalogueRecord,
   BnfSearchOptions,
+  BnfPageSearchOptions,
   BnfManifest,
   BnfManifestPage,
   BnfFetchedAsset,

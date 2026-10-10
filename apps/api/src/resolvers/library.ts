@@ -7,7 +7,9 @@ import {
 import { requireRole } from '../middleware/auth.js';
 import { ingestOpenScoreCorpus } from '../lib/openscore.js';
 import { ARCHIVE_DOWNLOAD_PREFIX } from '../lib/openSources.js';
-import { LIBRARY_IMPORT_SOURCES, getLibraryImportStatus, startLibraryImport } from '../lib/libraryImports.js';
+import { LIBRARY_IMPORT_SOURCES, getLibraryImportStatus, requestLibraryImport, startLibraryImport } from '../lib/libraryImports.js';
+import { importSelection, searchImportSources } from '../lib/libraryImportSearch.js';
+import { libraryMediaStoreConfigured } from '../lib/libraryMediaStore.js';
 import { SHORT_ID_PATTERN, libraryShareUrl } from '../lib/libraryLinks.js';
 import type { GraphQLContext } from '../types.js';
 
@@ -113,6 +115,15 @@ export const libraryResolvers = {
       return Promise.all(LIBRARY_IMPORT_SOURCES.map((source) => getLibraryImportStatus(prisma, source)));
     },
 
+    async searchLibraryImportSources(_: unknown, { input }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'ADMIN');
+      try {
+        return await searchImportSources(prisma, input);
+      } catch (error) {
+        throw new GraphQLError(error instanceof Error ? error.message : 'Search failed.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+    },
+
     async libraryStats(_: unknown, __: unknown, { prisma, user }: GraphQLContext) {
       requireRole(user, 'ADMIN');
       const [totalItems, byCategoryRaw, latest] = await Promise.all([
@@ -178,6 +189,19 @@ export const libraryResolvers = {
       } finally {
         await releaseLibraryIngestLock(prisma);
       }
+    },
+
+    async importLibrarySelection(_: unknown, { selections, query }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'ADMIN');
+      let result;
+      try {
+        result = await importSelection(prisma, selections ?? [], query?.trim()?.slice(0, 200) || null);
+      } catch (error) {
+        throw new GraphQLError(error instanceof Error ? error.message : 'Import failed.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      // Files, page scans and card images follow in the background.
+      if (result.imported.length && libraryMediaStoreConfigured()) void requestLibraryImport(prisma, 'MIRROR').catch(() => undefined);
+      return result;
     },
 
     async startLibraryImport(_: unknown, { source }: { source: string }, { prisma, user }: GraphQLContext) {

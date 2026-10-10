@@ -4,4 +4,5 @@ export const SOURCE_LABELS: Record<string, { viewLabel: string; credit: string }
   OPENSCORE: { viewLabel: 'View on MuseScore', credit: 'Source: OpenScore (CC0)' },
   MUSOPEN: { viewLabel: 'View on the Internet Archive', credit: 'Source: Musopen (public domain)' },
   MUTOPIA: { viewLabel: 'View on Mutopia', credit: 'Source: Mutopia Project' },
+  DNB: { viewLabel: 'View at the Deutsche Nationalbibliothek', credit: 'Source: Deutsche Nationalbibliothek' },
 };

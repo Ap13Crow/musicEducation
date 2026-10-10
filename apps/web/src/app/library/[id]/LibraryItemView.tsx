@@ -20,7 +20,7 @@ const GET_LIBRARY_ITEM = gql`
   query GetLibraryItem($id: ID!) {
     libraryItem(id: $id) {
       id shortId shareUrl source ark category title creator date documentType permalink catalogueUrl
-      scoreUrl pagesUrl embedUrl audioUrl license attribution
+      scoreUrl pagesUrl embedUrl audioUrl license attribution description
       files { label url contentType durationSeconds shareUrl }
     }
   }
@@ -80,6 +80,12 @@ export default function LibraryItemView() {
                 <AddToFolderButton itemId={item.id} />
                 <ShareBar itemId={item.id} shareUrl={item.shareUrl} title={item.title} />
               </div>
+              {item.description && (
+                <details className="mt-3 max-w-3xl text-sm text-gray-700">
+                  <summary className="cursor-pointer select-none font-medium text-gray-800">About this work</summary>
+                  <p className="mt-2 whitespace-pre-line leading-relaxed">{item.description}</p>
+                </details>
+              )}
               {mode && (
                 <div className="mt-3">
                   <EngagementChip mode={mode} enabled={engagement.enabled} state={engagement.state} />
@@ -111,7 +117,7 @@ export default function LibraryItemView() {
 
             {pdfFiles.length > 0 && (
               <section className="card p-4" data-testid="library-files">
-                <h2 className="mb-2 text-sm font-semibold text-gray-800">Scores and parts</h2>
+                <h2 className="mb-2 text-sm font-semibold text-gray-800">{item.category === 'SHEET_MUSIC' ? 'Scores and parts' : 'Files'}</h2>
                 <ul className="flex flex-wrap gap-2">
                   {pdfFiles.map((file: any) => (
                     <li key={file.url} className="flex items-center gap-1">
@@ -135,7 +141,9 @@ export default function LibraryItemView() {
 
             {!item.scoreUrl && !item.pagesUrl && !item.embedUrl && audioTracks.length === 0 && pdfFiles.length === 0 && (
               <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
-                This item can&rsquo;t be shown here yet - open it at the source below.
+                {item.source === 'DNB'
+                  ? 'We are copying this title from the Deutsche Nationalbibliothek - it will open here in a few minutes. Until then, open it at the source below.'
+                  : <>This item can&rsquo;t be shown here yet - open it at the source below.</>}
               </p>
             )}
 

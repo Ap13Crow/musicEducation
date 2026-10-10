@@ -51,3 +51,4 @@ configMapGenerator:
       - 044-library-favorites-folders.sql
       - 045-library-media-store.sql
       - 046-library-engagement.sql
+      - 047-library-dnb-source.sql

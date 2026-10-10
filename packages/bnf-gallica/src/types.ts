@@ -31,6 +31,16 @@ export interface BnfSearchOptions {
   maximumRecords?: number;
 }
 
+/** Admin import search (searchCataloguePage). */
+export interface BnfPageSearchOptions {
+  query: string;
+  mode?: 'ALL' | 'ANY' | 'PHRASE';
+  /** Single-word Gallica dc.type, e.g. "partition", "sonore", "monographie". */
+  documentType?: string | null;
+  yearFrom?: number | null;
+  yearTo?: number | null;
+}
+
 /** One page/canvas of a digitized document, from its Gallica IIIF manifest. */
 export interface BnfManifestPage {
   pageNumber: number;

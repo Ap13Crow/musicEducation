@@ -35,6 +35,9 @@ export interface LibraryImportStatus {
 }
 
 const STALE_MS = 30 * 60 * 1000;
+// Asked for while already running - run once more when the current pass ends
+// (a MIRROR pass only sees items that existed when it started).
+const rerunRequested = new Set<LibraryImportSource>();
 const key = (source: LibraryImportSource) => `library_import:${source}`;
 
 function idle(source: LibraryImportSource): LibraryImportStatus {
@@ -118,7 +121,8 @@ export async function startLibraryImport(prisma: PrismaClient, source: LibraryIm
       // New items need card images - Musopen has none to fetch - and a
       // local copy of their files.
       if (source !== 'THUMBNAILS' && source !== 'MUSOPEN' && source !== 'MIRROR') await startLibraryImport(prisma, 'THUMBNAILS');
-      if (source !== 'MIRROR' && libraryMediaStoreConfigured()) await startLibraryImport(prisma, 'MIRROR');
+      if (source !== 'MIRROR' && libraryMediaStoreConfigured()) await requestLibraryImport(prisma, 'MIRROR');
+      if (rerunRequested.delete(source)) await startLibraryImport(prisma, source);
     })
     .catch(async (error) => {
       logger.error({ error, source }, 'Library import failed');
@@ -130,4 +134,10 @@ export async function startLibraryImport(prisma: PrismaClient, source: LibraryIm
       }).catch(() => undefined);
     });
   return status;
+}
+
+// Starts the job, or - when it is already running - queues one more pass.
+export async function requestLibraryImport(prisma: PrismaClient, source: LibraryImportSource): Promise<void> {
+  const started = await startLibraryImport(prisma, source);
+  if (!started) rerunRequested.add(source);
 }

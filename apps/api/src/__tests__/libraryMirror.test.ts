@@ -3,6 +3,10 @@ jest.mock('@my-music-coach/bnf-gallica', () => ({
   fetchPageImage: jest.fn(),
   fetchPageAudio: jest.fn(),
 }));
+jest.mock('../lib/libraryThumbnails', () => ({
+  ...jest.requireActual('../lib/libraryThumbnails'),
+  renderPdfFirstPage: jest.fn(async () => Buffer.from('jpeg')),
+}));
 jest.mock('../lib/libraryMediaStore', () => ({
   libraryMediaStoreConfigured: jest.fn().mockReturnValue(true),
   storeLibraryObject: jest.fn(async (_prisma: unknown, bytes: Buffer) => `sha-${bytes.toString()}`),
@@ -110,4 +114,69 @@ describe('library mirror', () => {
       expect.objectContaining({ where: { id: 'mut1' }, data: expect.objectContaining({ mirrorAttempts: { increment: 1 } }) }),
     );
   });
+
+  it('unpacks the PDFs of a DNB zip archive copy into files of the item', async () => {
+    const zip = storedZip([
+      ['netpub/dnb~files/RB_3201_Violine.pdf', '%PDF-violin'],
+      ['netpub/dnb~files/notes.mid', 'MThd'],
+      ['netpub/dnb~files/RB_3201_Klavier.pdf', '%PDF-piano'],
+    ]);
+    global.fetch = jest.fn(async () => new Response(zip, { status: 200, headers: { 'content-type': 'application/zip' } })) as any;
+    const prisma = fakePrisma();
+    const item = { id: 'd1', source: 'DNB', ark: '1298250498', category: 'SHEET_MUSIC', musicXmlSourceUrl: null, thumbnailUrl: null, files: [] };
+    await mirrorItem(prisma, item, 0);
+    expect(global.fetch).toHaveBeenCalledWith('https://d-nb.info/1298250498/34', expect.anything());
+    expect(prisma.libraryItem.update).toHaveBeenCalledWith({
+      where: { id: 'd1' },
+      data: {
+        files: [
+          { label: 'RB 3201 Klavier', sourceUrl: 'https://d-nb.info/1298250498/34#1', contentType: 'application/pdf' },
+          { label: 'RB 3201 Violine', sourceUrl: 'https://d-nb.info/1298250498/34#2', contentType: 'application/pdf' },
+        ],
+      },
+    });
+    expect(storeLibraryObject).toHaveBeenCalledWith(prisma, Buffer.from('%PDF-piano'), 'application/pdf');
+    expect(prisma.libraryItemThumbnail.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives up for good on a DNB archive without any PDF', async () => {
+    global.fetch = jest.fn(async () => new Response(storedZip([['a.epub', 'x']]), { status: 200 })) as any;
+    const prisma = fakePrisma([{ id: 'd2', source: 'DNB', ark: '1301087793', category: 'BOOK', musicXmlSourceUrl: null, thumbnailUrl: null, files: [] }]);
+    const result = await runLibraryMirror(prisma);
+    expect(result.failed).toBe(1);
+    expect(prisma.libraryItem.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ mirrorAttempts: 5 }) }));
+  });
 });
+
+// A minimal zip (stored, no compression) for the DNB archive tests.
+function storedZip(entries: [string, string][]): Buffer {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const [name, text] of entries) {
+    const data = Buffer.from(text);
+    const nameBytes = Buffer.from(name);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(nameBytes.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(nameBytes.length, 28);
+    central.writeUInt32LE(offset, 42);
+    locals.push(local, nameBytes, data);
+    centrals.push(central, nameBytes);
+    offset += 30 + nameBytes.length + data.length;
+  }
+  const directory = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, directory, end]);
+}

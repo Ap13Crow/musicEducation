@@ -68,6 +68,25 @@ export function readZipEntry(zip: Buffer, name: string): Buffer | null {
   return null;
 }
 
+// Every file name in a zip's central directory (directories left out).
+export function listZipEntries(zip: Buffer): string[] {
+  const eocd = zip.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  if (eocd < 0) return [];
+  const entries = zip.readUInt16LE(eocd + 10);
+  let offset = zip.readUInt32LE(eocd + 16);
+  const names: string[] = [];
+  for (let i = 0; i < entries; i++) {
+    if (zip.readUInt32LE(offset) !== 0x02014b50) break;
+    const nameLength = zip.readUInt16LE(offset + 28);
+    const extraLength = zip.readUInt16LE(offset + 30);
+    const commentLength = zip.readUInt16LE(offset + 32);
+    const name = zip.toString('utf8', offset + 46, offset + 46 + nameLength);
+    if (!name.endsWith('/')) names.push(name);
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  return names;
+}
+
 export async function renderPdfFirstPage(pdf: Buffer): Promise<Buffer> {
   const dir = await mkdtemp(join(tmpdir(), 'library-thumb-'));
   try {

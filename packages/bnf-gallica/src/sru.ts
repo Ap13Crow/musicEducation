@@ -1,5 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
-import type { BnfCatalogueRecord, BnfSearchOptions } from './types.js';
+import type { BnfCatalogueRecord, BnfPageSearchOptions, BnfSearchOptions } from './types.js';
 import { BnfRequestError } from './types.js';
 import { GALLICA_USER_AGENT } from './config.js';
 import { fetchWithRetry } from './retry.js';
@@ -98,19 +98,19 @@ function normalizeRecord(dc: Record<string, unknown>): BnfCatalogueRecord | null
   };
 }
 
-export async function searchCatalogue(query: string, opts?: BnfSearchOptions): Promise<BnfCatalogueRecord[]> {
+async function runSru(url: URL): Promise<{ total: number; records: BnfCatalogueRecord[] }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let xml: string;
   try {
-    const response = await fetchWithRetry(searchUrl(query, opts), {
+    const response = await fetchWithRetry(url, {
       signal: controller.signal,
       headers: { 'User-Agent': GALLICA_USER_AGENT },
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     xml = await response.text();
   } catch (error) {
-    throw new BnfRequestError('Gallica SRU search failed.', error);
+    throw new BnfRequestError(`Gallica SRU search failed${error instanceof Error ? ` (${error.message})` : ''}.`, error);
   } finally {
     clearTimeout(timeout);
   }
@@ -136,5 +136,43 @@ export async function searchCatalogue(query: string, opts?: BnfSearchOptions): P
     const normalizedRecord = normalizeRecord(dc);
     if (normalizedRecord) normalized.push(normalizedRecord);
   }
-  return normalized;
+  const total = Number(textOf(parsed?.searchRetrieveResponse?.numberOfRecords) ?? 0) || 0;
+  return { total, records: normalized };
+}
+
+export async function searchCatalogue(query: string, opts?: BnfSearchOptions): Promise<BnfCatalogueRecord[]> {
+  return (await runSru(searchUrl(query, opts))).records;
+}
+
+export const GALLICA_MAX_PAGE_SIZE = 50;
+
+// One page of a Gallica search for the admin import: every word (ALL), any
+// word (ANY) or the exact phrase (PHRASE, CQL "adj"), optionally narrowed by
+// a single-word dc.type (see libraryIngest.ts) and a year range.
+export function buildGallicaQuery(options: BnfPageSearchOptions): string | null {
+  const text = options.query.replace(/["\\]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  const relation = options.mode === 'ANY' ? 'any' : options.mode === 'PHRASE' ? 'adj' : 'all';
+  const parts = [`gallica ${relation} "${text}"`];
+  if (options.documentType) parts.push(`dc.type all "${options.documentType.replace(/"/g, '')}"`);
+  if (options.yearFrom) parts.push(`dc.date >= "${Math.trunc(options.yearFrom)}"`);
+  if (options.yearTo) parts.push(`dc.date <= "${Math.trunc(options.yearTo)}"`);
+  return parts.join(' and ');
+}
+
+export async function searchCataloguePage(
+  options: BnfPageSearchOptions,
+  page: number,
+  pageSize: number,
+): Promise<{ total: number; records: BnfCatalogueRecord[] }> {
+  const query = buildGallicaQuery(options);
+  if (!query) return { total: 0, records: [] };
+  const size = Math.max(1, Math.min(pageSize, GALLICA_MAX_PAGE_SIZE));
+  const url = new URL(SRU_ENDPOINT);
+  url.searchParams.set('operation', 'searchRetrieve');
+  url.searchParams.set('version', '1.2');
+  url.searchParams.set('query', query);
+  url.searchParams.set('startRecord', String((Math.max(1, page) - 1) * size + 1));
+  url.searchParams.set('maximumRecords', String(size));
+  return runSru(url);
 }

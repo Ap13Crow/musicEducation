@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<searchRetrieveResponse xmlns="http://www.loc.gov/zing/srw/"><version>1.1</version><numberOfRecords>66</numberOfRecords><records><record><recordSchema>MARC21-xml</recordSchema><recordPacking>xml</recordPacking><recordData><record xmlns="http://www.loc.gov/MARC21/slim" type="Bibliographic">
+    <leader>00000nam a2200000uc 4500</leader>
+    <controlfield tag="001">1421687909</controlfield>
+    <controlfield tag="003">DE-101</controlfield>
+    <controlfield tag="005">20261010022115.0</controlfield>
+    <controlfield tag="007">cr||||||||||||</controlfield>
+    <controlfield tag="008">261009s2026    gw |||||o|||| 00||||eng  </controlfield>
+    <datafield tag="016" ind1="7" ind2=" ">
+      <subfield code="2">DE-101</subfield>
+      <subfield code="a">1421687909</subfield>
+    </datafield>
+    <datafield tag="020" ind1=" " ind2=" ">
+      <subfield code="a">9783662734766</subfield>
+      <subfield code="9">978-3-662-73476-6</subfield>
+    </datafield>
+    <datafield tag="024" ind1="7" ind2=" ">
+      <subfield code="a">10.1007/978-3-662-73476-6</subfield>
+      <subfield code="2">doi</subfield>
+    </datafield>
+    <datafield tag="024" ind1="7" ind2=" ">
+      <subfield code="2">urn</subfield>
+      <subfield code="a">urn:nbn:de:101:1-2610092138329.006805150346</subfield>
+    </datafield>
+    <datafield tag="100" ind1="1" ind2=" ">
+      <subfield code="8">2\p</subfield>
+      <subfield code="a">Dill, Leonor</subfield>
+      <subfield code="e">Verfasser</subfield>
+      <subfield code="4">aut</subfield>
+    </datafield>
+    <datafield tag="245" ind1="1" ind2="0">
+      <subfield code="a">Schubert's Metamorphoses</subfield>
+      <subfield code="b">C. G. Jung’s Archetypal Theory as a Foundation for Musical Analysis – a Research on the Creative Process</subfield>
+      <subfield code="c">by Leonor Dill</subfield>
+    </datafield>
+    <datafield tag="250" ind1=" " ind2=" ">
+      <subfield code="a">1st ed. 2026</subfield>
+    </datafield>
+    <datafield tag="264" ind1=" " ind2="1">
+      <subfield code="a">Berlin, Heidelberg</subfield>
+      <subfield code="b">Springer Berlin Heidelberg, Imprint: J.B. Metzler</subfield>
+      <subfield code="c">2026</subfield>
+    </datafield>
+    <datafield tag="300" ind1=" " ind2=" ">
+      <subfield code="a">1 Online-Ressource (XXXII, 581 p. 89 illus.).</subfield>
+      <subfield code="b">79 illus. in color.</subfield>
+    </datafield>
+    <datafield tag="336" ind1=" " ind2=" ">
+      <subfield code="a">Text</subfield>
+      <subfield code="b">txt</subfield>
+      <subfield code="2">rdacontent</subfield>
+    </datafield>
+    <datafield tag="337" ind1=" " ind2=" ">
+      <subfield code="a">Computermedien</subfield>
+      <subfield code="b">c</subfield>
+      <subfield code="2">rdamedia</subfield>
+    </datafield>
+    <datafield tag="338" ind1=" " ind2=" ">
+      <subfield code="a">Online-Ressource</subfield>
+      <subfield code="b">cr</subfield>
+      <subfield code="2">rdacarrier</subfield>
+    </datafield>
+    <datafield tag="506" ind1="0" ind2=" ">
+      <subfield code="a">Open Access</subfield>
+      <subfield code="f">Unrestricted online access</subfield>
+      <subfield code="u">http://purl.org/coar/access_right/c_abf2</subfield>
+      <subfield code="2">star</subfield>
+    </datafield>
+    <datafield tag="520" ind1=" " ind2=" ">
+      <subfield code="a">Zusammenfassung: This open access book presents an innovative method of musical analysis.</subfield>
+    </datafield>
+    <datafield tag="856" ind1="4" ind2="0">
+      <subfield code="u">https://doi.org/10.1007/978-3-662-73476-6</subfield>
+      <subfield code="x">Resolving-System</subfield>
+    </datafield>
+    <datafield tag="856" ind1="4" ind2="0">
+      <subfield code="u">https://nbn-resolving.org/urn:nbn:de:101:1-2610092138329.006805150346</subfield>
+      <subfield code="x">Resolving-System</subfield>
+    </datafield>
+    <datafield tag="856" ind1=" " ind2="0">
+      <subfield code="u">https://d-nb.info/1421687909/34</subfield>
+      <subfield code="x">Langzeitarchivierung Nationalbibliothek</subfield>
+    </datafield>
+    <datafield tag="856" ind1="4" ind2=" ">
+      <subfield code="u">https://doi.org/10.1007/978-3-662-73476-6</subfield>
+    </datafield>
+  </record></recordData><recordPosition>1</recordPosition></record><record><recordSchema>MARC21-xml</recordSchema><recordPacking>xml</recordPacking><recordData><record xmlns="http://www.loc.gov/MARC21/slim" type="Bibliographic">
+    <leader>00000nam a2200000uc 4500</leader>
+    <controlfield tag="001">1415325529</controlfield>
+    <controlfield tag="003">DE-101</controlfield>
+    <controlfield tag="005">20260902235424.0</controlfield>
+    <controlfield tag="007">cr||||||||||||</controlfield>
+    <controlfield tag="008">260803s2026    gw |||||o|||| 00||||eng  </controlfield>
+    <datafield tag="016" ind1="7" ind2=" ">
+      <subfield code="2">DE-101</subfield>
+      <subfield code="a">1415325529</subfield>
+    </datafield>
+    <datafield tag="024" ind1="7" ind2=" ">
+      <subfield code="a">10.3389/fpsyg.2026.1888535</subfield>
+      <subfield code="2">doi</subfield>
+    </datafield>
+    <datafield tag="024" ind1="7" ind2=" ">
+      <subfield code="2">urn</subfield>
+      <subfield code="a">urn:nbn:de:bsz:25-freidok-2851420</subfield>
+    </datafield>
+    <datafield tag="100" ind1="1" ind2=" ">
+      <subfield code="8">2\p</subfield>
+      <subfield code="0">(DE-588)1197145168</subfield>
+      <subfield code="0">https://d-nb.info/gnd/1197145168</subfield>
+      <subfield code="0">(DE-101)1197145168</subfield>
+      <subfield code="a">Immerz, Anna</subfield>
+      <subfield code="e">Verfasser</subfield>
+      <subfield code="4">aut</subfield>
+      <subfield code="2">gnd</subfield>
+    </datafield>
+    <datafield tag="245" ind1="1" ind2="0">
+      <subfield code="a">Synchronization between singer and pianist in Lied duos - an analysis of respiratory patterns during the performance of classical art songs</subfield>
+    </datafield>
+    <datafield tag="264" ind1=" " ind2="1">
+      <subfield code="a">Freiburg</subfield>
+      <subfield code="b">Universität</subfield>
+      <subfield code="c">2026</subfield>
+    </datafield>
+    <datafield tag="300" ind1=" " ind2=" ">
+      <subfield code="a">Online-Ressource</subfield>
+    </datafield>
+    <datafield tag="336" ind1=" " ind2=" ">
+      <subfield code="a">Text</subfield>
+      <subfield code="b">txt</subfield>
+      <subfield code="2">rdacontent</subfield>
+    </datafield>
+    <datafield tag="337" ind1=" " ind2=" ">
+      <subfield code="a">Computermedien</subfield>
+      <subfield code="b">c</subfield>
+      <subfield code="2">rdamedia</subfield>
+    </datafield>
+    <datafield tag="338" ind1=" " ind2=" ">
+      <subfield code="a">Online-Ressource</subfield>
+      <subfield code="b">cr</subfield>
+      <subfield code="2">rdacarrier</subfield>
+    </datafield>
+    <datafield tag="506" ind1="0" ind2=" ">
+      <subfield code="a">Open Access</subfield>
+      <subfield code="f">Unrestricted online access</subfield>
+      <subfield code="u">http://purl.org/coar/access_right/c_abf2</subfield>
+      <subfield code="2">star</subfield>
+    </datafield>
+    <datafield tag="520" ind1=" " ind2=" ">
+      <subfield code="a">Abstract: Introduction: breathing in Lied duos.</subfield>
+    </datafield>
+    <datafield tag="700" ind1="1" ind2=" ">
+      <subfield code="8">3\p</subfield>
+      <subfield code="a">Zebe-Sheng, Franka</subfield>
+      <subfield code="e">Verfasser</subfield>
+      <subfield code="4">aut</subfield>
+    </datafield>
+    <datafield tag="856" ind1="4" ind2="0">
+      <subfield code="u">https://doi.org/10.3389/fpsyg.2026.1888535</subfield>
+      <subfield code="x">Resolving-System</subfield>
+    </datafield>
+    <datafield tag="856" ind1="4" ind2="0">
+      <subfield code="u">https://nbn-resolving.org/urn:nbn:de:bsz:25-freidok-2851420</subfield>
+      <subfield code="x">Resolving-System</subfield>
+    </datafield>
+    <datafield tag="856" ind1=" " ind2="0">
+      <subfield code="u">https://d-nb.info/1415325529/34</subfield>
+      <subfield code="x">Langzeitarchivierung Nationalbibliothek</subfield>
+    </datafield>
+    <datafield tag="856" ind1="4" ind2=" ">
+      <subfield code="q">zip</subfield>
+      <subfield code="u">https://freidok.uni-freiburg.de/data/285142</subfield>
+      <subfield code="z">kostenfrei</subfield>
+    </datafield>
+  </record></recordData><recordPosition>2</recordPosition></record><record><recordSchema>MARC21-xml</recordSchema><recordPacking>xml</recordPacking><recordData><record xmlns="http://www.loc.gov/MARC21/slim" type="Bibliographic">
+    <leader>00000ncm a2200000uc 4500</leader>
+    <controlfield tag="001">1376235218</controlfield>
+    <controlfield tag="003">DE-101</controlfield>
+    <controlfield tag="005">20251028065712.0</controlfield>
+    <controlfield tag="007">q|</controlfield>
+    <controlfield tag="007">cr||||||||||||</controlfield>
+    <controlfield tag="008">250912s2025    gw |||||o|||||||||||zxx  </controlfield>
+    <datafield tag="016" ind1="7" ind2=" ">
+      <subfield code="2">DE-101</subfield>
+      <subfield code="a">1376235218</subfield>
+    </datafield>
+    <datafield tag="024" ind1="7" ind2=" ">
+      <subfield code="a">10.25624/kuenste-2385</subfield>
+      <subfield code="2">doi</subfield>
+    </datafield>
+    <datafield tag="024" ind1="7" ind2=" ">
+      <subfield code="2">urn</subfield>
+      <subfield code="a">urn:nbn:de:kobv:b170-23854</subfield>
+    </datafield>
+    <datafield tag="100" ind1="1" ind2=" ">
+      <subfield code="8">2\p</subfield>
+      <subfield code="a">Liszt, Franz</subfield>
+      <subfield code="e">Verfasser</subfield>
+      <subfield code="4">aut</subfield>
+    </datafield>
+    <datafield tag="245" ind1="1" ind2="0">
+      <subfield code="a">Gute Nacht</subfield>
+      <subfield code="b">Lied aus Fr. Schubert's Winterreise</subfield>
+      <subfield code="c">Franz Liszt</subfield>
+    </datafield>
+    <datafield tag="264" ind1=" " ind2="1">
+      <subfield code="a">Berlin</subfield>
+      <subfield code="b">Universität der Künste Berlin</subfield>
+      <subfield code="c">2025</subfield>
+    </datafield>
+    <datafield tag="300" ind1=" " ind2=" ">
+      <subfield code="a">Online-Ressource</subfield>
+    </datafield>
+    <datafield tag="336" ind1=" " ind2=" ">
+      <subfield code="a">Noten</subfield>
+      <subfield code="b">ntm</subfield>
+      <subfield code="2">rdacontent</subfield>
+    </datafield>
+    <datafield tag="337" ind1=" " ind2=" ">
+      <subfield code="a">Computermedien</subfield>
+      <subfield code="b">c</subfield>
+      <subfield code="2">rdamedia</subfield>
+    </datafield>
+    <datafield tag="338" ind1=" " ind2=" ">
+      <subfield code="a">Online-Ressource</subfield>
+      <subfield code="b">cr</subfield>
+      <subfield code="2">rdacarrier</subfield>
+    </datafield>
+    <datafield tag="856" ind1="4" ind2="0">
+      <subfield code="u">https://doi.org/10.25624/kuenste-2385</subfield>
+      <subfield code="x">Resolving-System</subfield>
+    </datafield>
+    <datafield tag="856" ind1="4" ind2="0">
+      <subfield code="u">https://nbn-resolving.org/urn:nbn:de:kobv:b170-23854</subfield>
+      <subfield code="x">Resolving-System</subfield>
+    </datafield>
+    <datafield tag="856" ind1=" " ind2="0">
+      <subfield code="u">https://d-nb.info/1376235218/34</subfield>
+      <subfield code="x">Langzeitarchivierung Nationalbibliothek</subfield>
+    </datafield>
+    <datafield tag="856" ind1="4" ind2=" ">
+      <subfield code="q">application/pdf</subfield>
+      <subfield code="u">https://opus4.kobv.de/opus4-udk/frontdoor/index/index/docId/2385</subfield>
+      <subfield code="x">Verlag</subfield>
+      <subfield code="z">kostenfrei</subfield>
+    </datafield>
+  </record></recordData><recordPosition>3</recordPosition></record></records><nextRecordPosition>4</nextRecordPosition><echoedSearchRetrieveRequest><version>1.1</version><query>Schubert and location=onlinefree and sgt=780</query><xQuery xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true"/><startRecord>1</startRecord><maximumRecords>3</maximumRecords><recordSchema>MARC21-xml</recordSchema></echoedSearchRetrieveRequest></searchRetrieveResponse>

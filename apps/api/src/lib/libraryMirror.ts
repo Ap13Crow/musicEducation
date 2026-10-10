@@ -3,6 +3,8 @@ import { fetchPageAudio, fetchPageImage, getManifest } from '@my-music-coach/bnf
 import { libraryMediaStoreConfigured, storeLibraryObject } from './libraryMediaStore.js';
 import { ARCHIVE_DOWNLOAD_PREFIX, MUTOPIA_FTP_PREFIX } from './openSources.js';
 import { isAllowedScoreSource } from './openscore.js';
+import { dnbArchiveUrl, isDnbIdn } from './dnb.js';
+import { listZipEntries, readZipEntry, renderPdfFirstPage } from './libraryThumbnails.js';
 import { logger } from '../utils/logger.js';
 
 // Downloads every Library item's files once into our own media store
@@ -17,6 +19,8 @@ import { logger } from '../utils/logger.js';
 // Gallica download pauses for BNF_MIRROR_PAUSE_MS (default 6 h).
 
 const MAX_FILE_BYTES = 80 * 1024 * 1024;
+// A DNB archive copy can be a zip of a score and all its parts.
+const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024;
 const MAX_ATTEMPTS = 5;
 const BNF_PAUSE_KEY = 'library_mirror:bnf_paused_until';
 // Same width the viewer uses - BnF's 5 calls/min cap applies above 1000 px.
@@ -34,10 +38,14 @@ const PACING_MS: Record<string, () => number> = {
   OPENSCORE: () => 200,
   MUTOPIA: () => 500,
   MUSOPEN: () => 1000,
+  DNB: () => 1000,
   BNF: bnfInterval,
 };
 
 export class SourceBlockedError extends Error {}
+// The item can never be copied (e.g. a DNB archive without any PDF) - no
+// point retrying it.
+export class PermanentMirrorError extends Error {}
 
 type MirrorItem = {
   id: string;
@@ -60,11 +68,13 @@ type PlannedFile = {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const DNB_ARCHIVE_PATTERN = /^https:\/\/d-nb\.info\/\d{8,9}[\dX]\/34$/;
+
 function allowedOpenSourceUrl(url: string): boolean {
-  return isAllowedScoreSource(url) || url.startsWith(MUTOPIA_FTP_PREFIX) || url.startsWith(ARCHIVE_DOWNLOAD_PREFIX);
+  return isAllowedScoreSource(url) || url.startsWith(MUTOPIA_FTP_PREFIX) || url.startsWith(ARCHIVE_DOWNLOAD_PREFIX) || DNB_ARCHIVE_PATTERN.test(url);
 }
 
-async function downloadOpen(url: string, fallbackType: string): Promise<{ bytes: Buffer; contentType: string }> {
+async function downloadOpen(url: string, fallbackType: string, maxBytes = MAX_FILE_BYTES): Promise<{ bytes: Buffer; contentType: string }> {
   if (!allowedOpenSourceUrl(url)) throw new Error(`Source URL not allowlisted: ${url}`);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120_000);
@@ -73,9 +83,9 @@ async function downloadOpen(url: string, fallbackType: string): Promise<{ bytes:
     if (response.status === 403 || response.status === 429) throw new SourceBlockedError(`HTTP ${response.status} from ${new URL(url).host}`);
     if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
     const declared = Number(response.headers.get('content-length') ?? 0);
-    if (declared > MAX_FILE_BYTES) throw new Error(`File too large (${declared} bytes): ${url}`);
+    if (declared > maxBytes) throw new PermanentMirrorError(`File too large (${declared} bytes): ${url}`);
     const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length > MAX_FILE_BYTES) throw new Error(`File too large (${bytes.length} bytes): ${url}`);
+    if (bytes.length > maxBytes) throw new PermanentMirrorError(`File too large (${bytes.length} bytes): ${url}`);
     const header = response.headers.get('content-type')?.split(';')[0]?.trim();
     return { bytes, contentType: header && header !== 'application/octet-stream' ? header : fallbackType };
   } finally {
@@ -141,15 +151,74 @@ export async function planItemFiles(item: MirrorItem): Promise<PlannedFile[]> {
   return planned;
 }
 
-async function bnfPausedUntil(prisma: PrismaClient): Promise<number> {
+export async function bnfPausedUntil(prisma: PrismaClient): Promise<number> {
   const row = await prisma.adminSetting.findUnique({ where: { key: BNF_PAUSE_KEY } });
   const until = row ? new Date(row.value).getTime() : 0;
   return Number.isFinite(until) ? until : 0;
 }
 
-async function pauseBnf(prisma: PrismaClient): Promise<void> {
+export async function pauseBnf(prisma: PrismaClient): Promise<void> {
   const value = new Date(Date.now() + bnfPause()).toISOString();
   await prisma.adminSetting.upsert({ where: { key: BNF_PAUSE_KEY }, create: { key: BNF_PAUSE_KEY, value }, update: { value } });
+}
+
+const isPdf = (bytes: Buffer) => bytes.subarray(0, 5).toString('latin1') === '%PDF-';
+
+// "netpub/dnb~files/RB_3201_Klavier.pdf" -> "RB 3201 Klavier"
+function pdfLabel(name: string): string {
+  const base = name.split('/').pop() ?? name;
+  return base.replace(/\.pdf$/i, '').replace(/[_]+/g, ' ').trim() || 'PDF';
+}
+
+// A DNB item's files are only known once its archive copy is here: one PDF,
+// or a zip whose PDFs (full score, parts) each become a file of the item.
+// Stores them, fills LibraryItem.files, and makes the card image from the
+// first page. Later passes find every file stored and skip the download.
+export async function mirrorDnbArchive(prisma: PrismaClient, item: MirrorItem): Promise<void> {
+  if (!isDnbIdn(item.ark)) throw new PermanentMirrorError(`Not a DNB record id: ${item.ark}`);
+  if (Array.isArray(item.files) && item.files.length) return;
+  const url = dnbArchiveUrl(item.ark);
+  const { bytes } = await downloadOpen(url, 'application/octet-stream', MAX_ARCHIVE_BYTES);
+
+  let pdfs: { name: string; bytes: Buffer }[];
+  if (isPdf(bytes)) {
+    pdfs = [{ name: item.category === 'SHEET_MUSIC' ? 'Score' : 'Full text', bytes }];
+  } else {
+    const names = listZipEntries(bytes).filter((name) => /\.pdf$/i.test(name)).sort((a, b) => a.localeCompare(b));
+    pdfs = names
+      .map((name) => ({ name: pdfLabel(name), bytes: readZipEntry(bytes, name) }))
+      .filter((entry): entry is { name: string; bytes: Buffer } => Boolean(entry.bytes && isPdf(entry.bytes) && entry.bytes.length <= MAX_FILE_BYTES));
+  }
+  if (!pdfs.length) throw new PermanentMirrorError('The DNB archive copy holds no PDF we can show.');
+
+  const files = [];
+  for (const [position, pdf] of pdfs.entries()) {
+    const sha256 = await storeLibraryObject(prisma, pdf.bytes, 'application/pdf');
+    const sourceUrl = pdfs.length === 1 && isPdf(bytes) ? url : `${url}#${position + 1}`;
+    await prisma.libraryItemMedia.upsert({
+      where: { itemId_kind_position: { itemId: item.id, kind: 'FILE', position } },
+      create: { itemId: item.id, kind: 'FILE', position, label: pdf.name, sha256, sourceUrl },
+      update: { sha256, label: pdf.name, sourceUrl },
+    });
+    files.push({ label: pdf.name, sourceUrl, contentType: 'application/pdf' });
+  }
+  await prisma.libraryItem.update({ where: { id: item.id }, data: { files } });
+  item.files = files;
+
+  if (!item.thumbnailUrl) {
+    try {
+      const jpeg = await renderPdfFirstPage(pdfs[0].bytes);
+      await prisma.libraryItemThumbnail.upsert({
+        where: { itemId: item.id },
+        create: { itemId: item.id, contentType: 'image/jpeg', bytes: jpeg },
+        update: { contentType: 'image/jpeg', bytes: jpeg },
+      });
+      await prisma.libraryItem.update({ where: { id: item.id }, data: { thumbnailUrl: `/api/library/items/${item.id}/thumbnail` } });
+      item.thumbnailUrl = 'set';
+    } catch (error) {
+      logger.warn({ itemId: item.id, error: error instanceof Error ? error.message : String(error) }, 'Library mirror: no thumbnail for DNB item');
+    }
+  }
 }
 
 // Mirrors one item; true when all its files are stored. Throws
@@ -157,6 +226,11 @@ async function pauseBnf(prisma: PrismaClient): Promise<void> {
 export async function mirrorItem(prisma: PrismaClient, item: MirrorItem, pauseMs: number): Promise<boolean> {
   const stored = await prisma.libraryItemMedia.findMany({ where: { itemId: item.id }, select: { kind: true, position: true } });
   const have = new Set(stored.map((row: { kind: string; position: number }) => `${row.kind}:${row.position}`));
+  if (item.source === 'DNB') {
+    await mirrorDnbArchive(prisma, item);
+    await sleep(pauseMs);
+    return true;
+  }
   const planned = await planItemFiles(item);
   if (item.source === 'BNF') await sleep(pauseMs);
 
@@ -230,7 +304,13 @@ export async function runLibraryMirror(
         }
         result.failed += 1;
         logger.warn({ source, itemId: item.id, message }, 'Library mirror: item failed');
-        await prisma.libraryItem.update({ where: { id: item.id }, data: { mirrorError: message.slice(0, 500), mirrorAttempts: { increment: 1 } } });
+        await prisma.libraryItem.update({
+          where: { id: item.id },
+          data: {
+            mirrorError: message.slice(0, 500),
+            mirrorAttempts: error instanceof PermanentMirrorError ? MAX_ATTEMPTS : { increment: 1 },
+          },
+        });
       } finally {
         done += 1;
         await onProgress?.(done, items.length);
