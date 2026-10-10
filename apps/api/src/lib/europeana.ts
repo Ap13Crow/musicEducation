@@ -14,11 +14,13 @@ import type { PrismaClient } from '@my-music-coach/database';
 const SEARCH_URL = 'https://api.europeana.eu/record/v2/search.json';
 const USER_AGENT = 'MyMusicCoach/1.0 (+https://mymusic.coach; library import)';
 export const EUROPEANA_MAX_PAGE_SIZE = 100;
-const EXCLUDED_PROVIDERS = ['National Library of France'];
+// Natural-history archives are left out too: their wildlife recordings are
+// not music ("Bach" is also German for brook).
+const EXCLUDED_PROVIDERS = ['National Library of France', 'Naturalis Biodiversity Center', 'Natural History Museum, Berlin'];
 
 // The automatic import: these composers' recordings, newest additions first.
 export const EUROPEANA_AUTO_QUERIES = [
-  'Bach', 'Handel', 'Vivaldi', 'Telemann', 'Haydn', 'Mozart', 'Beethoven', 'Schubert', 'Schumann', 'Mendelssohn',
+  'Johann Sebastian Bach', 'Handel', 'Vivaldi', 'Telemann', 'Haydn', 'Mozart', 'Beethoven', 'Schubert', 'Schumann', 'Mendelssohn',
   'Chopin', 'Liszt', 'Brahms', 'Wagner', 'Verdi', 'Tchaikovsky', 'Dvorak', 'Grieg', 'Debussy', 'Ravel',
   'Enescu', 'Sibelius', 'Rachmaninoff', 'Mahler', 'Bruckner', 'Puccini', 'Rossini', 'Bizet', 'Smetana', 'Janacek',
   'symphony', 'sonata', 'concerto', 'string quartet', 'opera aria',

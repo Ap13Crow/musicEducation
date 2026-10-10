@@ -85,8 +85,12 @@ const totalLength = (files: any[]): number | null => {
 };
 const matrices = (files: any[]): string[] => files.map((file) => (typeof file?.matrix === 'string' ? file.matrix.replace(/\s+/g, '').toUpperCase() : '')).filter(Boolean);
 
+// Lengths only count as evidence for real pieces: a few seconds of sound
+// (a bird call, a jingle) are alike whatever they are.
+const MIN_COMPARABLE_SECONDS = 30;
 function closeLengths(a: number | null, b: number | null, tolerance: number): boolean {
-  return a !== null && b !== null && Math.abs(a - b) <= Math.max(3, tolerance * Math.max(a, b));
+  if (a === null || b === null || Math.min(a, b) < MIN_COMPARABLE_SECONDS) return false;
+  return Math.abs(a - b) <= Math.max(3, tolerance * Math.max(a, b));
 }
 
 export function sameRecording(a: RecordingFacts, b: RecordingFacts): boolean {
@@ -107,9 +111,11 @@ export function sameRecording(a: RecordingFacts, b: RecordingFacts): boolean {
   const matrixB = matrices(b.files);
   if (matrixA.length === a.files.length && matrixB.length === b.files.length) {
     const exact = matrixA.every((matrix, index) => matrix === matrixB[index]);
-    // A typo in one catalogue ("075995" for "07995") - only with the same
-    // performers and practically the same length.
-    const typo = matrixA.every((matrix, index) => editDistance(matrix, matrixB[index]) <= 1) && samePerformers(partsA.performers, partsB.performers) && closeLengths(lengthA, lengthB, 0.01);
+    // A typo in one catalogue ("075995" for "07995") - numbers only, since a
+    // different letter is a different take (CK4015-A, CK4015-F) - and only
+    // with the same performers and practically the same length.
+    const numeric = (matrix: string) => /^[\d-]+$/.test(matrix);
+    const typo = matrixA.every((matrix, index) => numeric(matrix) && numeric(matrixB[index]) && editDistance(matrix, matrixB[index]) <= 1) && samePerformers(partsA.performers, partsB.performers) && closeLengths(lengthA, lengthB, 0.01);
     return exact || typo;
   }
 

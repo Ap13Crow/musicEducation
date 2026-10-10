@@ -40,6 +40,13 @@ describe('duplicate recordings (Ave Maria)', () => {
     expect(duplicateGroups([elman1913, elman1924, elmanTypo])).toHaveLength(1);
   });
 
+  it('keeps different takes apart, even one letter apart, and ignores very short sounds', () => {
+    const band = (matrix: string, durationSeconds: number) => rec({ title: 'Ved Donaus Bredder', date: '1917', documentType: '78 rpm record · Edison Bell Winner · Otto Lington', files: [{ matrix, durationSeconds }] });
+    expect(sameRecording(band('CK4015A', 196), band('CK4015F', 195))).toBe(false);
+    const bird = (durationSeconds: number) => rec({ source: 'EUROPEANA', title: 'Certhia familiaris', date: null, documentType: 'Sound recording · Erwin Tretzel', files: [{ durationSeconds }] });
+    expect(sameRecording(bird(9), bird(11))).toBe(false);
+  });
+
   it('keeps different takes of one session apart', () => {
     const takeA = rec({ documentType: '78 rpm record · Edison · Marie Rappoli; Albert Spalding', files: [{ matrix: '3815-A-2-127', durationSeconds: 287 }] });
     const takeC = rec({ files: [{ matrix: '3815-C-13', durationSeconds: 276 }] });
