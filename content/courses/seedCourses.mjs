@@ -17,11 +17,16 @@ const prisma = new PrismaClient();
 const teacher = await prisma.teacherProfile.findUnique({ where: { id: teacherProfileId }, select: { id: true, userId: true } });
 if (!teacher) throw new Error('Teacher profile not found');
 
-const category = await prisma.category.upsert({
-  where: { slug: 'music-history' },
-  create: { name: 'Music History', slug: 'music-history' },
-  update: {},
-});
+// A course module may name its category (COURSE.category = [slug, name]);
+// the composer courses are Music History.
+const categories = new Map();
+async function categoryFor(info) {
+  const [slug, name] = info.category ?? ['music-history', 'Music History'];
+  if (!categories.has(slug)) {
+    categories.set(slug, await prisma.category.upsert({ where: { slug }, create: { name, slug }, update: {} }));
+  }
+  return categories.get(slug);
+}
 
 async function upload(dir, file) {
   return uploadServerFetchedAsset('COURSE_SLIDE', teacher.userId, readFileSync(join(dir, file)), 'image/png', file);
@@ -41,6 +46,7 @@ for (const folder of readdirSync(root)) {
     await prisma.courseSection.deleteMany({ where: { courseId: existing.id } });
   }
   const thumbnailUrl = await upload(dir, manifest.cover);
+  const category = await categoryFor(info);
   const data = {
     title: info.title,
     description: info.description,
@@ -96,10 +102,12 @@ for (const folder of readdirSync(root)) {
         await prisma.lessonSlide.create({ data: { lessonId: created.id, fileUrl: await upload(dir, slide.file), title: slide.title || null, order: s } });
         slides += 1;
       }
-      for (const [q, [text, options, correct]] of (lesson.quiz ?? []).entries()) {
+      for (const [q, [text, options, correct, image]] of (lesson.quiz ?? []).entries()) {
+        // Notation questions carry a rendered picture of the music.
+        const imageUrl = image ? await upload(dir, image) : null;
         await prisma.quizQuestion.create({
           data: {
-            lessonId: created.id, text, type: 'SINGLE_CHOICE', points: 1, order: q,
+            lessonId: created.id, text, type: 'SINGLE_CHOICE', points: 1, order: q, imageUrl,
             options: { create: options.map((option, index) => ({ text: option, isCorrect: index === correct, order: index })) },
           },
         });

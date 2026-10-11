@@ -7,6 +7,8 @@ from playwright.sync_api import sync_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ASSETS = os.path.join(HERE, 'assets')
+# Course modules may import shared helpers next to them (solfege_common.py).
+sys.path.insert(0, HERE)
 
 
 def load(name):
@@ -68,7 +70,43 @@ ol.steps li::before { content: counter(step); position: absolute; left: 0; top: 
 .summary { background: linear-gradient(135deg, #ffffff 0%, #f3f5ff 100%); }
 .summary h2::after { content: ''; display: block; width: 120px; height: 6px; background: var(--gold); border-radius: 3px; margin-top: 22px; }
 .cover { width: 1200px; height: 675px; }
+.notation { margin: 6px auto 22px; }
+.notation svg { display: block; }
+.abcjs-lyric, .abcjs-annotation, .abcjs-chord { font-family: 'Inter', sans-serif !important; }
+.notation-text { font-size: 30px; line-height: 1.4; color: #2c3040; text-align: center; max-width: 1300px; margin: 0 auto; }
+ul.points.notation-points li { font-size: 28px; }
+.keyboard { position: relative; margin: 10px auto 26px; }
+.keyboard .w { position: absolute; top: 0; height: 300px; background: #fff; border: 2px solid #2c3040; border-radius: 0 0 10px 10px; box-sizing: border-box; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 14px; font-size: 26px; font-weight: 600; color: #2c3040; }
+.keyboard .b { position: absolute; top: 0; height: 190px; background: #22252f; border-radius: 0 0 7px 7px; z-index: 2; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 10px; box-sizing: border-box; font-size: 17px; font-weight: 600; color: #fff; text-align: center; line-height: 1.15; }
+.keyboard .w.on { background: #ffe9a8; }
+.keyboard .b.on { background: #3e5bd8; }
+.quiz-image { display: inline-block; padding: 24px 28px 14px; background: #fff; }
 """
+
+_ABCJS = None
+
+
+def abcjs():
+    global _ABCJS
+    if _ABCJS is None:
+        with open(os.path.join(ASSETS, 'js', 'abcjs-basic-min.js'), encoding='utf-8') as handle:
+            _ABCJS = handle.read()
+    return _ABCJS
+
+
+def notation_script(abc_text, width, scale, measures=4):
+    # Rendered synchronously into #paper (width px wide) before the screenshot
+    # is taken; the music is laid out at width / scale and scaled up to fill it.
+    return (f'<script>{abcjs()}</script><script>document.getElementById("paper").parentElement.style.width = "{width}px";'
+            f'ABCJS.renderAbc("paper", {json.dumps(abc_text)}, '
+            f'{{responsive: "resize", staffwidth: {int(width / scale)}, add_classes: true, paddingtop: 0, paddingbottom: 0, paddingleft: 0, paddingright: 0, '
+            # Long melodies wrap onto several lines (about `measures` bars each).
+            f'wrap: {{minSpacing: 1.6, maxSpacing: 2.6, preferredMeasuresPerLine: {measures}}}}});</script>')
+
+
+def quiz_image_html(abc_text, width):
+    return (f'<!doctype html><html><head><meta charset="utf-8"><style>{CSS} html, body {{ width: auto; height: auto; background: #fff; }}</style></head>'
+            f'<body><div class="quiz-image"><div class="notation"><div id="paper"></div></div></div>{notation_script(abc_text, width, 2.4, 3)}</body></html>')
 
 
 # The few words the templates add themselves, per course language
@@ -118,6 +156,30 @@ def slide_html(module, slide, label):
           <div class="text"><h2>{esc(slide['title'])}</h2><p class="lead">{esc(slide['text'])}</p></div>
           <div class="pic">{image_tag(slide['image'])}<div class="credit">{esc(slide.get('credit', ''))}</div></div>
         </div></div>"""
+    elif kind == 'notation':
+        scale = slide.get('scale', 2.7)
+        extra = ''
+        if slide.get('text'):
+            extra += f'<p class="notation-text">{esc(slide["text"])}</p>'
+        if slide.get('points'):
+            extra += '<ul class="points small notation-points">' + ''.join(f'<li>{esc(p)}</li>' for p in slide['points']) + '</ul>'
+        body = f"""<div class="frame"><h2>{esc(slide['title'])}</h2><div class="notation"><div id="paper"></div></div>{extra}</div>"""
+        body += notation_script(slide['abc'], slide.get('width', 1360), scale, slide.get('measures', 4))
+    elif kind == 'keyboard':
+        # A piano keyboard from MIDI note `start`, `count` semitones long;
+        # labels and highlights are keyed by MIDI number.
+        white_w, black_w = slide.get('keyWidth', 78), 48
+        keys, x = [], 0
+        for m in range(slide['start'], slide['start'] + slide['count']):
+            key_label = esc(slide.get('labels', {}).get(m, '')).replace('/', '<br>')
+            on = ' on' if m in slide.get('highlight', []) else ''
+            if m % 12 in (1, 3, 6, 8, 10):
+                keys.append(f'<div class="b{on}" style="left:{x - black_w // 2}px;width:{black_w}px">{key_label}</div>')
+            else:
+                keys.append(f'<div class="w{on}" style="left:{x}px;width:{white_w}px">{key_label}</div>')
+                x += white_w
+        extra = f'<p class="notation-text">{esc(slide["text"])}</p>' if slide.get('text') else ''
+        body = f"""<div class="frame"><h2>{esc(slide['title'])}</h2><div class="keyboard" style="width:{x}px;height:300px">{''.join(keys)}</div>{extra}</div>"""
     elif kind == 'listen':
         steps = ''.join(f'<li>{esc(p)}</li>' for p in slide['points'])
         body = f"""<div class="frame listen"><div class="kicker">{esc(labels(module)['listen'])}</div><h2>{esc(slide['title'])}</h2><div><span class="work">{esc(slide['work'])}</span></div><ol class="steps">{steps}</ol></div>"""
@@ -141,7 +203,7 @@ def cover_html(module):
       .c .brand {{ position: absolute; left: 80px; bottom: 34px; font-size: 20px; color: #9aa0ad; }}
       .c .brand b {{ color: var(--brand); }}
     </style></head><body><div class="bar"></div><div class="c">
-      <div class="left"><div class="kicker">{esc(labels(module)['kicker'])}</div><h1>{esc(cover['title'])}</h1><p>{esc(cover['subtitle'])}</p><span class="tag">{esc(cover['tag'])}</span></div>
+      <div class="left"><div class="kicker">{esc(cover.get('kicker') or labels(module)['kicker'])}</div><h1>{esc(cover['title'])}</h1><p>{esc(cover['subtitle'])}</p><span class="tag">{esc(cover['tag'])}</span></div>
       <div class="right">{image_tag(cover['image'])}</div>
       <div class="brand"><b>mymusic.coach</b></div>
     </div></body></html>"""
@@ -156,6 +218,7 @@ def main():
         browser = p.chromium.launch()
         page = browser.new_page(viewport={'width': 1600, 'height': 900})
         cover_page = browser.new_page(viewport={'width': 1200, 'height': 675})
+        quiz_page = browser.new_page(viewport={'width': 1000, 'height': 600})
         cover_page.set_content(cover_html(module), wait_until='load')
         cover_page.wait_for_timeout(200)
         cover_page.screenshot(path=os.path.join(out, 'cover.png'))
@@ -171,12 +234,27 @@ def main():
                     file = f'w{w}-l{l}-s{s}.png'
                     page.screenshot(path=os.path.join(out, file))
                     entry['slides'].append({'file': file, 'title': slide.get('title') or slide.get('quote', '')[:60]})
+                # A quiz question may show notation (4th item: {'abc': ...}):
+                # rendered to its own picture, shown above the answers.
+                quiz = []
+                for q, item in enumerate(lesson.get('quiz', []), start=1):
+                    text, options, correct = item[0], item[1], item[2]
+                    image = None
+                    if len(item) > 3 and item[3] and item[3].get('abc'):
+                        image = f'w{w}-l{l}-q{q}.png'
+                        quiz_page.set_content(quiz_image_html(item[3]['abc'], item[3].get('width', 760)), wait_until='load')
+                        quiz_page.wait_for_timeout(80)
+                        quiz_page.locator('.quiz-image').screenshot(path=os.path.join(out, image))
+                    quiz.append([text, options, correct, image])
+                if quiz:
+                    entry['quiz'] = quiz
                 week_out['lessons'].append(entry)
             manifest['weeks'].append(week_out)
         browser.close()
     with open(os.path.join(out, 'manifest.json'), 'w') as handle:
         json.dump(manifest, handle, ensure_ascii=False, indent=1)
-    print(name, 'rendered', sum(len(l['slides']) for w in manifest['weeks'] for l in w['lessons']), 'slides')
+    images = sum(1 for w in manifest['weeks'] for l in w['lessons'] for q in l.get('quiz', []) if q[3])
+    print(name, 'rendered', sum(len(l['slides']) for w in manifest['weeks'] for l in w['lessons']), 'slides', f'+ {images} quiz images' if images else '')
 
 
 if __name__ == '__main__':

@@ -6,6 +6,16 @@ must name its language and its original."""
 import importlib.util, os, sys
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, HERE)
+
+
+def music(abc):
+    # The notation, without the lyric line (note names differ per language).
+    return '\n'.join(line for line in (abc or '').splitlines() if not line.startswith('w:'))
+
+
+def quiz_shape(item):
+    return (len(item[1]), item[2], music(item[3].get('abc')) if len(item) > 3 and item[3] else None)
 
 
 def load(name):
@@ -24,11 +34,11 @@ def shape(module):
             out.append((
                 'lesson', lesson['type'], lesson.get('video'), tuple(lesson.get('libraryAudio') or ()), lesson.get('xp'), bool(lesson.get('preview')), lesson.get('minutes'),
                 tuple(item for item, _ in lesson.get('library', [])),
-                tuple((len(options), correct) for _, options, correct in lesson.get('quiz', [])),
+                tuple(quiz_shape(item) for item in lesson.get('quiz', [])),
             ))
             for slide in lesson.get('slides', []):
                 out.append((
-                    'slide', slide['kind'], slide.get('image'),
+                    'slide', slide['kind'], slide.get('image'), music(slide.get('abc')),
                     len(slide.get('bullets', [])), len(slide.get('rows', [])), len(slide.get('points', [])),
                 ))
     return out
@@ -41,8 +51,8 @@ def texts(module):
         found.append(week['title'])
         for lesson in week['lessons']:
             found += [lesson['title'], lesson['description']] + [note for _, note in lesson.get('library', [])]
-            for question, options, _ in lesson.get('quiz', []):
-                found += [question] + options
+            for item in lesson.get('quiz', []):
+                found += [item[0]] + list(item[1])
             for slide in lesson.get('slides', []):
                 found += [slide.get(key, '') for key in ('title', 'subtitle', 'text', 'quote', 'by', 'work', 'credit', 'week')]
                 found += slide.get('bullets', []) + slide.get('points', []) + [what for _, what in slide.get('rows', [])]
@@ -72,7 +82,8 @@ def main():
                 problems.append(f'#{index}: {right} != {left}')
                 break
         # Long English sentences left untranslated (names and titles may repeat).
-        same = [text for text in texts(module) if text in english and len(text) > 40 and ' ' in text and not text.startswith('http')]
+        # Lines that compare the languages ("English: C D E ...") are the same in every edition.
+        same = [text for text in texts(module) if text in english and len(text) > 40 and ' ' in text and not text.startswith(('http', 'English:', 'Deutsch:', 'Français :'))]
         if same:
             problems.append(f'{len(same)} untranslated: {same[0][:80]!r}')
         lessons = sum(len(week['lessons']) for week in module.WEEKS)
