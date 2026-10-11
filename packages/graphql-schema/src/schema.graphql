@@ -201,6 +201,9 @@ type UserProfile {
   city: String
   country: String
   timezone: String!
+  # Preferred course language ('en', 'de' or 'fr') - the course catalogue
+  # shows this language first.
+  language: String!
   instruments: [String!]!
   musicStyles: [String!]!
   onboardingDone: Boolean!
@@ -1788,6 +1791,8 @@ input UpdateProfileInput {
   city: String
   country: String
   timezone: String
+  # Preferred course language: 'en', 'de' or 'fr'.
+  language: String
   instruments: [String!]
   musicStyles: [String!]
   # Pass an empty string to clear a previously-set notification email.

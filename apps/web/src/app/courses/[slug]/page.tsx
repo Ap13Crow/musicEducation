@@ -4,6 +4,7 @@ import { gql, useQuery, useMutation } from '@apollo/client';
 import { useParams } from 'next/navigation';
 import { useSession, signIn } from 'next-auth/react';
 import Link from 'next/link';
+import { languageName } from '@/lib/courseLanguage';
 import { BookOpen, Clock, Star, Users, Play, Lock, ArrowLeft, CheckCircle } from 'lucide-react';
 
 const ENROLL_IN_COURSE = gql`
@@ -17,10 +18,6 @@ const CREATE_CHECKOUT_SESSION = gql`
     createCheckoutSession(type: $type, refId: $refId) { checkoutUrl }
   }
 `;
-
-// Course languages, named in their own language.
-const LANGUAGE_NAMES: Record<string, string> = { en: 'English', de: 'Deutsch', fr: 'Français' };
-const languageName = (code?: string | null) => (code ? LANGUAGE_NAMES[code] ?? code.toUpperCase() : '');
 
 const GET_COURSE = gql`
   query GetCourse($slug: String) {
@@ -137,7 +134,7 @@ export default function CourseDetailPage() {
           {course.shortSummary && <p className="mb-4 text-lg text-primary-100">{course.shortSummary}</p>}
           {course.translations?.length > 0 && (
             <p className="mb-4 flex flex-wrap items-center gap-2 text-sm text-primary-100" data-testid="course-translations">
-              <span>{languageName(course.language)} ·</span>
+              <span>{languageName(course.language)} · also available in</span>
               {course.translations.map((translation: { slug: string; language: string; title: string }) => (
                 <Link key={translation.slug} href={`/courses/${translation.slug}`} lang={translation.language} className="rounded-full border border-white/40 px-3 py-0.5 font-medium text-white hover:bg-white/10">
                   {languageName(translation.language)}

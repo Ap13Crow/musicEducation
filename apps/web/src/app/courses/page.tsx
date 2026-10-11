@@ -5,16 +5,10 @@ import { gql, useQuery } from '@apollo/client';
 import { useSession } from 'next-auth/react';
 import { BookOpen, Clock, Star, Users, Search, SlidersHorizontal, X, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
+import { COURSE_LANGUAGES, languageName, useCourseLanguage } from '@/lib/courseLanguage';
 
 const INSTRUMENTS = ['Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute', 'Clarinet', 'Oboe', 'Trumpet', 'Organ', 'Harp', 'Percussion', 'Composition', 'Theory'];
 const LEVELS = ['All', 'Beginner', 'Intermediate', 'Advanced', 'Professional'];
-// Course languages, named in their own language ('' = all).
-const LANGUAGES = [
-  { code: '', label: 'All languages' },
-  { code: 'en', label: 'English' },
-  { code: 'de', label: 'Deutsch' },
-  { code: 'fr', label: 'Français' },
-];
 
 const GET_COURSES = gql`
   query GetCourses($filter: CourseFilterInput, $page: Int, $limit: Int) {
@@ -23,6 +17,7 @@ const GET_COURSES = gql`
         id slug title shortSummary thumbnailUrl price currency
         level avgRating totalReviews totalEnrollments totalDurationMin
         instruments isFreeTier language
+        translations { language }
         teacher { id headline user { displayName avatarUrl } }
       }
       pageInfo { totalCount hasNextPage }
@@ -84,6 +79,11 @@ function CourseCard({ course, isEnrolled }: { course: any; isEnrolled: boolean }
           <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{course.totalDurationMin}min</span>
           <span className="flex items-center gap-1"><Users className="h-3 w-3" />{course.totalEnrollments}</span>
         </div>
+        {course.translations?.length > 0 && (
+          <p className="mt-2 text-xs text-gray-500" data-testid="card-translations">
+            Also in {course.translations.map((translation: { language: string }) => languageName(translation.language)).join(' · ')}
+          </p>
+        )}
         <div className="mt-3 flex items-center justify-between">
           <span className="text-sm font-semibold text-gray-900">
             {Number(course.price) === 0 ? 'Free' : `${course.currency} ${Number(course.price).toFixed(2)}`}
@@ -103,7 +103,11 @@ export default function CoursesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [freeOnly, setFreeOnly] = useState(false);
-  const [activeLanguage, setActiveLanguage] = useState('');
+  // The catalogue shows one language at a time - the viewer's course
+  // language (English unless they chose another) - or, on request, all.
+  const { language: courseLanguage, setLanguage: setCourseLanguage, ready: languageReady } = useCourseLanguage();
+  const [allLanguages, setAllLanguages] = useState(false);
+  const activeLanguage = allLanguages ? '' : courseLanguage;
 
   const { data: session } = useSession();
   const liveApiEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_API === 'true';
@@ -117,7 +121,7 @@ export default function CoursesPage() {
 
   const { data, loading, error } = useQuery(GET_COURSES, {
     variables: { filter: Object.keys(filter).length > 0 ? filter : undefined, page: 1, limit: 60 },
-    skip: !liveApiEnabled,
+    skip: !liveApiEnabled || !languageReady,
   });
   const { data: enrollmentData } = useQuery(GET_MY_ENROLLMENTS, { skip: !liveApiEnabled || !session });
 
@@ -143,14 +147,13 @@ export default function CoursesPage() {
 
   const totalCount = data?.courses?.pageInfo?.totalCount ?? filteredCourses.length;
   const usingFallback = false;
-  const hasActiveFilters = activeLevel !== 'All' || !!activeInstrument || !!searchQuery || freeOnly || !!activeLanguage;
+  const hasActiveFilters = activeLevel !== 'All' || !!activeInstrument || !!searchQuery || freeOnly;
 
   function clearFilters() {
     setActiveLevel('All');
     setActiveInstrument('');
     setSearchQuery('');
     setFreeOnly(false);
-    setActiveLanguage('');
   }
 
   return (
@@ -278,19 +281,41 @@ export default function CoursesPage() {
               {level}
             </button>
           ))}
-          <select
-            aria-label="Course language"
-            value={activeLanguage}
-            onChange={(event) => setActiveLanguage(event.target.value)}
-            className="rounded-full border border-gray-200 bg-white px-4 py-1.5 text-sm text-gray-600 hover:border-primary-500 sm:ml-auto"
-          >
-            {LANGUAGES.map((language) => (
-              <option key={language.code} value={language.code}>{language.label}</option>
-            ))}
-          </select>
         </div>
 
-        {loading && (
+        {/* Course language: one language at a time, the viewer's choice is remembered */}
+        <div className="mb-6 flex flex-wrap items-center gap-2" role="group" aria-label="Course language" data-testid="course-language">
+          <span className="mr-1 text-sm text-gray-500">Course language</span>
+          {COURSE_LANGUAGES.map((language) => {
+            const active = !allLanguages && courseLanguage === language.code;
+            return (
+              <button
+                key={language.code}
+                type="button"
+                lang={language.code}
+                aria-pressed={active}
+                onClick={() => { setCourseLanguage(language.code); setAllLanguages(false); }}
+                className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+                  active ? 'border-gray-800 bg-gray-800 text-white' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-500'
+                }`}
+              >
+                {language.label}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            aria-pressed={allLanguages}
+            onClick={() => setAllLanguages(true)}
+            className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+              allLanguages ? 'border-gray-800 bg-gray-800 text-white' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-500'
+            }`}
+          >
+            All languages
+          </button>
+        </div>
+
+        {(loading || !languageReady) && (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {[...Array(8)].map((_, i) => (
               <div key={i} className="card animate-pulse">
@@ -316,7 +341,7 @@ export default function CoursesPage() {
           </p>
         )}
 
-        {!loading && (
+        {!loading && languageReady && (
           <>
             <p className="mb-4 text-sm text-gray-500">
               {filteredCourses.length} course{filteredCourses.length !== 1 ? 's' : ''} found{usingFallback ? ' (sample data)' : ''}

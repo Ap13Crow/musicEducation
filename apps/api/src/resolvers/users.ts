@@ -10,6 +10,9 @@ import {
 import { getBookableSlots, validateBookableRange } from '../lib/bookableSlots.js';
 import type { GraphQLContext } from '../types.js';
 
+// The languages courses are published in (Course.language).
+const COURSE_LANGUAGES = ['en', 'de', 'fr'];
+
 const PROFILE_COMPLETED_XP = 50;
 
 function isProfileComplete(profile: { displayName?: string | null; bio?: string | null; instruments?: string[] } | null | undefined): boolean {
@@ -242,7 +245,10 @@ export const userResolvers = {
   Mutation: {
     async updateProfile(_: unknown, { input }: any, { prisma, user }: GraphQLContext) {
       requireAuth(user);
-      const { displayName, bio, city, country, timezone, instruments, musicStyles, notificationEmail, weeklyDigestEmailEnabled } = input;
+      const { displayName, bio, city, country, timezone, language, instruments, musicStyles, notificationEmail, weeklyDigestEmailEnabled } = input;
+      if (language !== undefined && !COURSE_LANGUAGES.includes(language)) {
+        throw new GraphQLError('Choose English, German or French as course language.', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
       // Empty string clears a previously-set value; anything else must be a
       // real email - this feeds straight into an SMTP "to" address
       // (mailOutbox.ts's recipientAddresses), so a typo here would silently
@@ -264,12 +270,13 @@ export const userResolvers = {
                 city,
                 country,
                 timezone: timezone ?? 'Europe/Zurich',
+                language: language ?? 'en',
                 instruments: instruments ?? [],
                 musicStyles: musicStyles ?? [],
                 notificationEmail: normalizedNotificationEmail,
                 weeklyDigestEmailEnabled: weeklyDigestEmailEnabled ?? true,
               },
-              update: { displayName, bio, city, country, timezone, instruments, musicStyles, notificationEmail: normalizedNotificationEmail, weeklyDigestEmailEnabled },
+              update: { displayName, bio, city, country, timezone, language, instruments, musicStyles, notificationEmail: normalizedNotificationEmail, weeklyDigestEmailEnabled },
             },
           },
         },

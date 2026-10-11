@@ -106,3 +106,23 @@ describe('updateProfile - notificationEmail', () => {
     expect(call.data.profile.upsert.update.weeklyDigestEmailEnabled).toBeUndefined();
   });
 });
+
+describe('updateProfile - course language', () => {
+  const prismaWith = (update: jest.Mock) =>
+    fakePrisma({ user: { update }, gamificationProfile: { update: jest.fn() }, xpAward: { create: jest.fn() }, $transaction: jest.fn() });
+
+  it('stores English, German or French', async () => {
+    const update = jest.fn().mockResolvedValue({ profile: {} });
+    await userResolvers.Mutation.updateProfile(null, { input: { language: 'fr' } }, { prisma: prismaWith(update), user: studentUser } as any);
+    expect(update.mock.calls[0][0].data.profile.upsert.update.language).toBe('fr');
+    expect(update.mock.calls[0][0].data.profile.upsert.create.language).toBe('fr');
+  });
+
+  it('rejects other languages without writing anything', async () => {
+    const update = jest.fn();
+    await expect(
+      userResolvers.Mutation.updateProfile(null, { input: { language: 'xx' } }, { prisma: prismaWith(update), user: studentUser } as any),
+    ).rejects.toThrow('course language');
+    expect(update).not.toHaveBeenCalled();
+  });
+});

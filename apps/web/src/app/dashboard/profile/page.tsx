@@ -10,6 +10,7 @@ import {
   ExternalLink, CheckCircle, AlertCircle, Phone, ImagePlus, Calendar,
 } from 'lucide-react';
 import { externalLinks, keycloakAccountUrl, keycloakAdminUrl, keycloakSigningInUrl } from '@/lib/external-links';
+import { COURSE_LANGUAGES, languageName } from '@/lib/courseLanguage';
 
 const INSTRUMENTS = [
   'Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute',
@@ -22,7 +23,7 @@ const GET_PROFILE = gql`
     me {
       id email username displayName role avatarUrl
       profile {
-        bio city country timezone weeklyDigestEmailEnabled
+        bio city country timezone language weeklyDigestEmailEnabled
         instruments musicStyles onboardingDone
       }
       gamification {
@@ -44,7 +45,7 @@ const UPDATE_PROFILE = gql`
     updateProfile(input: $input) {
       id displayName
       profile {
-        bio city country timezone instruments musicStyles weeklyDigestEmailEnabled
+        bio city country timezone language instruments musicStyles weeklyDigestEmailEnabled
       }
     }
   }
@@ -56,6 +57,7 @@ type EditState = {
   city: string;
   country: string;
   timezone: string;
+  language: string;
   instruments: string[];
   musicStyles: string;
   weeklyDigestEmailEnabled: boolean;
@@ -93,7 +95,7 @@ export default function ProfilePage() {
   const [pendingPhoto, setPendingPhoto] = useState('');
   const [cropZoom, setCropZoom] = useState(1);
   const [edit, setEdit] = useState<EditState>({
-    displayName: '', bio: '', city: '', country: '', timezone: 'Europe/Zurich',
+    displayName: '', bio: '', city: '', country: '', timezone: 'Europe/Zurich', language: 'en',
     instruments: [], musicStyles: '', weeklyDigestEmailEnabled: true,
   });
 
@@ -113,6 +115,7 @@ export default function ProfilePage() {
       city: me?.profile?.city ?? '',
       country: me?.profile?.country ?? '',
       timezone: me?.profile?.timezone ?? 'Europe/Zurich',
+      language: me?.profile?.language ?? 'en',
       instruments: me?.profile?.instruments ?? [],
       musicStyles: (me?.profile?.musicStyles ?? []).join(', '),
       weeklyDigestEmailEnabled: me?.profile?.weeklyDigestEmailEnabled ?? true,
@@ -194,6 +197,7 @@ export default function ProfilePage() {
             city: edit.city.trim() || null,
             country: edit.country.trim() || null,
             timezone: edit.timezone,
+            language: edit.language,
             instruments: edit.instruments,
             musicStyles,
             weeklyDigestEmailEnabled: edit.weeklyDigestEmailEnabled,
@@ -415,6 +419,15 @@ export default function ProfilePage() {
                     <select className="input w-full" value={edit.timezone}
                       onChange={e => setEdit(p => ({ ...p, timezone: e.target.value }))}>
                       {TIMEZONES.map(tz => <option key={tz} value={tz}>{tz}</option>)}
+                    </select>
+                  } />
+
+                <Field label="Course language" icon={<Globe className="h-4 w-4" />}
+                  editing={editing} value={languageName(me?.profile?.language ?? 'en')}
+                  editNode={
+                    <select className="input w-full" value={edit.language}
+                      onChange={e => setEdit(p => ({ ...p, language: e.target.value }))}>
+                      {COURSE_LANGUAGES.map(language => <option key={language.code} value={language.code}>{language.label}</option>)}
                     </select>
                   } />
               </div>
