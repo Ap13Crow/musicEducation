@@ -45,9 +45,10 @@ function CourseCard({ course, isEnrolled }: { course: any; isEnrolled: boolean }
     <div className="card group hover:border-primary-300 transition-colors flex flex-col">
       <Link href={`/courses/${course.slug}`} className="block">
         {course.thumbnailUrl ? (
-          <img src={course.thumbnailUrl} alt={course.title} className="h-44 w-full object-cover" />
+          // Course covers are 16:9 (1200 x 675) - the frame matches, so nothing is cut off.
+          <img src={course.thumbnailUrl} alt={course.title} className="aspect-video w-full object-cover" />
         ) : (
-          <div className="flex h-44 w-full items-center justify-center bg-gradient-to-br from-primary-100 to-primary-200">
+          <div className="flex aspect-video w-full items-center justify-center bg-gradient-to-br from-primary-100 to-primary-200">
             <BookOpen className="h-12 w-12 text-primary-400" />
           </div>
         )}
@@ -319,7 +320,7 @@ export default function CoursesPage() {
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {[...Array(8)].map((_, i) => (
               <div key={i} className="card animate-pulse">
-                <div className="h-44 bg-gray-200" />
+                <div className="aspect-video bg-gray-200" />
                 <div className="p-4 space-y-2">
                   <div className="h-4 rounded bg-gray-200" />
                   <div className="h-3 w-3/4 rounded bg-gray-200" />

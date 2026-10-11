@@ -110,7 +110,13 @@ export async function hasActiveMembership(prisma: PrismaClient, userId: string):
   return membershipIsActive(await currentMembership(prisma, userId));
 }
 
-export async function createMembershipCheckout(prisma: PrismaClient, user: { id: string; email?: string | null }, plan: MembershipPlan, frontendUrl: string) {
+// Only site paths come back from Stripe: "/courses/bach-..." yes, "//evil" or "https://..." no.
+export function safeReturnPath(path?: string | null): string | null {
+  return path && /^\/[A-Za-z0-9/_-]*$/.test(path) && !path.startsWith('//') ? path : null;
+}
+
+export async function createMembershipCheckout(prisma: PrismaClient, user: { id: string; email?: string | null }, plan: MembershipPlan, frontendUrl: string, returnTo?: string | null) {
+  const back = safeReturnPath(returnTo);
   const offer = await membershipOffer(prisma);
   const price = plan === 'MONTHLY' ? offer.monthlyPrice : offer.yearlyPrice;
   if (!price || !offer.available) throw new Error('This membership plan is not on sale yet.');
@@ -133,8 +139,8 @@ export async function createMembershipCheckout(prisma: PrismaClient, user: { id:
     ...(user.email ? { customer_email: user.email } : {}),
     metadata,
     subscription_data: { metadata },
-    success_url: `${frontendUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}&type=membership&ref=${plan}`,
-    cancel_url: `${frontendUrl}/membership?cancelled=1`,
+    success_url: `${frontendUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}&type=membership&ref=${plan}${back ? `&next=${encodeURIComponent(back)}` : ''}`,
+    cancel_url: back ? `${frontendUrl}${back}` : `${frontendUrl}/membership?cancelled=1`,
   });
   return { sessionId: session.id, checkoutUrl: session.url! };
 }

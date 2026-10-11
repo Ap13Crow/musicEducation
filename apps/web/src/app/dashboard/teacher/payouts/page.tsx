@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { gql, useMutation, useQuery } from '@apollo/client';
 import Link from 'next/link';
 import RoleGate from '@/components/auth/RoleGate';
+import { MembershipEarningsCard } from '@/components/membership/MembershipEarningsCard';
 
 const GET = gql`
   query PayoutStatus {
@@ -113,6 +114,10 @@ export default function PayoutsPage() {
         </section>
 
         <button className="mt-4 text-sm text-primary-700" onClick={() => refetch()}>Refresh status</button>
+
+        <div className="mt-8">
+          <MembershipEarningsCard />
+        </div>
       </main>
     </RoleGate>
   );

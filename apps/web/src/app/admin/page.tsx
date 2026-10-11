@@ -8,6 +8,7 @@ import { useSession, signIn } from 'next-auth/react';
 import { hasRole } from '@/lib/roles';
 import { LibraryImportSearch } from '@/components/admin/LibraryImportSearch';
 import { LibraryUsageTab } from '@/components/admin/LibraryUsageTab';
+import { MembershipRevenueCard } from '@/components/admin/MembershipRevenueCard';
 import {
   Users, BookOpen, Calendar, DollarSign, Settings, Shield,
   Key, Video, CreditCard, BarChart3, UserCog, ChevronRight, UserCheck, Mail, RefreshCw, Library,
@@ -1042,6 +1043,7 @@ function SettingsTab() {
       </div>
 
       <MembershipPricesCard />
+      <MembershipRevenueCard />
       <XpBoundsCard />
 
       <div className="card p-5 space-y-3">

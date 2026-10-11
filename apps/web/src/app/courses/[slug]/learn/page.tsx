@@ -21,7 +21,7 @@ const GET_COURSE = gql`
         order
         lessons {
           id title description videoUrl contentType durationMin isFreePreview order xpReward feedbackMode
-          quizQuestions { id text type points order options { id text } }
+          quizQuestions { id text type points order imageUrl options { id text } }
           slides { id order fileUrl title }
           myViewedSlideIds
           ${LESSON_LIBRARY_LIST_FIELDS}
@@ -418,6 +418,9 @@ export default function CourseLearnPage() {
                                   {question.type === 'MULTIPLE_CHOICE' ? ' · select all that apply' : ''})
                                 </span>
                               </p>
+                              {question.imageUrl && (
+                                <img src={question.imageUrl} alt="" className="mt-2 w-full max-w-md rounded border border-gray-100 bg-white" />
+                              )}
                               <div className="mt-2 space-y-1">
                                 {question.options.map((option: any) => (
                                   <label key={option.id} className="flex items-center gap-2 text-sm text-gray-700">

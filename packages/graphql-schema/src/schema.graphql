@@ -1180,6 +1180,8 @@ type QuizQuestion {
   # Populated only for the owning teacher or an admin (authoring view) -
   # empty for anyone taking the quiz, so the answer key never ships to a student.
   correctOptionIds: [ID!]!
+  # Optional picture shown with the question (e.g. notes to name).
+  imageUrl: String
 }
 
 type QuizAnswer {
@@ -1222,6 +1224,49 @@ type MembershipOffer {
   available: Boolean!
   publishedCourses: Int!
   launchAfterCourses: Int
+}
+
+# A teacher's Plus earnings for one month (YYYY-MM, the month of the
+# membership period): two thirds of each member's month, shared equally among
+# the courses that member completed in it.
+type MembershipEarningsMonth {
+  month: String!
+  amountCents: Int!
+  paidCents: Int!
+  completions: Int!
+  courses: [MembershipEarningsCourse!]!
+}
+
+type MembershipEarningsCourse {
+  courseId: ID!
+  title: String!
+  completions: Int!
+  amountCents: Int!
+}
+
+type MembershipRevenueMonth {
+  month: String!
+  memberMonths: Int!
+  revenueCents: Int!
+  # Settled months only; unsettledCents is still waiting for its month to end.
+  teachersCents: Int!
+  platformCents: Int!
+  unsettledCents: Int!
+  unpaidTeacherCents: Int!
+  completions: Int!
+}
+
+type MembershipSettlementResult {
+  newSlices: Int!
+  settled: Int!
+  shares: Int!
+}
+
+type MembershipPayoutResult {
+  paidTeachers: Int!
+  paidCents: Int!
+  waitingTeachers: Int!
+  waitingCents: Int!
 }
 
 # mymusic.coach Plus - every paid course included while active.
@@ -2189,6 +2234,10 @@ type Query {
   searchLibrary(input: LibrarySearchInput!): LibrarySearchResult!
   membershipOffer: MembershipOffer!
   myMembership: PlatformMembership
+  # Teacher: what Plus members' course completions earned, by month.
+  myMembershipEarnings: [MembershipEarningsMonth!]!
+  # Admin: Plus revenue and how it was shared, by month.
+  membershipRevenue: [MembershipRevenueMonth!]!
   # TEACHER/ADMIN, own courses only.
   courseInvitations(courseId: ID!): [CourseInvitation!]!
   # Signed-in user's picks from profile + reading history; [] when signed
@@ -2328,7 +2377,14 @@ type Mutation {
   # note if given).
   addLessonLibraryReference(input: AddLessonLibraryReferenceInput!): LessonLibraryReference!
   # mymusic.coach Plus: Stripe Checkout for MONTHLY or YEARLY.
-  startMembershipCheckout(plan: String!): CheckoutSession!
+  # returnTo: a site path (e.g. the course page the member came from) to
+  # come back to after paying or cancelling.
+  startMembershipCheckout(plan: String!, returnTo: String): CheckoutSession!
+  # Admin: record new paid membership months from Stripe and share out the
+  # finished ones (also runs daily).
+  runMembershipSettlement: MembershipSettlementResult!
+  # Admin: transfer the teachers' unpaid shares to their Stripe accounts.
+  payOutMembershipShares: MembershipPayoutResult!
   # false = cancel at the end of the current period; true = keep renewing.
   setMembershipAutoRenew(autoRenew: Boolean!): PlatformMembership!
   # TEACHER/ADMIN, own courses: free access by email; existing accounts are

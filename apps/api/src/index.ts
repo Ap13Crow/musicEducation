@@ -17,6 +17,7 @@ import { buildUserCalendarFeed } from './lib/calendarFeed.js';
 import { fetchScoreBytes, isAllowedScoreSource } from './lib/openscore.js';
 import { MUTOPIA_FTP_PREFIX } from './lib/openSources.js';
 import { scheduleNightlyLibraryImports, startLibraryImport } from './lib/libraryImports.js';
+import { scheduleMembershipSettlement } from './lib/membershipRevenue.js';
 import { libraryFolderShareUrl, libraryQrCode, libraryShareUrl } from './lib/libraryLinks.js';
 import { libraryMediaStoreConfigured, putStoredUpload, sendLibraryObject, sendStoredUpload } from './lib/libraryMediaStore.js';
 import { verifyLocalUploadToken } from './lib/storage.js';
@@ -627,6 +628,7 @@ async function main() {
   setTimeout(resumeMirror, 90_000).unref();
   setInterval(resumeMirror, 60 * 60 * 1000).unref();
   scheduleNightlyLibraryImports(prisma);
+  scheduleMembershipSettlement(prisma);
 }
 
 async function shutdown(signal: string) {

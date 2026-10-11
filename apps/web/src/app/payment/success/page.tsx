@@ -238,6 +238,9 @@ export default function PaymentSuccessPage() {
   const type = params.get('type');
   const ref = params.get('ref');
   const sessionId = params.get('session_id');
+  // Where the member came from (a course page, onboarding) - site paths only.
+  const nextPath = params.get('next');
+  const membershipNext = nextPath && /^\/[A-Za-z0-9/_-]*$/.test(nextPath) && !nextPath.startsWith('//') ? nextPath : null;
 
   return (
     <main className="px-6 py-20">
@@ -256,8 +259,8 @@ export default function PaymentSuccessPage() {
           confirmed
           pending={false}
           confirmedText="Welcome to mymusic.coach Plus - every course is now open to you."
-          link="/courses"
-          linkLabel="Browse courses"
+          link={membershipNext ?? '/courses'}
+          linkLabel={membershipNext?.startsWith('/courses/') ? 'Start your course' : membershipNext === '/onboarding' ? 'Continue with your assessment' : 'Browse courses'}
         />
       ) : (
         <Confirmation confirmed pending={false} confirmedText="Payment received." link="/dashboard" linkLabel="Go to my dashboard" />

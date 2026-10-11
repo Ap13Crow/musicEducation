@@ -54,12 +54,12 @@ export const courseAccessResolvers = {
   },
 
   Mutation: {
-    async startMembershipCheckout(_: unknown, { plan }: { plan: string }, { prisma, user }: GraphQLContext) {
+    async startMembershipCheckout(_: unknown, { plan, returnTo }: { plan: string; returnTo?: string | null }, { prisma, user }: GraphQLContext) {
       requireAuth(user);
       if (!MEMBERSHIP_PLANS.includes(plan as MembershipPlan)) fail('Unknown membership plan.');
       const account = await prisma.user.findUnique({ where: { id: user.id }, select: { email: true } });
       try {
-        return await createMembershipCheckout(prisma, { id: user.id, email: account?.email }, plan as MembershipPlan, getFrontendUrl());
+        return await createMembershipCheckout(prisma, { id: user.id, email: account?.email }, plan as MembershipPlan, getFrontendUrl(), returnTo);
       } catch (error) {
         fail(error instanceof Error ? error.message : 'Checkout failed.');
       }

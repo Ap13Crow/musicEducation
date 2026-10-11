@@ -1,10 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import { gql, useQuery, useMutation } from '@apollo/client';
 import { useParams } from 'next/navigation';
 import { useSession, signIn } from 'next-auth/react';
 import Link from 'next/link';
 import { languageName } from '@/lib/courseLanguage';
+import { PlusUpsellDialog } from '@/components/membership/PlusUpsellDialog';
 import { BookOpen, Clock, Star, Users, Play, Lock, ArrowLeft, CheckCircle } from 'lucide-react';
 
 const ENROLL_IN_COURSE = gql`
@@ -79,17 +81,27 @@ export default function CourseDetailPage() {
   const membership = data?.membershipOffer;
 
 
+  // While Plus is on sale, buying a single course first shows the membership.
+  const [upsellOpen, setUpsellOpen] = useState(false);
+
   async function handleEnroll() {
     if (!course?.id || !liveApiEnabled) return;
     if (freeReason) {
       await enrollFree({ variables: { courseId: course.id } });
+    } else if (membership?.available && !upsellOpen) {
+      setUpsellOpen(true);
     } else {
-      const { data: checkoutData } = await createCheckout({
-        variables: { type: 'course', refId: course.id },
-      });
-      if (checkoutData?.createCheckoutSession?.checkoutUrl) {
-        window.location.href = checkoutData.createCheckoutSession.checkoutUrl;
-      }
+      await buySingle();
+    }
+  }
+
+  async function buySingle() {
+    if (!course?.id) return;
+    const { data: checkoutData } = await createCheckout({
+      variables: { type: 'course', refId: course.id },
+    });
+    if (checkoutData?.createCheckoutSession?.checkoutUrl) {
+      window.location.href = checkoutData.createCheckoutSession.checkoutUrl;
     }
   }
 
@@ -295,6 +307,14 @@ export default function CourseDetailPage() {
                         ? access?.enrolled ? 'Continue - free for you' : 'Start the course - free for you'
                         : `Buy for ${course.currency} ${Number(course.price).toFixed(2)}`}
                     </button>
+                    <PlusUpsellDialog
+                      open={upsellOpen}
+                      onClose={() => setUpsellOpen(false)}
+                      onBuySingle={() => void buySingle()}
+                      singlePrice={`${course.currency} ${Number(course.price).toFixed(2)}`}
+                      buying={checkingOut}
+                      returnTo={`/courses/${slug}`}
+                    />
                     {!freeReason && membership?.available && (
                       <p className="text-center text-xs text-gray-600">
                         or get every course with{' '}

@@ -206,6 +206,7 @@ model User {
   libraryFavorites       LibraryFavorite[]
   libraryFolders         LibraryFolder[]
   libraryEngagements     LibraryEngagement[]
+  membershipRevenueSlices MembershipRevenueSlice[]
 }
 
 model UserProfile {
@@ -316,6 +317,7 @@ model TeacherProfile {
   bookings       Booking[]
   checkoutOrders CheckoutOrder[]
   bookingCarts   BookingCart[]
+  membershipShares MembershipTeacherShare[]
 }
 
 model TeacherCertification {
@@ -525,6 +527,7 @@ model Course {
   invitations    CourseInvitation[]
 
   @@index([translationKey])
+  membershipShares MembershipTeacherShare[]
 }
 
 model CourseSection {
@@ -611,6 +614,8 @@ model QuizQuestion {
   type        QuizQuestionType @default(SINGLE_CHOICE)
   points      Int              @default(1)
   order       Int              @default(0)
+  // Optional picture shown with the question (e.g. notes to name).
+  imageUrl    String?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -1777,6 +1782,50 @@ model PlatformMembership {
   updatedAt            DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// One paid month of a membership (a yearly invoice is twelve) and how it
+// was shared out - see lib/membershipRevenue.ts and migration 055.
+model MembershipRevenueSlice {
+  id               String    @id @default(cuid())
+  userId           String
+  plan             String
+  stripeInvoiceId  String
+  sliceIndex       Int       @default(0)
+  periodStart      DateTime
+  periodEnd        DateTime
+  currency         String    @default("CHF")
+  amountCents      Int
+  teacherPoolCents Int
+  platformCents    Int?
+  settledAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  user   User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shares MembershipTeacherShare[]
+
+  @@unique([stripeInvoiceId, sliceIndex])
+  @@index([settledAt, periodEnd])
+}
+
+// A teacher's part of one slice, for one completed course.
+model MembershipTeacherShare {
+  id               String    @id @default(cuid())
+  sliceId          String
+  teacherProfileId String
+  courseId         String
+  enrollmentId     String
+  amountCents      Int
+  stripeTransferId String?
+  paidAt           DateTime?
+  createdAt        DateTime  @default(now())
+
+  slice          MembershipRevenueSlice @relation(fields: [sliceId], references: [id], onDelete: Cascade)
+  teacherProfile TeacherProfile         @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+  course         Course                 @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([sliceId, enrollmentId])
+  @@index([teacherProfileId, paidAt])
 }
 
 // A teacher invites someone (by email) into a course for free; matched to

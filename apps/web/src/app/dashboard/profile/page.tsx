@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { externalLinks, keycloakAccountUrl, keycloakAdminUrl, keycloakSigningInUrl } from '@/lib/external-links';
 import { COURSE_LANGUAGES, languageName } from '@/lib/courseLanguage';
+import { MembershipCard } from '@/components/membership/MembershipCard';
 
 const INSTRUMENTS = [
   'Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute',
@@ -432,6 +433,8 @@ export default function ProfilePage() {
                   } />
               </div>
             </section>
+
+            <MembershipCard />
 
             {/* Instruments */}
             <section className="card p-6">

@@ -73,7 +73,12 @@ export async function completeLessonForUser(prisma: any, userId: string, lessonI
     where: { enrollmentId: enrollment.id, completedAt: { not: null } },
   });
   const progressPct = totalLessons > 0 ? completedLessons / totalLessons : 0;
-  await prisma.enrollment.update({ where: { id: enrollment.id }, data: { progress: progressPct, completedAt: progressPct >= 1 ? new Date() : null } });
+  // The first time the course is complete is the completion that counts (the
+  // Plus revenue share pays teachers for completions per membership month) -
+  // re-completing a lesson later, or new lessons added afterwards, must not
+  // move or erase it.
+  const completedAt = enrollment.completedAt ?? (progressPct >= 1 ? new Date() : null);
+  await prisma.enrollment.update({ where: { id: enrollment.id }, data: { progress: progressPct, completedAt } });
 
   if (!alreadyCompleted) {
     await prisma.gamificationProfile.update({

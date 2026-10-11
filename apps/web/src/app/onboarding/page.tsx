@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, gql } from '@apollo/client';
 import { useRouter } from 'next/navigation';
 import { signIn, useSession } from 'next-auth/react';
-import { BookOpen, Mic, Globe, Music } from 'lucide-react';
+import { BookOpen, Mic, Globe, Music, Sparkles } from 'lucide-react';
+import { PlusOffer, usePlusOffer } from '@/components/membership/PlusOffer';
 
 // aiReport is written server-side as JSON.stringify(...) (see
 // completeAssessment in assessments.ts) so it's always well-formed today,
@@ -97,6 +98,17 @@ export default function OnboardingPage() {
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>([]);
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
   const [result, setResult] = useState<any>(null);
+  // Free account or mymusic.coach Plus - asked on the welcome screen while
+  // the membership is on sale. "?plan=plus" keeps the choice across sign-in.
+  const { offer: plusOffer } = usePlusOffer();
+  const [choosePlus, setChoosePlus] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('plan') === 'plus') setChoosePlus(true);
+  }, []);
+  function pickPlus() {
+    setChoosePlus(true);
+    window.history.replaceState(null, '', '/onboarding?plan=plus');
+  }
 
   const { data: statusData, loading: statusLoading } = useQuery(GET_ONBOARDING_STATUS, {
     skip: status !== 'authenticated',
@@ -266,9 +278,36 @@ export default function OnboardingPage() {
                 You&rsquo;ll create your account first — it takes a minute, then you&rsquo;re straight back here to continue.
               </p>
             )}
-            <button onClick={handleStart} disabled={status === 'loading'} className="btn-primary px-10 py-3 text-base">
-              {status === 'authenticated' ? 'Start Assessment' : 'Create account & start'}
-            </button>
+            {plusOffer?.available ? (
+              <div className="grid gap-4 text-left sm:grid-cols-2" data-testid="onboarding-plan-choice">
+                <div className={`flex flex-col rounded-xl border p-5 ${choosePlus ? 'border-gray-200' : 'border-primary-500 ring-1 ring-primary-500'}`}>
+                  <p className="text-lg font-semibold">Free account</p>
+                  <p className="mb-4 mt-1 text-sm text-gray-600">Your profile and assessment, free courses and previews - buy single courses when you like.</p>
+                  <button onClick={handleStart} disabled={status === 'loading'} className={`mt-auto ${choosePlus ? 'btn-secondary' : 'btn-primary'} w-full py-2.5`}>
+                    {status === 'authenticated' ? 'Start the assessment' : 'Create a free account'}
+                  </button>
+                </div>
+                <div className={`flex flex-col rounded-xl border p-5 ${choosePlus ? 'border-primary-500 ring-1 ring-primary-500' : 'border-gray-200'}`}>
+                  <p className="flex items-center gap-1.5 text-lg font-semibold"><Sparkles className="h-4 w-4 text-primary-600" /> mymusic.coach Plus</p>
+                  <p className="mb-4 mt-1 text-sm text-gray-600">
+                    All {plusOffer.publishedCourses} courses for {plusOffer.currency} {Number(plusOffer.monthlyPrice ?? 0).toFixed(2)} a month - cancel any time.
+                  </p>
+                  {!choosePlus && (
+                    <button onClick={pickPlus} className="btn-primary mt-auto w-full py-2.5">Get access to all courses</button>
+                  )}
+                </div>
+                {choosePlus && (
+                  <div className="rounded-xl border border-primary-200 bg-primary-50/40 p-5 sm:col-span-2">
+                    <PlusOffer heading={false} returnTo="/onboarding" />
+                    <p className="mt-3 text-center text-xs text-gray-500">After joining you come straight back here for your assessment.</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button onClick={handleStart} disabled={status === 'loading'} className="btn-primary px-10 py-3 text-base">
+                {status === 'authenticated' ? 'Start Assessment' : 'Create account & start'}
+              </button>
+            )}
           </div>
         )}
 
@@ -427,6 +466,11 @@ export default function OnboardingPage() {
             <p className="mb-8 text-gray-600">
               Your personalised learning path is ready. Explore your recommended courses, teachers and events.
             </p>
+            {plusOffer?.available && (
+              <div className="mb-8 rounded-xl border border-primary-200 p-5 text-left">
+                <PlusOffer returnTo="/courses" />
+              </div>
+            )}
             <button onClick={() => router.push('/dashboard')} className="btn-primary px-8 py-3 text-base">
               View My Dashboard
             </button>
