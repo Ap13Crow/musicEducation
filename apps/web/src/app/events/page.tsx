@@ -217,7 +217,7 @@ export default function EventsPage() {
 
   return (
     <main className="px-6 py-16">
-      <section className="mx-auto max-w-5xl">
+      <section className="mx-auto max-w-6xl">
         <p className="mb-3 inline-block rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
           Performance Pillar
         </p>
@@ -399,7 +399,7 @@ export default function EventsPage() {
             <p className="mb-6 max-w-3xl text-sm text-gray-600">
               Discovered from external listings — purchase happens on the provider&rsquo;s own site.
             </p>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {externalEvents.map((ext) => <ExternalEventCard key={ext.id} ext={ext} onView={handleExternalEventView} />)}
             </div>
           </div>

@@ -392,7 +392,7 @@ export default function TeacherProfessionalProfilePage() {
     <RoleGate allow={['TEACHER', 'ADMIN']} callbackUrl="/dashboard/teacher/profile">
       <main className="min-h-[calc(100vh-4rem)] bg-gray-50">
         <section className="border-b border-gray-200 bg-white">
-          <div className="mx-auto max-w-5xl px-6 py-10">
+          <div className="mx-auto box-content max-w-6xl px-6 py-10">
             <Link href="/dashboard/teacher" className="text-sm text-primary-700">← Teacher workspace</Link>
             <p className="mt-4 text-sm font-semibold uppercase tracking-wide text-primary-600">Teacher profile</p>
             <h1 className="mt-2 font-serif text-3xl font-bold text-gray-900">Your professional profile</h1>
@@ -403,7 +403,7 @@ export default function TeacherProfessionalProfilePage() {
           </div>
         </section>
 
-        <div className="mx-auto max-w-5xl px-6 py-8">
+        <div className="mx-auto box-content max-w-6xl px-6 py-8">
           {loading && !data && <p className="text-sm text-gray-500">Loading…</p>}
           {error && <p className="text-sm text-red-600">Failed to load your profile: {error.message}</p>}
 

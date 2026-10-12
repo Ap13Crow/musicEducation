@@ -145,7 +145,7 @@ export default function TeacherWorkspacePage() {
     <RoleGate allow={['TEACHER', 'ADMIN']} callbackUrl="/dashboard/teacher">
       <main className="min-h-[calc(100vh-4rem)] bg-gray-50">
         <section className="border-b border-gray-200 bg-white">
-          <div className="mx-auto max-w-6xl px-6 py-10">
+          <div className="mx-auto box-content max-w-6xl px-6 py-10">
             <Link href="/dashboard" className="text-sm text-primary-700">← Dashboard</Link>
             <p className="mt-4 text-sm font-semibold uppercase tracking-wide text-primary-600">Teacher workspace</p>
             <h1 className="mt-2 font-serif text-3xl font-bold text-gray-900">Build your teaching practice</h1>
@@ -154,7 +154,7 @@ export default function TeacherWorkspacePage() {
             </p>
           </div>
         </section>
-        <div className="mx-auto grid max-w-6xl gap-4 px-6 py-8 md:grid-cols-4">
+        <div className="mx-auto grid box-content max-w-6xl gap-4 px-6 py-8 md:grid-cols-4">
           <WorkspaceCard href="/dashboard/teacher/profile" icon={<UserRoundCheck />} title="Teacher profile" text="Complete your public teaching profile, photo and instruments." />
           <WorkspaceCard href="/dashboard/teacher/availability" icon={<CalendarClock />} title="Lesson availability" text="Publish the recurring times students can book." />
           <WorkspaceCard href="/dashboard/teacher/students" icon={<Users />} title="My students" text="Your students from recent bookings, with contact info and upcoming sessions." />
@@ -163,7 +163,7 @@ export default function TeacherWorkspacePage() {
           <WorkspaceCard href="/dashboard/teacher/content/performance" icon={<CalendarPlus />} title="Performance studio" text="Create and publish events." />
           <WorkspaceCard href="/dashboard/teacher/payouts" icon={<CreditCard />} title="Payouts" text="Connect Stripe to receive your share of sales." />
         </div>
-        <div className="mx-auto max-w-6xl space-y-6 px-6 pb-10">
+        <div className="mx-auto box-content max-w-6xl space-y-6 px-6 pb-10">
           <UpcomingSessions />
         </div>
       </main>

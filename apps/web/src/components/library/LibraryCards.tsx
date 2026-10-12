@@ -115,7 +115,7 @@ export function ItemGrid({
           {pageInfo.totalCount} {pageInfo.totalCount === 1 ? 'item' : 'items'}
         </p>
       )}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(16.5rem,1fr))]">
         {items.map((item) => <LibraryCard key={item.id} item={item} />)}
       </div>
       {pageInfo && (pageInfo.hasPreviousPage || pageInfo.hasNextPage) && (
@@ -143,7 +143,7 @@ export function ItemGrid({
 
 export function LoadingGrid() {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(16.5rem,1fr))]">
       {[1, 2, 3, 4, 5, 6].map((i) => (
         <div key={i} className="card animate-pulse p-0">
           <div className="h-36 bg-gray-100" />

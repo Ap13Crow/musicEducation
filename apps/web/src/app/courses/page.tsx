@@ -167,7 +167,7 @@ export default function CoursesPage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto box-content max-w-6xl px-6 py-10">
         {/* Search bar */}
         <div className="mb-6 flex gap-3">
           <div className="relative flex-1">

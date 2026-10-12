@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { gql, useQuery } from '@apollo/client';
 import { useEffect } from 'react';
 import { signIn, useSession } from 'next-auth/react';
-import { BookOpen, CalendarDays, CheckCircle2, Music2, ShieldCheck, UserRound } from 'lucide-react';
+import { ArrowRight, CheckCircle2, ShieldCheck, UserRound } from 'lucide-react';
+import { PILLARS } from '@/lib/pillars';
 import { roleLabel } from '@/lib/roles';
 
 const GET_PROFILE = gql`
@@ -101,7 +102,7 @@ export default function DashboardPage() {
   return (
     <main className="min-h-[calc(100vh-4rem)] bg-gray-50">
       <section className="border-b border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-6 px-6 py-10">
+        <div className="mx-auto flex box-content max-w-6xl flex-wrap items-center justify-between gap-6 px-6 py-10">
           <div className="flex items-center gap-4">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-100 text-primary-700">
               {me.avatarUrl ? <img src={me.avatarUrl} alt="" className="h-16 w-16 rounded-2xl object-cover" /> : <UserRound className="h-8 w-8" />}
@@ -123,19 +124,17 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <div className="mx-auto grid max-w-6xl gap-6 px-6 py-8 lg:grid-cols-[2fr_1fr]">
+      <div className="mx-auto grid box-content max-w-6xl gap-6 px-6 py-8 lg:grid-cols-[2fr_1fr]">
         <section>
           <h2 className="font-serif text-2xl font-semibold text-gray-900">Your learning space</h2>
-          <p className="mt-1 text-sm text-gray-600">The three pillars will meet here as your activity grows.</p>
+          <p className="mt-1 text-sm text-gray-600">Your teachers, courses, events and library will meet here as your activity grows.</p>
           {(me.role === 'TEACHER' || me.role === 'ADMIN') && (
             <Link href="/dashboard/teacher" className="mt-4 inline-flex text-sm font-semibold text-primary-700 hover:underline">
               Open teacher workspace →
             </Link>
           )}
-          <div className="mt-5 grid gap-4 md:grid-cols-3">
-            <Pillar href="/teachers" icon={<Music2 />} title="Book a teacher" text="Find the right teacher and reserve a lesson." />
-            <Pillar href="/courses" icon={<BookOpen />} title="Online courses" text="Learn at your pace and track progress." />
-            <Pillar href="/events" icon={<CalendarDays />} title="Music events" text="Discover performances and workshops." />
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            {PILLARS.map((p) => <Pillar key={p.key} pillar={p} />)}
           </div>
           <div className="mt-6 rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center">
             <CheckCircle2 className="mx-auto h-9 w-9 text-primary-500" />
@@ -166,12 +165,13 @@ export default function DashboardPage() {
   );
 }
 
-function Pillar({ href, icon, title, text }: { href: string; icon: React.ReactNode; title: string; text: string }) {
+function Pillar({ pillar }: { pillar: (typeof PILLARS)[number] }) {
   return (
-    <Link href={href} className="group rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-primary-300">
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-50 text-primary-600">{icon}</div>
-      <h3 className="mt-4 font-semibold text-gray-900 group-hover:text-primary-700">{title}</h3>
-      <p className="mt-1 text-sm leading-5 text-gray-600">{text}</p>
+    <Link href={pillar.href} className="group flex flex-col rounded-xl border border-line bg-white p-5 transition hover:border-primary-100 hover:shadow-md">
+      <div className={`flex h-10 w-10 items-center justify-center rounded-full ${pillar.iconClass}`}><pillar.icon className="h-5 w-5" /></div>
+      <h3 className="mt-4 font-bold text-ink group-hover:text-primary-600">{pillar.title}</h3>
+      <p className="mt-1 mb-3 text-sm leading-5 text-muted">{pillar.description}</p>
+      <ArrowRight className="mt-auto h-4 w-4 self-end text-primary-600" />
     </Link>
   );
 }
@@ -186,5 +186,5 @@ function CenteredMessage({ children }: { children: React.ReactNode }) {
   return <div className="flex min-h-[65vh] items-center justify-center px-6 text-center text-gray-600">{children}</div>;
 }
 function DashboardLoading() {
-  return <div className="mx-auto max-w-6xl px-6 py-12"><div className="h-10 w-72 animate-pulse rounded bg-gray-200" /><div className="mt-8 grid gap-4 md:grid-cols-3">{[1,2,3].map((item) => <div key={item} className="h-40 animate-pulse rounded-2xl bg-gray-100" />)}</div></div>;
+  return <div className="mx-auto box-content max-w-6xl px-6 py-12"><div className="h-10 w-72 animate-pulse rounded bg-gray-200" /><div className="mt-8 grid gap-4 sm:grid-cols-2">{[1,2,3,4].map((item) => <div key={item} className="h-40 animate-pulse rounded-2xl bg-gray-100" />)}</div></div>;
 }

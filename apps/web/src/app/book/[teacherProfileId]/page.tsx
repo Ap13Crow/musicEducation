@@ -241,7 +241,7 @@ export default function BookTeacherPage() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
+    <main className="mx-auto box-content max-w-6xl px-6 py-10">
       <Link href={`/teachers/${teacherProfileId}`} className="text-sm text-primary-700">← Teacher profile</Link>
       {loading && !teacher ? (
         <p className="mt-8">Loading availability…</p>

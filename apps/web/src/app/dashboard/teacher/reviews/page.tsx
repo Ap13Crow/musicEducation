@@ -77,7 +77,7 @@ function ReviewsFeed() {
   const feed = buildFeed(data?.myCourses?.nodes ?? [], data?.myEvents?.nodes ?? []);
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
+    <main className="mx-auto box-content max-w-6xl px-6 py-10">
       <Link href="/dashboard/teacher" className="text-sm text-primary-700">← Teacher workspace</Link>
       <h1 className="mt-4 font-serif text-3xl font-bold">Reviews</h1>
       <p className="mt-2 text-sm text-gray-600">

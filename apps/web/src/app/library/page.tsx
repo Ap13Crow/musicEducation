@@ -144,7 +144,7 @@ function LibraryPageContent() {
 
   return (
     <main className="px-4 py-12 sm:px-6 sm:py-16">
-      <section className={`mx-auto ${signedIn ? 'max-w-7xl' : 'max-w-5xl'}`}>
+      <section className={`mx-auto ${signedIn ? 'max-w-7xl' : 'max-w-6xl'}`}>
         <p className="mb-3 inline-block rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
           Library Pillar
         </p>

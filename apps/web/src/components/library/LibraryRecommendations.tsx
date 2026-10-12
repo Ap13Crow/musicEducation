@@ -44,7 +44,7 @@ export function LibraryRecommendations() {
         <h2 id="library-recommended" className="text-2xl font-bold">Recommended for you</h2>
       </div>
       <p className="mb-4 max-w-3xl text-sm text-gray-600">From your instruments, music styles and level, and from what you have been reading and listening to.</p>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(16.5rem,1fr))]">
         {picks.map((pick) => (
           <LibraryCard key={pick.item.id} item={pick.item} note={pick.reasons.join(' · ')} />
         ))}

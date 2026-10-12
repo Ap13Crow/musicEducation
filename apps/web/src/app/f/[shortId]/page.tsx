@@ -48,7 +48,7 @@ export default async function PublicFolderPage({ params }: { params: { shortId: 
 
   return (
     <main className="px-4 py-12 sm:px-6">
-      <section className="mx-auto max-w-5xl">
+      <section className="mx-auto max-w-6xl">
         <p className="mb-3 inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
           <Folder className="h-3.5 w-3.5" /> Library collection
         </p>

@@ -7,8 +7,9 @@ import { gql, useQuery, useMutation } from '@apollo/client';
 import {
   User, Mail, MapPin, Music, Globe, Edit3, Save, X,
   Trophy, Flame, GraduationCap, Star, Lock,
-  ExternalLink, CheckCircle, AlertCircle, Phone, ImagePlus, Calendar,
+  ArrowRight, ExternalLink, CheckCircle, AlertCircle, Phone, ImagePlus, Calendar,
 } from 'lucide-react';
+import { PILLARS } from '@/lib/pillars';
 import { externalLinks, keycloakAccountUrl, keycloakAdminUrl, keycloakSigningInUrl } from '@/lib/external-links';
 import { COURSE_LANGUAGES, languageName } from '@/lib/courseLanguage';
 import { MembershipCard } from '@/components/membership/MembershipCard';
@@ -233,7 +234,7 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="border-b border-gray-200 bg-white px-6 py-8">
-        <div className="mx-auto max-w-4xl">
+        <div className="mx-auto max-w-6xl">
           {/* A teacher/admin's actual "home" is the teacher workspace, not
               the general student dashboard - landing back on /dashboard from
               here (as it did before) undid the "Go to teacher profile →"
@@ -321,7 +322,7 @@ export default function ProfilePage() {
         </div>
       )}
 
-      <div className="mx-auto max-w-4xl px-6 py-8 space-y-6">
+      <div className="mx-auto box-content max-w-6xl px-6 py-8 space-y-6">
         {photoError && (
           <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <AlertCircle className="h-4 w-4 shrink-0" /> {photoError}
@@ -617,9 +618,9 @@ export default function ProfilePage() {
                 <Phone className="h-4 w-4 text-gray-500" /> Quick links
               </h2>
               <div className="space-y-2">
-                <PillarLink href={externalLinks.learn} label="Browse courses" color="text-blue-600" />
-                <PillarLink href={externalLinks.booking} label="Find a teacher" color="text-purple-600" />
-                <PillarLink href={externalLinks.tickets} label="Upcoming events" color="text-amber-600" />
+                {PILLARS.map((p) => (
+                  <PillarLink key={p.key} href={p.href} label={p.title} color={p.textClass} />
+                ))}
               </div>
             </section>
           </div>
@@ -660,11 +661,11 @@ function StatRow({ icon, label, value }: { icon: React.ReactNode; label: string;
 function PillarLink({ href, label, color }: { href?: string; label: string; color: string }) {
   if (!href) return null;
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer"
-      className={`flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-sm ${color} transition-colors hover:bg-gray-50`}>
+    <Link href={href}
+      className={`flex items-center justify-between rounded-lg border border-line px-3 py-2 text-sm font-medium ${color} transition-colors hover:bg-surface`}>
       {label}
-      <ExternalLink className="h-3.5 w-3.5 opacity-60" />
-    </a>
+      <ArrowRight className="h-3.5 w-3.5 opacity-60" />
+    </Link>
   );
 }
 
@@ -672,7 +673,7 @@ function ProfileSkeleton() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="border-b border-gray-200 bg-white px-6 py-8">
-        <div className="mx-auto max-w-4xl flex items-center gap-4">
+        <div className="mx-auto max-w-6xl flex items-center gap-4">
           <div className="h-16 w-16 animate-pulse rounded-full bg-gray-200" />
           <div className="space-y-2">
             <div className="h-6 w-48 animate-pulse rounded bg-gray-200" />
@@ -680,7 +681,7 @@ function ProfileSkeleton() {
           </div>
         </div>
       </div>
-      <div className="mx-auto max-w-4xl px-6 py-8">
+      <div className="mx-auto box-content max-w-6xl px-6 py-8">
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2 space-y-6">
             {[1, 2, 3].map(i => <div key={i} className="card h-48 animate-pulse bg-gray-100" />)}

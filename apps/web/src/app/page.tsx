@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { gql, useQuery } from '@apollo/client';
-import { BookOpen, Music, Calendar, Users, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
+import { PILLARS } from '@/lib/pillars';
 
 const GET_PLATFORM_STATS = gql`
   query HomepagePlatformStats {
@@ -18,39 +19,6 @@ const STAT_FIELDS = [
   { key: 'totalScores', label: 'Scores', one: 'Score', href: '/library' },
   { key: 'totalRecordings', label: 'Recordings', one: 'Recording', href: '/library' },
 ] as const;
-
-// Four equal pillars - no genre or "theory first" framing; community is the
-// social link between them, not a fifth card.
-const pillars = [
-  {
-    icon: Users,
-    title: 'Find a Teacher',
-    description: 'Find inspiring music teachers around the world, online or in person.',
-    href: '/teachers',
-    color: 'bg-blue-50 text-primary-600',
-  },
-  {
-    icon: Music,
-    title: 'Explore Courses',
-    description: 'Explore music courses for every level, from beginner to advanced.',
-    href: '/courses',
-    color: 'bg-violet-50 text-violet-600',
-  },
-  {
-    icon: Calendar,
-    title: 'Discover Events',
-    description: 'Discover concerts, masterclasses, festivals and workshops around the world.',
-    href: '/events',
-    color: 'bg-amber-50 text-secondary-600',
-  },
-  {
-    icon: BookOpen,
-    title: 'Explore the Library',
-    description: 'Browse sheet music, recordings and books from trusted musical collections.',
-    href: '/library',
-    color: 'bg-emerald-50 text-emerald-600',
-  },
-];
 
 const footerGroups = [
   {
@@ -104,7 +72,7 @@ export default function HomePage() {
       {/* Hero - one royal-blue banner, no buttons: the four pillars below are
           the equal entry points. */}
       <section className="bg-primary-600 px-6 py-20 text-white sm:py-24">
-        <div className="mx-auto max-w-5xl">
+        <div className="mx-auto max-w-6xl">
           <p className="mb-6 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.14em] text-gold sm:text-[13px]">
             <span aria-hidden="true" className="h-px w-8 bg-gold" />
             Make music part of your life.
@@ -130,13 +98,13 @@ export default function HomePage() {
             experienced musician.
           </p>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {pillars.map((p) => (
+            {PILLARS.map((p) => (
               <Link
-                key={p.title}
+                key={p.key}
                 href={p.href}
                 className="group flex flex-col rounded-xl border border-line bg-white p-6 transition hover:border-primary-100 hover:shadow-md"
               >
-                <div className={`mb-5 inline-flex h-12 w-12 items-center justify-center rounded-full ${p.color}`}>
+                <div className={`mb-5 inline-flex h-12 w-12 items-center justify-center rounded-full ${p.iconClass}`}>
                   <p.icon className="h-6 w-6" />
                 </div>
                 <h3 className="mb-2 text-lg font-bold text-ink group-hover:text-primary-600 sm:text-xl">{p.title}</h3>
@@ -162,7 +130,7 @@ export default function HomePage() {
 
       {/* Personalised guidance - optional, deliberately quieter than the hero */}
       <section className="bg-white px-6 pt-16">
-        <div className="mx-auto flex max-w-5xl flex-col gap-6 rounded-2xl bg-surface p-8 sm:flex-row sm:items-center sm:p-10">
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 rounded-2xl bg-surface p-8 sm:flex-row sm:items-center sm:p-10">
           <div className="flex-1">
             <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary-600">Personalised for you</p>
             <h2 className="mb-2 text-2xl font-bold text-ink">Not sure where to start?</h2>
@@ -190,7 +158,7 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer className="border-t border-line bg-surface px-6 py-12">
-        <div className="mx-auto max-w-5xl">
+        <div className="mx-auto max-w-6xl">
           <div className="mb-8 grid grid-cols-2 gap-8 sm:grid-cols-4">
             {footerGroups.map((group) => (
               <div key={group.title}>

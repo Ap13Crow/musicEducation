@@ -110,7 +110,7 @@ export default function CourseDetailPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <div className="mx-auto max-w-4xl px-6 py-16">
+        <div className="mx-auto box-content max-w-6xl px-6 py-16">
           <div className="animate-pulse space-y-4">
             <div className="h-8 w-3/4 rounded bg-gray-200" />
             <div className="h-4 w-1/2 rounded bg-gray-200" />
@@ -131,7 +131,7 @@ export default function CourseDetailPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-gradient-to-br from-primary-600 to-primary-700 px-6 py-12 text-white">
-        <div className="mx-auto max-w-4xl">
+        <div className="mx-auto max-w-6xl">
           <Link href="/courses" className="mb-4 inline-flex items-center gap-1 text-sm text-primary-200 hover:text-white">
             <ArrowLeft className="h-4 w-4" /> Back to courses
           </Link>
@@ -181,7 +181,7 @@ export default function CourseDetailPage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-4xl px-6 py-10">
+      <div className="mx-auto box-content max-w-6xl px-6 py-10">
         <div className="grid gap-8 lg:grid-cols-3">
           {/* Main content */}
           <div className="lg:col-span-2 space-y-8">

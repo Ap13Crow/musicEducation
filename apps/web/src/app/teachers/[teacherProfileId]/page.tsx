@@ -80,8 +80,8 @@ export default function PublicTeacherPage() {
     notifyOnNetworkStatusChange: true,
   });
   const [createCheckout, { loading: checkingOut }] = useMutation(CREATE_CHECKOUT_SESSION);
-  if (loading && !data?.teacher) return <main className="mx-auto max-w-5xl px-6 py-12">Loading teacher profile…</main>;
-  if (error || !data?.teacher) return <main className="mx-auto max-w-5xl px-6 py-12">Teacher profile not found.</main>;
+  if (loading && !data?.teacher) return <main className="mx-auto box-content max-w-6xl px-6 py-12">Loading teacher profile…</main>;
+  if (error || !data?.teacher) return <main className="mx-auto box-content max-w-6xl px-6 py-12">Teacher profile not found.</main>;
 
   const teacher = data.teacher;
   const isOwnProfile = session?.user?.email === teacher.user?.email;
@@ -113,7 +113,7 @@ export default function PublicTeacherPage() {
 
   return <main className="min-h-screen overflow-x-hidden bg-gray-50">
     <section className="border-b bg-white">
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
+      <div className="mx-auto box-content max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         <Link href="/teachers" className="text-sm font-medium text-primary-700">← All teachers</Link>
         <div className="mt-6 flex flex-wrap items-start justify-between gap-6">
           <div className="flex min-w-0 gap-4 sm:gap-5">
@@ -139,7 +139,7 @@ export default function PublicTeacherPage() {
       </div>
     </section>
 
-    <div className="mx-auto grid min-w-0 max-w-5xl gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+    <div className="mx-auto grid min-w-0 box-content max-w-6xl gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
       <div className="min-w-0 space-y-6">
         {teacher.introVideoUrl && toYouTubeEmbedUrl(teacher.introVideoUrl) && (
           <section className="card min-w-0 p-0">
