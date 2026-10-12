@@ -36,18 +36,19 @@ export default function Navbar() {
       <div className="mx-auto box-content max-w-6xl px-4 sm:px-6">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 font-serif text-xl font-bold text-primary-700">
+          <Link href="/" className="flex shrink-0 items-center gap-2 whitespace-nowrap font-serif text-xl font-bold text-primary-700">
             <Music className="h-6 w-6" />
             My Music Coach
           </Link>
 
-          {/* Desktop nav */}
-          <div className="hidden items-center gap-1 md:flex">
+          {/* Desktop nav - from lg: below that the full bar (~850px) wraps, so
+              tablets get the menu button like phones. */}
+          <div className="hidden items-center gap-1 lg:flex">
             {navigation.map((item) => (
               <Link
                 key={item.name}
                 href={item.href}
-                className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                className="whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
               >
                 {item.name}
               </Link>
@@ -55,11 +56,11 @@ export default function Navbar() {
           </div>
 
           {/* Auth buttons */}
-          <div className="hidden items-center gap-3 md:flex">
+          <div className="hidden items-center gap-3 lg:flex">
             {showBecomeTeacher && (
               <Link
                 href="/become-teacher"
-                className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
               >
                 <GraduationCap className="h-4 w-4" /> Teach with us
               </Link>
@@ -71,7 +72,7 @@ export default function Navbar() {
               <>
                 <button
                   onClick={() => signIn('keycloak')}
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100"
+                  className="whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100"
                 >
                   Log in
                 </button>
@@ -155,7 +156,7 @@ export default function Navbar() {
 
           {/* Mobile menu toggle */}
           <button
-            className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 md:hidden"
+            className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 lg:hidden"
             onClick={() => setMobileOpen(!mobileOpen)}
             aria-label="Toggle menu"
           >
@@ -166,7 +167,7 @@ export default function Navbar() {
 
       {/* Mobile menu */}
       {mobileOpen && (
-        <div className="border-t border-gray-200 bg-white px-4 pb-4 pt-2 md:hidden">
+        <div className="border-t border-gray-200 bg-white px-4 pb-4 pt-2 lg:hidden">
           {navigation.map((item) => (
             <Link
               key={item.name}
