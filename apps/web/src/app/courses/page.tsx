@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import { BookOpen, Clock, Star, Users, Search, SlidersHorizontal, X, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
 import { COURSE_LANGUAGES, languageName, useCourseLanguage } from '@/lib/courseLanguage';
+import { PillarHeader } from '@/components/PillarHeader';
 
 const INSTRUMENTS = ['Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute', 'Clarinet', 'Oboe', 'Trumpet', 'Organ', 'Harp', 'Percussion', 'Composition', 'Theory'];
 const LEVELS = ['All', 'Beginner', 'Intermediate', 'Advanced', 'Professional'];
@@ -162,8 +163,9 @@ export default function CoursesPage() {
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-10">
         <div className="mx-auto max-w-6xl">
-          <h1 className="mb-2 text-3xl font-bold">Theory Courses</h1>
-          <p className="text-gray-500">Structured video courses for every level — from beginner to professional.</p>
+          <PillarHeader pillar="courses" title="Music Courses">
+            Learn at your own pace with courses for every level, from beginner to advanced.
+          </PillarHeader>
         </div>
       </div>
 

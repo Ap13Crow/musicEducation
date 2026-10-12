@@ -5,6 +5,7 @@ import { gql, useQuery, useMutation } from '@apollo/client';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { Calendar, CalendarX, Search, SlidersHorizontal, Sparkles, X } from 'lucide-react';
+import { PillarHeader } from '@/components/PillarHeader';
 
 // Same vocabulary the onboarding assessment and profile use, and what the
 // worker's event-classification job is instructed to tag external events
@@ -218,13 +219,11 @@ export default function EventsPage() {
   return (
     <main className="px-6 py-16">
       <section className="mx-auto max-w-6xl">
-        <p className="mb-3 inline-block rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-          Performance Pillar
-        </p>
-        <h1 className="mb-4 text-4xl font-bold">Concerts, Workshops, and Masterclasses</h1>
-        <p className="mb-10 max-w-3xl text-gray-600">
-          Discover upcoming classical music events near you and reserve your place directly on My Music Coach.
-        </p>
+        <div className="mb-10">
+          <PillarHeader pillar="events" title="Concerts, Workshops and Masterclasses">
+            Discover concerts, masterclasses, festivals and workshops near you and around the world.
+          </PillarHeader>
+        </div>
 
         {!liveApiEnabled && (
           <p className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">

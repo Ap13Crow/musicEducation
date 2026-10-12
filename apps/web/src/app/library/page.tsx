@@ -10,6 +10,7 @@ import { FolderDialog, LibrarySidebar, type LibraryView } from '@/components/lib
 import { CARD_FIELDS, ItemGrid, LoadingGrid } from '@/components/library/LibraryCards';
 import { LibrarySearchView } from '@/components/library/LibrarySearchView';
 import { LibraryRecommendations } from '@/components/library/LibraryRecommendations';
+import { PillarHeader } from '@/components/PillarHeader';
 
 const PAGE_SIZE = 24;
 
@@ -145,15 +146,13 @@ function LibraryPageContent() {
   return (
     <main className="px-4 py-12 sm:px-6 sm:py-16">
       <section className={`mx-auto ${signedIn ? 'max-w-7xl' : 'max-w-6xl'}`}>
-        <p className="mb-3 inline-block rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-          Library Pillar
-        </p>
-        <h1 className="mb-4 text-4xl font-bold">Sheet Music, Recordings and Books</h1>
-        <p className="mb-8 max-w-3xl text-gray-600">
-          Browse historical scores, recordings and music literature from the Bibliothèque nationale de France, the
-          Deutsche Nationalbibliothek and openly licensed collections.
-          {signedIn ? ' Star what you like and keep it in your own folders.' : ' Sign in to keep favorites and folders.'}
-        </p>
+        <div className="mb-8">
+          <PillarHeader pillar="library" title="Sheet Music, Recordings and Books">
+            Browse historical scores, recordings and music literature from the Bibliothèque nationale de France, the
+            Deutsche Nationalbibliothek and openly licensed collections.
+            {signedIn ? ' Star what you like and keep it in your own folders.' : ' Sign in to keep favorites and folders.'}
+          </PillarHeader>
+        </div>
 
         {!liveApiEnabled && (
           <p className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">

@@ -6,6 +6,7 @@ import { useSession, signIn } from 'next-auth/react';
 import Link from 'next/link';
 import { Star, MapPin, Clock, Music, Search, SlidersHorizontal, X, Video, Users as UsersIcon, Calendar, Award, BookOpen } from 'lucide-react';
 import { membershipLabel } from '@/lib/membership';
+import { PillarHeader } from '@/components/PillarHeader';
 
 const INSTRUMENTS = ['Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute', 'Clarinet', 'Oboe', 'Trumpet', 'Organ', 'Harp', 'Percussion'];
 const FORMATS = ['Online', 'In-Person', 'Hybrid'];
@@ -254,13 +255,9 @@ export default function TeachersPage() {
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-10">
         <div className="mx-auto max-w-6xl">
-          <p className="mb-3 inline-block rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
-            Practice Pillar
-          </p>
-          <h1 className="mb-2 text-3xl font-bold">Find Your Teacher</h1>
-          <p className="text-gray-500">
-            Choose from certified instructors for piano, strings, voice, and theory. Book online lessons or in-person sessions.
-          </p>
+          <PillarHeader pillar="teachers" title="Find Your Teacher">
+            Find inspiring music teachers for every instrument, voice and style. Book online lessons or in-person sessions.
+          </PillarHeader>
         </div>
       </div>
 
