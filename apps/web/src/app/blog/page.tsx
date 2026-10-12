@@ -19,7 +19,7 @@ export default function BlogPage() {
       <section className="mx-auto max-w-4xl">
         <h1 className="mb-4 text-4xl font-bold">My Music Coach Blog</h1>
         <p className="mb-10 text-gray-600">
-          Practical advice, teacher insights, and classical music learning strategies.
+          Practical advice, teacher insights and learning strategies for musicians of every style and level.
         </p>
 
         <div className="space-y-4">

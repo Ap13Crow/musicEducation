@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { signIn, useSession } from 'next-auth/react';
 import { BookOpen, Mic, Globe, Music, Sparkles } from 'lucide-react';
 import { PlusOffer, usePlusOffer } from '@/components/membership/PlusOffer';
+import { INSTRUMENTS, MUSIC_STYLES } from '@/lib/musicVocabulary';
 
 // aiReport is written server-side as JSON.stringify(...) (see
 // completeAssessment in assessments.ts) so it's always well-formed today,
@@ -86,8 +87,6 @@ const steps = [
   { id: 'preferences', title: 'Your Preferences', icon: Music },
 ];
 
-const instruments = ['Piano', 'Violin', 'Viola', 'Cello', 'Double Bass', 'Flute', 'Oboe', 'Clarinet', 'Bassoon', 'Horn', 'Trumpet', 'Trombone', 'Guitar', 'Harp', 'Voice'];
-const styles = ['Baroque', 'Classical', 'Romantic', 'Contemporary', 'Opera', 'Chamber Music', 'Orchestral', 'Solo Piano', 'Early Music'];
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -408,7 +407,7 @@ export default function OnboardingPage() {
 
             <h3 className="mb-3 font-semibold">Instruments</h3>
             <div className="mb-6 flex flex-wrap gap-2">
-              {instruments.map((instr) => (
+              {INSTRUMENTS.map((instr) => (
                 <button
                   key={instr}
                   onClick={() => toggleItem(selectedInstruments, setSelectedInstruments, instr)}
@@ -425,7 +424,7 @@ export default function OnboardingPage() {
 
             <h3 className="mb-3 font-semibold">Music Styles</h3>
             <div className="mb-8 flex flex-wrap gap-2">
-              {styles.map((style) => (
+              {MUSIC_STYLES.map((style) => (
                 <button
                   key={style}
                   onClick={() => toggleItem(selectedStyles, setSelectedStyles, style)}

@@ -6,12 +6,8 @@ import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { Calendar, CalendarX, Search, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { PillarHeader } from '@/components/PillarHeader';
+import { INSTRUMENTS, MUSIC_STYLES } from '@/lib/musicVocabulary';
 
-// Same vocabulary the onboarding assessment and profile use, and what the
-// worker's event-classification job is instructed to tag external events
-// with - a filter here only works if it matches what can actually get set.
-const INSTRUMENTS = ['Piano', 'Violin', 'Viola', 'Cello', 'Double Bass', 'Flute', 'Oboe', 'Clarinet', 'Bassoon', 'Horn', 'Trumpet', 'Trombone', 'Guitar', 'Harp', 'Voice'];
-const STYLES = ['Baroque', 'Classical', 'Romantic', 'Contemporary', 'Opera', 'Chamber Music', 'Orchestral', 'Solo Piano', 'Early Music'];
 const SKILL_LEVELS = ['BEGINNER', 'ELEMENTARY', 'INTERMEDIATE', 'ADVANCED', 'PROFESSIONAL'];
 const SKILL_LEVEL_LABELS: Record<string, string> = {
   BEGINNER: 'Beginner', ELEMENTARY: 'Elementary', INTERMEDIATE: 'Intermediate', ADVANCED: 'Advanced', PROFESSIONAL: 'Professional',
@@ -311,7 +307,7 @@ export default function EventsPage() {
                   <label className="mb-2 block text-xs font-semibold uppercase text-gray-500">Category of music</label>
                   <div className="flex flex-wrap gap-2">
                     <button onClick={() => setMusicStyle('')} className={`rounded-full border px-3 py-1 text-sm transition-colors ${!musicStyle ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium' : 'border-gray-200 text-gray-600 hover:border-primary-300'}`}>All</button>
-                    {STYLES.map((style) => (
+                    {MUSIC_STYLES.map((style) => (
                       <button key={style} onClick={() => setMusicStyle(musicStyle === style ? '' : style)} className={`rounded-full border px-3 py-1 text-sm transition-colors ${musicStyle === style ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium' : 'border-gray-200 text-gray-600 hover:border-primary-300'}`}>{style}</button>
                     ))}
                   </div>

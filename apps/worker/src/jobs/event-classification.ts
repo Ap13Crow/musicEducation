@@ -3,12 +3,21 @@ import { aiChat, aiConfigured } from '../lib/ai.js';
 import type { Job } from './types.js';
 
 // Same vocabulary the frontend offers for native events/courses/profiles
-// (see apps/web/src/app/onboarding/page.tsx and courses/page.tsx) - matching
-// it exactly is what lets a classified external event actually satisfy the
+// (identical copy in apps/web/src/lib/musicVocabulary.ts) - matching it
+// exactly is what lets a classified external event actually satisfy the
 // same instrument/musicStyle/skillLevel filters and recommendations built
-// for native Events.
-export const INSTRUMENT_VOCAB = ['Piano', 'Violin', 'Viola', 'Cello', 'Double Bass', 'Flute', 'Oboe', 'Clarinet', 'Bassoon', 'Horn', 'Trumpet', 'Trombone', 'Guitar', 'Harp', 'Voice'];
-export const STYLE_VOCAB = ['Baroque', 'Classical', 'Romantic', 'Contemporary', 'Opera', 'Chamber Music', 'Orchestral', 'Solo Piano', 'Early Music'];
+// for native Events. Only ever add values: stored tags must stay valid.
+export const INSTRUMENT_VOCAB = [
+  'Piano', 'Keyboard', 'Guitar', 'Electric Guitar', 'Bass Guitar', 'Drums', 'Percussion', 'Voice',
+  'Violin', 'Viola', 'Cello', 'Double Bass', 'Harp',
+  'Flute', 'Recorder', 'Oboe', 'Clarinet', 'Bassoon', 'Saxophone',
+  'Horn', 'Trumpet', 'Trombone', 'Ukulele', 'Accordion',
+];
+export const STYLE_VOCAB = [
+  'Classical', 'Jazz', 'Pop', 'Rock', 'Blues', 'Folk', 'World Music', 'Latin', 'Soul & R&B', 'Hip-Hop',
+  'Electronic', 'Musical Theatre', 'Film & Game Music', 'Singer-Songwriter',
+  'Early Music', 'Baroque', 'Romantic', 'Contemporary', 'Opera', 'Chamber Music', 'Orchestral', 'Solo Piano',
+];
 export const SKILL_LEVEL_VOCAB = ['BEGINNER', 'ELEMENTARY', 'INTERMEDIATE', 'ADVANCED', 'PROFESSIONAL'];
 
 // One DeepSeek call classifies a batch, not one call per event: keeps
@@ -29,7 +38,7 @@ interface ClassificationResult {
 
 function systemPrompt(): string {
   return [
-    'You classify classical/live-music event listings for a music education platform.',
+    'You classify live-music event listings of any style or genre for a music education platform.',
     `For each event, choose zero or more instruments from exactly this list: ${INSTRUMENT_VOCAB.join(', ')}.`,
     `Choose zero or more music styles from exactly this list: ${STYLE_VOCAB.join(', ')}.`,
     `Choose at most one target skill level (for an audience member, not a performer) from exactly this list, or null if unclear: ${SKILL_LEVEL_VOCAB.join(', ')}.`,

@@ -474,7 +474,7 @@ export default function ProfilePage() {
                 <div className="mt-4">
                   <label className="mb-1 block text-sm font-medium text-gray-700">Music styles (comma-separated)</label>
                   <input className="input w-full" value={edit.musicStyles}
-                    placeholder="e.g. Classical, Baroque, Contemporary"
+                    placeholder="e.g. Jazz, Pop, Classical"
                     onChange={e => setEdit(p => ({ ...p, musicStyles: e.target.value }))} />
                 </div>
               )}
