@@ -2,44 +2,87 @@
 
 import Link from 'next/link';
 import { gql, useQuery } from '@apollo/client';
-import { BookOpen, Music, Calendar, Star, Users, TrendingUp } from 'lucide-react';
+import { BookOpen, Music, Calendar, Users, ArrowRight } from 'lucide-react';
 
 const GET_PLATFORM_STATS = gql`
   query HomepagePlatformStats {
-    platformStats { totalCourses totalTeachers totalEvents totalStudents totalScores totalRecordings }
+    platformStats { totalCourses totalEvents totalScores totalRecordings }
   }
 `;
 
+// Teachers and Students stay off the homepage until those numbers are
+// large enough to be useful social proof.
 const STAT_FIELDS = [
   { key: 'totalCourses', label: 'Courses', one: 'Course', href: '/courses' },
-  { key: 'totalTeachers', label: 'Teachers', one: 'Teacher', href: '/teachers' },
   { key: 'totalEvents', label: 'Events', one: 'Event', href: '/events' },
   { key: 'totalScores', label: 'Scores', one: 'Score', href: '/library' },
   { key: 'totalRecordings', label: 'Recordings', one: 'Recording', href: '/library' },
-  { key: 'totalStudents', label: 'Students', one: 'Student', href: null },
 ] as const;
 
-const features = [
+// Four equal pillars - no genre or "theory first" framing; community is the
+// social link between them, not a fifth card.
+const pillars = [
   {
-    icon: BookOpen,
-    title: 'Theory Courses',
-    description: 'Structured video courses from beginner to professional — learn harmony, counterpoint, ear training and more.',
-    href: '/courses',
-    color: 'bg-blue-50 text-blue-600',
+    icon: Users,
+    title: 'Find a Teacher',
+    description: 'Find inspiring music teachers around the world, online or in person.',
+    href: '/teachers',
+    color: 'bg-blue-50 text-primary-600',
   },
   {
     icon: Music,
-    title: 'Live Practice',
-    description: 'Book online video lessons via Zoom or in-person sessions with certified teachers near you.',
-    href: '/teachers',
-    color: 'bg-purple-50 text-purple-600',
+    title: 'Explore Courses',
+    description: 'Explore music courses for every level, from beginner to advanced.',
+    href: '/courses',
+    color: 'bg-violet-50 text-violet-600',
   },
   {
     icon: Calendar,
-    title: 'Performances & Events',
-    description: 'Discover concerts, masterclasses and workshops, or publish your own event.',
+    title: 'Discover Events',
+    description: 'Discover concerts, masterclasses, festivals and workshops around the world.',
     href: '/events',
-    color: 'bg-amber-50 text-amber-600',
+    color: 'bg-amber-50 text-secondary-600',
+  },
+  {
+    icon: BookOpen,
+    title: 'Explore the Library',
+    description: 'Browse sheet music, recordings and books from trusted musical collections.',
+    href: '/library',
+    color: 'bg-emerald-50 text-emerald-600',
+  },
+];
+
+const footerGroups = [
+  {
+    title: 'Learn',
+    links: [
+      { href: '/courses', label: 'Courses' },
+      { href: '/teachers', label: 'Find a Teacher' },
+      { href: '/events', label: 'Events' },
+      { href: '/library', label: 'Library' },
+    ],
+  },
+  {
+    title: 'Platform',
+    links: [
+      { href: '/about', label: 'About' },
+      { href: '/become-teacher', label: 'Become a Teacher' },
+      { href: '/blog', label: 'Blog' },
+    ],
+  },
+  {
+    title: 'Community',
+    links: [
+      { href: '/feed', label: 'Feed' },
+      { href: '/discuss', label: 'Discussions' },
+    ],
+  },
+  {
+    title: 'Legal',
+    links: [
+      { href: '/privacy', label: 'Privacy Policy' },
+      { href: '/terms', label: 'Terms of Service' },
+    ],
   },
 ];
 
@@ -57,137 +100,112 @@ export default function HomePage() {
   });
 
   return (
-    <main>
-      {/* Hero */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-primary-600 to-primary-700 px-6 py-24 text-white">
-        <div className="mx-auto max-w-5xl text-center">
-          <h1 className="mb-6 text-5xl font-bold tracking-tight sm:text-6xl">
-            Your Classical Music
-            <br />
-            <span className="text-secondary-500">Education Platform</span>
-          </h1>
-          <p className="mb-10 text-xl text-primary-100">
-            Theory courses, live lessons, and live performances — all in one place.
-            Start your personalised music journey today.
+    <main className="text-ink">
+      {/* Hero - one royal-blue banner, no buttons: the four pillars below are
+          the equal entry points. */}
+      <section className="bg-primary-600 px-6 py-20 text-white sm:py-24">
+        <div className="mx-auto max-w-5xl">
+          <p className="mb-6 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.14em] text-gold sm:text-[13px]">
+            <span aria-hidden="true" className="h-px w-8 bg-gold" />
+            Make music part of your life.
           </p>
-          <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
-            <Link href="/onboarding" className="btn-primary bg-white text-primary-700 hover:bg-primary-50 px-8 py-3 text-base">
-              Start Assessment — Free
-            </Link>
-            <Link href="/courses" className="btn-secondary border-white bg-transparent text-white hover:bg-primary-500 px-8 py-3 text-base">
-              Browse Courses
-            </Link>
+          <h1 className="text-4xl font-bold leading-[1.1] sm:text-5xl lg:text-[60px]">
+            Your world of music,
+            <br />
+            <span className="text-gold">all in one place.</span>
+          </h1>
+          <p className="mt-6 max-w-[640px] text-base leading-relaxed text-[#e8edff] sm:text-[17px]">
+            Find your teacher, explore music courses and resources, discover inspiring events, and connect
+            with musicians around the world.
+          </p>
+        </div>
+      </section>
+
+      {/* Four pillars */}
+      <section className="bg-white px-6 py-16 sm:py-20">
+        <div className="mx-auto max-w-6xl">
+          <h2 className="mb-4 text-center text-3xl font-bold text-ink sm:text-[34px]">Explore your world of music</h2>
+          <p className="mx-auto mb-10 max-w-2xl text-center text-[15px] text-muted sm:text-base">
+            Everything you need to learn, play, discover and stay inspired — whether you&apos;re a beginner or an
+            experienced musician.
+          </p>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {pillars.map((p) => (
+              <Link
+                key={p.title}
+                href={p.href}
+                className="group flex flex-col rounded-xl border border-line bg-white p-6 transition hover:border-primary-100 hover:shadow-md"
+              >
+                <div className={`mb-5 inline-flex h-12 w-12 items-center justify-center rounded-full ${p.color}`}>
+                  <p.icon className="h-6 w-6" />
+                </div>
+                <h3 className="mb-2 text-lg font-bold text-ink group-hover:text-primary-600 sm:text-xl">{p.title}</h3>
+                <p className="mb-4 text-sm leading-relaxed text-muted sm:text-[15px]">{p.description}</p>
+                <ArrowRight className="mt-auto h-5 w-5 self-end text-primary-600 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            ))}
           </div>
         </div>
       </section>
 
       {/* Stats */}
-      <section className="min-h-[8.5rem] border-y border-gray-100 bg-gray-50 px-6 py-12" data-testid="platform-stats">
-        <div className="mx-auto flex max-w-5xl flex-wrap justify-center gap-x-10 gap-y-6 sm:gap-x-14">
-          {stats.map((stat) => {
-            const content = (
-              <>
-                <div className="mb-1 text-3xl font-bold tabular-nums text-primary-600">{stat.value}</div>
-                <div className="text-sm text-gray-500">{stat.label}</div>
-              </>
-            );
-            return stat.href ? (
-              <Link key={stat.label} href={stat.href} className="min-w-[5.5rem] text-center transition-opacity hover:opacity-80">
-                {content}
-              </Link>
-            ) : (
-              <div key={stat.label} className="min-w-[5.5rem] text-center">{content}</div>
-            );
-          })}
+      <section className="min-h-[7rem] bg-surface px-6 py-8" data-testid="platform-stats">
+        <div className="mx-auto grid max-w-4xl grid-cols-2 gap-y-6 sm:flex sm:justify-center sm:divide-x sm:divide-line">
+          {stats.map((stat) => (
+            <Link key={stat.key} href={stat.href} className="text-center transition-opacity hover:opacity-80 sm:flex-1">
+              <div className="text-2xl font-bold tabular-nums text-primary-600 sm:text-[28px]">{stat.value}</div>
+              <div className="mt-1 text-[13px] text-muted sm:text-sm">{stat.label}</div>
+            </Link>
+          ))}
         </div>
       </section>
 
-      {/* Three pillars */}
-      <section className="px-6 py-20">
-        <div className="mx-auto max-w-5xl">
-          <h2 className="mb-4 text-center text-3xl font-bold">Three Pillars of Musical Excellence</h2>
-          <p className="mb-12 text-center text-gray-500">Everything you need to grow as a musician.</p>
-          <div className="grid gap-8 sm:grid-cols-3">
-            {features.map((f) => (
-              <Link key={f.title} href={f.href} className="card group p-6 hover:border-primary-300 transition-colors">
-                <div className={`mb-4 inline-flex rounded-xl p-3 ${f.color}`}>
-                  <f.icon className="h-6 w-6" />
-                </div>
-                <h3 className="mb-2 text-xl font-semibold group-hover:text-primary-600">{f.title}</h3>
-                <p className="text-sm text-gray-500">{f.description}</p>
-              </Link>
-            ))}
+      {/* Personalised guidance - optional, deliberately quieter than the hero */}
+      <section className="bg-white px-6 pt-16">
+        <div className="mx-auto flex max-w-5xl flex-col gap-6 rounded-2xl bg-surface p-8 sm:flex-row sm:items-center sm:p-10">
+          <div className="flex-1">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary-600">Personalised for you</p>
+            <h2 className="mb-2 text-2xl font-bold text-ink">Not sure where to start?</h2>
+            <p className="max-w-xl text-muted">
+              Discover your musical profile and get personalised recommendations for courses, teachers and events.
+            </p>
           </div>
-        </div>
-      </section>
-
-      {/* Gamification CTA */}
-      <section className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-16 text-white">
-        <div className="mx-auto max-w-3xl text-center">
-          <TrendingUp className="mx-auto mb-4 h-12 w-12 opacity-80" />
-          <h2 className="mb-4 text-3xl font-bold">Get Your Personalised Learning Path</h2>
-          <p className="mb-8 text-amber-100">
-            Take our 15-minute music knowledge assessment — theory, ear training and cultural knowledge —
-            and let our AI recommend the perfect courses, teachers and events for your level.
-          </p>
-          <Link href="/onboarding" className="btn-primary bg-white text-amber-700 hover:bg-amber-50 px-8 py-3 text-base">
-            Take the Assessment
+          <Link href="/onboarding" className="btn-primary gap-2 self-start px-6 py-3 sm:self-center">
+            Explore your musical profile <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
       </section>
 
-      {/* Social proof */}
-      <section className="px-6 py-20">
-        <div className="mx-auto max-w-5xl text-center">
-          <div className="mb-8 flex items-center justify-center gap-2">
-            {[...Array(5)].map((_, i) => (
-              <Star key={i} className="h-6 w-6 fill-amber-400 text-amber-400" />
-            ))}
-          </div>
-          <blockquote className="mb-4 text-xl text-gray-700">
-            &ldquo;The AI assessment recommended exactly the right teacher and courses for my level.
-            Within three months I went from struggling with scales to performing a Chopin nocturne.&rdquo;
-          </blockquote>
-          <cite className="text-sm text-gray-500">— Sarah K., Piano Student</cite>
+      {/* Community - the social link between the four pillars */}
+      <section className="bg-white px-6 py-16 sm:py-20">
+        <div className="mx-auto max-w-2xl text-center">
+          <span aria-hidden="true" className="mx-auto mb-5 block h-px w-10 bg-secondary-500" />
+          <h2 className="mb-4 text-3xl font-bold text-ink">Music is better together</h2>
+          <p className="leading-relaxed text-muted">
+            Join a global community of musicians, teachers and music lovers. Share your journey, discover new
+            perspectives and be part of a more musical world.
+          </p>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-gray-200 bg-gray-50 px-6 py-12">
+      <footer className="border-t border-line bg-surface px-6 py-12">
         <div className="mx-auto max-w-5xl">
-          <div className="mb-8 grid gap-8 sm:grid-cols-4">
-            <div>
-              <h4 className="mb-3 font-semibold">Learn</h4>
-              <ul className="space-y-2 text-sm text-gray-500">
-                <li><Link href="/courses" className="hover:text-primary-600">Courses</Link></li>
-                <li><Link href="/teachers" className="hover:text-primary-600">Find a Teacher</Link></li>
-                <li><Link href="/events" className="hover:text-primary-600">Events</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="mb-3 font-semibold">Platform</h4>
-              <ul className="space-y-2 text-sm text-gray-500">
-                <li><Link href="/about" className="hover:text-primary-600">About</Link></li>
-                <li><Link href="/become-teacher" className="hover:text-primary-600">Become a Teacher</Link></li>
-                <li><Link href="/blog" className="hover:text-primary-600">Blog</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="mb-3 font-semibold">Legal</h4>
-              <ul className="space-y-2 text-sm text-gray-500">
-                <li><Link href="/privacy" className="hover:text-primary-600">Privacy Policy</Link></li>
-                <li><Link href="/terms" className="hover:text-primary-600">Terms of Service</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="mb-3 font-semibold">Community</h4>
-              <ul className="space-y-2 text-sm text-gray-500">
-                <li><Link href="/feed" className="hover:text-primary-600">Feed</Link></li>
-                <li><Link href="/discuss" className="hover:text-primary-600">Discussions</Link></li>
-              </ul>
-            </div>
+          <div className="mb-8 grid grid-cols-2 gap-8 sm:grid-cols-4">
+            {footerGroups.map((group) => (
+              <div key={group.title}>
+                <h4 className="mb-3 font-semibold text-ink">{group.title}</h4>
+                <ul className="space-y-2 text-sm text-muted">
+                  {group.links.map((link) => (
+                    <li key={link.href}>
+                      <Link href={link.href} className="hover:text-primary-600">{link.label}</Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
-          <p className="text-center text-xs text-gray-400">
+          <p className="text-center text-xs text-muted">
             © {new Date().getFullYear()} My Music Coach · mymusic.coach. Open-source · Built with ❤️ for musicians.
           </p>
         </div>

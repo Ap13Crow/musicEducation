@@ -10,12 +10,12 @@ const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-playfa
 
 export const metadata: Metadata = {
   title: {
-    default: 'My Music Coach — Classical Music Education',
+    default: 'My Music Coach — Make music part of your life',
     template: '%s | My Music Coach',
   },
   description:
-    'Learn classical music through theory courses, live lessons with certified teachers, and discover performances near you.',
-  keywords: ['classical music', 'music education', 'online lessons', 'music theory'],
+    'Find your teacher, explore music courses and resources, discover inspiring events, and connect with musicians around the world.',
+  keywords: ['music lessons', 'music teacher', 'online music courses', 'music education', 'concerts', 'sheet music'],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

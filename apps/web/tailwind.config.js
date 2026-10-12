@@ -8,17 +8,25 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // Palette (2026-10 homepage review): royal blue leads, night blue for
+        // headings and dark sections, amber only as a small accent (~5%).
         primary: {
-          50: '#f0f4ff',
-          100: '#dbe4ff',
-          500: '#4c6ef5',
-          600: '#3b5bdb',
-          700: '#2f4ac0',
+          50: '#eef1fb',
+          100: '#dbe2f7',
+          500: '#4a66d6',
+          600: '#3452cc',
+          700: '#2a43ab',
         },
+        navy: '#22345f',
         secondary: {
-          500: '#f59f00',
-          600: '#e67700',
+          500: '#e8a23c',
+          600: '#c9862a',
         },
+        surface: '#f7f8fb',
+        gold: '#ffd080', // light gold text on royal blue
+        ink: '#18233d', // main text / section headings
+        muted: '#687386', // secondary text
+        line: '#e0e6ef', // light card borders
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],

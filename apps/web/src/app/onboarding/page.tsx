@@ -273,6 +273,9 @@ export default function OnboardingPage() {
               Create a useful starting profile for your teacher and learning plan. Audio analysis will be added when the private AI pipeline is activated.
               We&apos;ll evaluate your theory knowledge, musical culture and guide you to the best courses, teachers and events.
             </p>
+            <p className="mb-6 text-sm font-medium text-gray-700" data-testid="assessment-duration">
+              About 5 minutes: 12 short questions on theory and musical culture, then your instruments and styles.
+            </p>
             {status !== 'authenticated' && (
               <p className="mb-4 text-sm text-gray-500">
                 You&rsquo;ll create your account first — it takes a minute, then you&rsquo;re straight back here to continue.
