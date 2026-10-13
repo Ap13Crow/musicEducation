@@ -92,10 +92,12 @@ export default function HomePage() {
       {/* Four pillars */}
       <section className="bg-white px-6 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl">
-          <h2 className="mb-4 text-center text-3xl font-bold text-ink sm:text-[34px]">Explore your world of music</h2>
+          <h2 className="mb-4 text-center text-[31px] font-bold leading-tight text-ink sm:text-[38px]">
+            Everything you need to grow as a musician
+          </h2>
           <p className="mx-auto mb-10 max-w-2xl text-center text-[15px] text-muted sm:text-base">
-            Everything you need to learn, play, discover and stay inspired — whether you&apos;re a beginner or an
-            experienced musician.
+            Find the right teacher, learn at your own pace, discover inspiring events and explore trusted musical
+            resources.
           </p>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {PILLARS.map((p) => (
