@@ -6,12 +6,11 @@ import { parseQuery, suggestQuery, type Lexicon } from './librarySearch.js';
 //   - whole words, case- and accent-insensitive, over a weighted tsvector
 //     (migrations 048 and 056); web-search syntax: "exact phrase",
 //     -excluded word, OR
-//   - no hits: similar words instead (trigram word_similarity, the same 0.5
-//     threshold as the Library), so typos like "vilin" or "jaz" still find
-//     something, and the page says the results are only similar
-//   - a "did you mean" built from the words that actually occur in the list;
-//     if even similar words find nothing, the list shows the hits for that
-//     corrected spelling ("betoven" -> beethoven), again marked as similar
+//   - a "did you mean" built from the words that actually occur in the list
+//     (fewest typing errors, commonest word - see closestWord)
+//   - no exact hits: the hits for that corrected spelling ("betoven" ->
+//     beethoven), else similar words (trigram word_similarity >= 0.5, as
+//     in the Library), and the page says the results are only similar
 // The resolver adds `id IN (ids)` to its own filters and keeps its own order.
 // Whether to fall back to similar words is decided over the whole list,
 // before the page's other filters (instrument, date, ...) are applied.
@@ -126,9 +125,23 @@ export async function siteSearch(
   if (!parsed.terms.length && !parsed.excluded.length) return null;
 
   const tsquery = Prisma.sql`websearch_to_tsquery('simple'::regconfig, library_unaccent(${query}))`;
-  let ids = await selectIds(prisma, surface, Prisma.sql`${surface.vector} @@ ${tsquery}`, Prisma.sql`ts_rank(${surface.vector}, ${tsquery})`);
+  const exact = (tsq: Prisma.Sql) => selectIds(prisma, surface, Prisma.sql`${surface.vector} @@ ${tsq}`, Prisma.sql`ts_rank(${surface.vector}, ${tsq})`);
+  let ids = await exact(tsquery);
+
+  let suggestion: string | null = null;
+  if (ids.length < 3) {
+    try {
+      suggestion = suggestQuery(query, parsed.words, await loadLexicon(prisma, surface));
+    } catch {
+      suggestion = null;
+    }
+  }
 
   let fuzzy = false;
+  if (ids.length === 0 && suggestion) {
+    ids = await exact(Prisma.sql`websearch_to_tsquery('simple'::regconfig, library_unaccent(${suggestion}))`);
+    fuzzy = ids.length > 0;
+  }
   const words = parsed.words.length ? parsed.words : parsed.terms;
   if (ids.length === 0 && words.length) {
     const scores = words.map((word) => Prisma.sql`word_similarity(library_unaccent(lower(${word})), ${surface.similarText})`);
@@ -144,19 +157,6 @@ export async function siteSearch(
     }
   }
 
-  let suggestion: string | null = null;
-  if (fuzzy || ids.length < 3) {
-    try {
-      suggestion = suggestQuery(query, parsed.words, await loadLexicon(prisma, surface));
-    } catch {
-      suggestion = null;
-    }
-  }
-  if (suggestion && ids.length === 0) {
-    const corrected = Prisma.sql`websearch_to_tsquery('simple'::regconfig, library_unaccent(${suggestion}))`;
-    ids = await selectIds(prisma, surface, Prisma.sql`${surface.vector} @@ ${corrected}`, Prisma.sql`ts_rank(${surface.vector}, ${corrected})`);
-    fuzzy = ids.length > 0;
-  }
   return { ids, fuzzy, suggestion };
 }
 

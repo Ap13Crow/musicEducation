@@ -1,7 +1,8 @@
 import { __clearSiteSearchLexicons, COURSE_SEARCH, EXTERNAL_EVENT_SEARCH, siteSearch } from '../lib/siteSearch';
 
-// $queryRaw answers in call order: exact pass, then (if empty) the
-// similar-word pass, then the "did you mean" lexicon.
+// $queryRaw answers in call order: exact pass, then (under 3 hits) the
+// "did you mean" lexicon, then (if still empty) the corrected spelling, then
+// the similar-word pass.
 function fakePrisma(...answers: unknown[][]) {
   const $queryRaw = jest.fn();
   for (const answer of answers) $queryRaw.mockResolvedValueOnce(answer);
@@ -33,13 +34,13 @@ describe('siteSearch', () => {
     expect($queryRaw).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to similar words when nothing matches exactly, and suggests a known word', async () => {
-    const { prisma, $queryRaw } = fakePrisma([], ids('x1'), [{ word: 'violin', ndoc: 12 }, { word: 'viola', ndoc: 3 }]);
+  it('falls back to similar words when no spelling correction is known', async () => {
+    const { prisma, $queryRaw } = fakePrisma([], [], ids('x1'));
 
     const result = await siteSearch(prisma, EXTERNAL_EVENT_SEARCH, 'vilin');
 
-    expect(result).toEqual({ ids: ['x1'], fuzzy: true, suggestion: 'violin' });
-    const similar = $queryRaw.mock.calls[1][0];
+    expect(result).toEqual({ ids: ['x1'], fuzzy: true, suggestion: null });
+    const similar = $queryRaw.mock.calls[2][0];
     expect(similar.sql).toContain('word_similarity(library_unaccent(lower(');
     expect(similar.values).toEqual(expect.arrayContaining(['vilin', 0.5]));
   });
@@ -55,7 +56,7 @@ describe('siteSearch', () => {
 
     await siteSearch(prisma, COURSE_SEARCH, 'jaz pianno');
 
-    expect($queryRaw.mock.calls[1][0].sql).toMatch(/>= \? AND word_similarity/);
+    expect($queryRaw.mock.calls[2][0].sql).toMatch(/>= \? AND word_similarity/);
   });
 });
 
@@ -63,11 +64,12 @@ describe('siteSearch spelling correction', () => {
   beforeEach(() => __clearSiteSearchLexicons());
 
   it('searches the corrected spelling when even similar words find nothing', async () => {
-    const { prisma, $queryRaw } = fakePrisma([], [], [{ word: 'beethoven', ndoc: 40 }], ids('x9'));
+    const { prisma, $queryRaw } = fakePrisma([], [{ word: 'beethoven', ndoc: 40 }, { word: 'beloved', ndoc: 1 }], ids('x9'));
 
     const result = await siteSearch(prisma, EXTERNAL_EVENT_SEARCH, 'betoven');
 
     expect(result).toEqual({ ids: ['x9'], fuzzy: true, suggestion: 'beethoven' });
-    expect($queryRaw.mock.calls[3][0].values).toContain('beethoven');
+    expect($queryRaw.mock.calls[2][0].values).toContain('beethoven');
+    expect($queryRaw).toHaveBeenCalledTimes(3);
   });
 });

@@ -54,4 +54,9 @@ describe('typo tolerance', () => {
     expect(closestWord('paino', lexicon)).toBe('piano');
     expect(closestWord('trumpet', lexicon)).toBeNull();
   });
+
+  it('prefers the commonest word among equally close ones', () => {
+    const lexicon = { words: new Map([['beloved', 2], ['beethoven', 120]]), grams: new Map() };
+    expect(closestWord('betoven', lexicon)).toBe('beethoven');
+  });
 });

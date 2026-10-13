@@ -162,27 +162,29 @@ export function editDistance(a: string, b: string, limit = Infinity): number {
   return prev[b.length];
 }
 
-// The best known word for a misspelt one: trigram-similar words first
-// (as pg_trgm sees them), else the commonest word within maxTypos edits -
-// trigrams miss single-letter typos in short words ("vilin", "betoven").
+// The best known word for a misspelt one, like a spell checker: the fewest
+// typing errors (up to maxTypos), and among those the word that occurs in
+// the most items - "betoven" is beethoven, not the rarer beloved. Failing
+// that, the most trigram-similar word (as pg_trgm sees them), for spellings
+// further off ("tchaikowsky").
 export function closestWord(word: string, known: Lexicon): string | null {
   const grams = trigrams(word);
   const limit = maxTypos(word);
-  let best: { word: string; score: number; ndoc: number } | null = null;
   let nearest: { word: string; distance: number; ndoc: number } | null = null;
+  let similar: { word: string; score: number; ndoc: number } | null = null;
   for (const [candidate, ndoc] of known.words) {
     if (Math.abs(candidate.length - word.length) > 3) continue;
-    let candidateGrams = known.grams.get(candidate);
-    if (!candidateGrams) known.grams.set(candidate, (candidateGrams = trigrams(candidate)));
-    const score = trigramSimilarity(grams, candidateGrams);
-    if (score >= 0.4 && (!best || score > best.score || (score === best.score && ndoc > best.ndoc))) best = { word: candidate, score, ndoc };
-    if (best) continue;
     const distance = editDistance(word, candidate, limit);
     if (distance <= limit && (!nearest || distance < nearest.distance || (distance === nearest.distance && ndoc > nearest.ndoc))) {
       nearest = { word: candidate, distance, ndoc };
     }
+    if (nearest) continue;
+    let candidateGrams = known.grams.get(candidate);
+    if (!candidateGrams) known.grams.set(candidate, (candidateGrams = trigrams(candidate)));
+    const score = trigramSimilarity(grams, candidateGrams);
+    if (score >= 0.4 && (!similar || score > similar.score || (score === similar.score && ndoc > similar.ndoc))) similar = { word: candidate, score, ndoc };
   }
-  return best?.word ?? nearest?.word ?? null;
+  return nearest?.word ?? similar?.word ?? null;
 }
 
 export function suggestQuery(raw: string, words: string[], known: Lexicon): string | null {
@@ -365,30 +367,23 @@ export async function searchLibrary(prisma: PrismaClient, input: LibrarySearchIn
 
   let result = await run(prisma, clean, false, page, limit);
   let fuzzy = false;
-  // Nothing matched word for word: look for similar words instead.
-  // Not for an exact phrase or case-sensitive search - those ask for precision.
-  if (query && result.total === 0 && !input.caseSensitive && input.match !== 'PHRASE') {
-    const similar = await run(prisma, clean, true, page, limit);
-    if (similar.total > 0) {
-      result = similar;
-      fuzzy = true;
-    }
-  }
 
   let suggestion: string | null = null;
-  if (query && (fuzzy || result.total < 3)) {
+  if (query && result.total < 3) {
     try {
       suggestion = suggestQuery(query, parseQuery(query).words, await loadLexicon(prisma));
     } catch {
       suggestion = null;
     }
   }
-  // Still nothing: search the spelling-corrected words instead (the same
-  // last step as every other search bar - see siteSearch.ts).
-  if (suggestion && result.total === 0 && !input.caseSensitive && input.match !== 'PHRASE') {
-    const corrected = await run(prisma, { ...clean, query: suggestion }, false, page, limit);
-    if (corrected.total > 0) {
-      result = corrected;
+  // Nothing matched word for word: the spelling-corrected words first, then
+  // similar words - the same steps as every other search bar (siteSearch.ts).
+  // Not for an exact phrase or case-sensitive search - those ask for precision.
+  if (query && result.total === 0 && !input.caseSensitive && input.match !== 'PHRASE') {
+    const corrected = suggestion ? await run(prisma, { ...clean, query: suggestion }, false, page, limit) : null;
+    const similar = corrected?.total ? corrected : await run(prisma, clean, true, page, limit);
+    if (similar.total > 0) {
+      result = similar;
       fuzzy = true;
     }
   }
