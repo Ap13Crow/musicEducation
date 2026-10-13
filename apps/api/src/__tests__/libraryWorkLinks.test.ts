@@ -59,3 +59,37 @@ describe('library work links', () => {
     expect(linked(item('Sonata Op. 2', 'Beethoven'), scores)).toEqual([]);
   });
 });
+
+jest.mock('../lib/libraryWorkLinksManual', () => ({
+  MANUAL_WORK_LINKS: [{ recording: 'EUROPEANA:teiul', score: 'OPENSCORE:lindenbaum' }],
+  REJECTED_WORK_LINKS: [{ recording: 'INTERNET_ARCHIVE:waltz15', score: 'MUTOPIA:waltz10' }],
+}));
+
+describe('relinkLibraryWorks', () => {
+  it('adds hand-reviewed pairs, keeps hand-rejected ones out and confirms matcher pairs', async () => {
+    const { relinkLibraryWorks } = jest.requireActual('../lib/libraryWorkLinks');
+    const recordings = [
+      { id: 'r-teiul', title: 'Teiul', creator: null, source: 'EUROPEANA', ark: 'teiul' },
+      { id: 'r-waltz', title: 'Waltz : op. 39 Nr. 15, As dur', creator: 'Johannes Brahms', source: 'INTERNET_ARCHIVE', ark: 'waltz15' },
+    ];
+    const scores = [
+      { id: 's-linden', title: 'Der Lindenbaum (Winterreise, D.911)', creator: 'Franz Schubert', source: 'OPENSCORE', ark: 'lindenbaum' },
+      { id: 's-w10', title: 'Waltz No. 10 (Op. 39)', creator: 'J. Brahms', source: 'MUTOPIA', ark: 'waltz10' },
+      { id: 's-w15', title: 'Waltz No. 15 (Op. 39)', creator: 'J. Brahms', source: 'MUTOPIA', ark: 'waltz15' },
+    ];
+    const createMany = jest.fn((args: any) => args);
+    const upsert = jest.fn((args: any) => args);
+    const prisma: any = {
+      libraryItem: { findMany: jest.fn(({ where }: any) => Promise.resolve(where.category === 'AUDIO_RECORDING' ? recordings : scores)) },
+      libraryWorkLink: { findMany: jest.fn().mockResolvedValue([]), createMany, upsert, delete: jest.fn(), update: jest.fn() },
+      $transaction: jest.fn().mockResolvedValue([]),
+    };
+
+    const result = await relinkLibraryWorks(prisma);
+
+    const created = createMany.mock.calls[0][0].data.map((link: any) => `${link.recordingId}>${link.scoreId}:${link.method}`).sort();
+    expect(created).toEqual(['r-teiul>s-linden:MANUAL', 'r-waltz>s-w15:CATALOGUE']);
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ recordingId: 'r-waltz', scoreId: 's-w10', rejectedAt: expect.any(Date) }) }));
+    expect(result).toEqual({ links: 2, added: 2, removed: 0 });
+  });
+});

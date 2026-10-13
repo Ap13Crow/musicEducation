@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@my-music-coach/database';
 import { logger } from '../utils/logger.js';
+import { MANUAL_WORK_LINKS, REJECTED_WORK_LINKS, type ManualWorkLink } from './libraryWorkLinksManual.js';
 
 // Recordings and scores of the same work, so a recording's page can offer
 // its score and a score's page its recordings (LibraryWorkLink, migration
@@ -19,7 +20,7 @@ import { logger } from '../utils/logger.js';
 // Tuned by hand on the 2026-10 Library (3,332 recordings, 3,216 scores:
 // 108 recordings linked, no false pair found in review).
 
-export type WorkLinkMethod = 'CATALOGUE' | 'TITLE';
+export type WorkLinkMethod = 'CATALOGUE' | 'TITLE' | 'MANUAL';
 
 export interface WorkItem {
   id: string;
@@ -189,24 +190,49 @@ export function matchWorks(recordings: WorkItem[], scores: WorkItem[]): WorkLink
   return links;
 }
 
-// Recompute every link from the whole Library. Links an admin rejected stay
-// (rejected); links that no longer match are removed; new ones are added.
+// Recompute every link from the whole Library: the matcher's pairs plus the
+// hand-reviewed ones (libraryWorkLinksManual.ts), minus the hand-rejected
+// ones. Links an admin rejected stay rejected; links that no longer match
+// are removed; new ones are added.
 export async function relinkLibraryWorks(prisma: PrismaClient): Promise<{ links: number; added: number; removed: number }> {
-  const select = { id: true, title: true, creator: true };
+  const select = { id: true, title: true, creator: true, source: true, ark: true };
   const [recordings, scores] = await Promise.all([
     prisma.libraryItem.findMany({ where: { category: 'AUDIO_RECORDING', hiddenAt: null }, select }),
     prisma.libraryItem.findMany({ where: { category: 'SHEET_MUSIC', hiddenAt: null }, select }),
   ]);
-  const links = matchWorks(recordings as WorkItem[], scores as WorkItem[]);
   const key = (link: { recordingId: string; scoreId: string }) => `${link.recordingId}|${link.scoreId}`;
-  const wanted = new Map(links.map((link) => [key(link), link]));
-  const existing = await prisma.libraryWorkLink.findMany({ select: { recordingId: true, scoreId: true, rejectedAt: true } });
-  const have = new Set(existing.map(key));
+  const idOf = new Map([...recordings, ...scores].map((item: any) => [`${item.source}:${item.ark}`, item.id as string]));
+  const resolve = (pair: ManualWorkLink) => {
+    const recordingId = idOf.get(pair.recording);
+    const scoreId = idOf.get(pair.score);
+    return recordingId && scoreId ? { recordingId, scoreId } : null;
+  };
+  const rejectedByHand = REJECTED_WORK_LINKS.map(resolve).filter((pair): pair is { recordingId: string; scoreId: string } => Boolean(pair));
+  const refused = new Set(rejectedByHand.map(key));
+
+  const wanted = new Map<string, WorkLink>();
+  for (const link of matchWorks(recordings as WorkItem[], scores as WorkItem[])) if (!refused.has(key(link))) wanted.set(key(link), link);
+  for (const pair of MANUAL_WORK_LINKS) {
+    const ids = resolve(pair);
+    if (ids && !refused.has(key(ids))) wanted.set(key(ids), { ...ids, method: 'MANUAL' });
+  }
+  const links = [...wanted.values()];
+
+  const existing = await prisma.libraryWorkLink.findMany({ select: { recordingId: true, scoreId: true, method: true, rejectedAt: true } });
+  const have = new Map(existing.map((link: any) => [key(link), link]));
   const stale = existing.filter((link: any) => !link.rejectedAt && !wanted.has(key(link)));
   const fresh = links.filter((link) => !have.has(key(link)));
+  // A pair the matcher found first and a person has since confirmed.
+  const confirmed = links.filter((link) => link.method === 'MANUAL' && have.get(key(link)) && have.get(key(link)).method !== 'MANUAL' && !have.get(key(link)).rejectedAt);
+  const newlyRejected = rejectedByHand.filter((pair) => !have.get(key(pair))?.rejectedAt);
+  const where = (link: { recordingId: string; scoreId: string }) => ({ recordingId_scoreId: { recordingId: link.recordingId, scoreId: link.scoreId } });
   await prisma.$transaction([
-    ...stale.map((link: any) => prisma.libraryWorkLink.delete({ where: { recordingId_scoreId: { recordingId: link.recordingId, scoreId: link.scoreId } } })),
+    ...stale.map((link: any) => prisma.libraryWorkLink.delete({ where: where(link) })),
     prisma.libraryWorkLink.createMany({ data: fresh, skipDuplicates: true }),
+    ...confirmed.map((link) => prisma.libraryWorkLink.update({ where: where(link), data: { method: 'MANUAL' } })),
+    ...newlyRejected.map((pair) =>
+      prisma.libraryWorkLink.upsert({ where: where(pair), create: { ...pair, method: 'TITLE', rejectedAt: new Date() }, update: { rejectedAt: new Date() } }),
+    ),
   ]);
   const result = { links: links.length, added: fresh.length, removed: stale.length };
   logger.info(result, 'Library work links recomputed');

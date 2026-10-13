@@ -1700,7 +1700,7 @@ model LibraryEngagement {
 model LibraryWorkLink {
   recordingId String
   scoreId     String
-  // CATALOGUE or TITLE - how the match was made.
+  // CATALOGUE or TITLE (the matcher) or MANUAL (hand-reviewed list).
   method      String
   rejectedAt  DateTime?
   createdAt   DateTime    @default(now())

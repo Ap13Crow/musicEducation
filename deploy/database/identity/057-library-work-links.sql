@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS "LibraryWorkLink" (
   "recordingId" TEXT         NOT NULL,
   "scoreId"     TEXT         NOT NULL,
   -- CATALOGUE (same composer and Op./K./BWV/D./Hob. number) or TITLE
-  -- (same composer and the same distinctive title words).
+  -- (same composer and the same distinctive title words), or MANUAL
+  -- (apps/api/src/lib/libraryWorkLinksManual.ts, reviewed by hand).
   "method"      TEXT         NOT NULL,
   "rejectedAt"  TIMESTAMP(3),
   "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
