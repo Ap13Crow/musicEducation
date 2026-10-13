@@ -122,7 +122,16 @@ function ExternalEventCard({ ext, onView }: { ext: any; onView?: (id: string) =>
       onClick={() => onView?.(ext.id)}
       className="card flex flex-col overflow-hidden p-0 transition hover:-translate-y-0.5 hover:border-primary-300"
     >
-      {ext.imageUrl && <img src={ext.imageUrl} alt="" className="h-36 w-full object-cover" />}
+      {/* Every card gets the same picture area: the API crops each picture
+          to this 40:21 shape (lib/eventImages.ts), and an event without one
+          gets a plain panel instead of a shorter card. */}
+      {ext.imageUrl ? (
+        <img src={`/api/events/external/${encodeURIComponent(ext.id)}/image`} alt="" loading="lazy" className="aspect-[40/21] w-full bg-gray-100 object-cover" />
+      ) : (
+        <div aria-hidden="true" className="flex aspect-[40/21] w-full items-center justify-center bg-primary-50 text-primary-300">
+          <Calendar className="h-10 w-10" />
+        </div>
+      )}
       <div className="flex flex-1 flex-col p-4">
         <span className="mb-1 inline-block w-fit rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
           via {PROVIDER_LABELS[ext.provider] ?? ext.provider}

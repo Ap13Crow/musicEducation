@@ -22,6 +22,7 @@ import { libraryFolderShareUrl, libraryQrCode, libraryShareUrl } from './lib/lib
 import { libraryMediaStoreConfigured, putStoredUpload, sendLibraryObject, sendStoredUpload } from './lib/libraryMediaStore.js';
 import { verifyLocalUploadToken } from './lib/storage.js';
 import { libraryMirrorPending } from './lib/libraryMirror.js';
+import { eventCardImage } from './lib/eventImages.js';
 import type { GraphQLContext } from './types.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -397,6 +398,25 @@ async function main() {
     } catch (error) {
       logger.error({ error, id: req.params.id }, 'Library thumbnail fetch failed');
       return res.status(500).send('Thumbnail unavailable');
+    }
+  });
+
+  // External event pictures, trimmed and cropped to the card shape by
+  // lib/eventImages.ts. Only an event's own stored imageUrl is fetched, so
+  // this is no open proxy. If the conversion fails, the original picture.
+  app.get('/events/external/:id/image', async (req, res) => {
+    let imageUrl: string | null = null;
+    try {
+      const event = await prisma.externalEventProjection.findUnique({ where: { id: req.params.id }, select: { imageUrl: true } });
+      imageUrl = event?.imageUrl ?? null;
+      if (!imageUrl || !/^https:\/\//.test(imageUrl)) return res.status(404).send('Not found');
+      const image = await eventCardImage(imageUrl);
+      res.setHeader('content-type', 'image/jpeg');
+      res.setHeader('cache-control', 'public, max-age=604800');
+      return res.send(image);
+    } catch (error) {
+      logger.warn({ error, id: req.params.id }, 'Event card image failed');
+      return imageUrl ? res.redirect(302, imageUrl) : res.status(500).send('Image unavailable');
     }
   });
 
