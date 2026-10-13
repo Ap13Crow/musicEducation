@@ -962,7 +962,9 @@ enum LibraryUsageSort {
 
 type LibraryTagShare {
   value: String!
-  # Share of the user's weighted history (0..1).
+  # How much of the user's weighted history involves this tag (0..1). An
+  # item counts fully for each of its tags (a Lied for voice and piano is
+  # both), so a list's shares overlap and need not add up to 1.
   share: Float!
 }
 

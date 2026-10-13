@@ -76,6 +76,31 @@ function Chips({ values, tone = 'primary' }: { values: string[]; tone?: 'primary
   );
 }
 
+// One bar per tag, each measured against everything the user opened: the
+// shares overlap (an item with piano and voice counts for both), so they are
+// shown side by side on their own 0-100% track rather than as parts of one
+// whole that should add up.
+function ShareBars({ tags, tone = 'primary' }: { tags: { value: string; share: number }[]; tone?: 'primary' | 'amber' }) {
+  if (!tags.length) return <span className="text-xs text-gray-400">–</span>;
+  const bar = tone === 'amber' ? 'bg-amber-400' : 'bg-primary-500';
+  return (
+    <ul className="w-full space-y-1.5">
+      {tags.map((tag) => {
+        const percent = Math.round(tag.share * 100);
+        return (
+          <li key={tag.value} className="grid grid-cols-[7rem_1fr_3.5rem] items-center gap-2 text-xs">
+            <span className="truncate text-gray-700">{tag.value}</span>
+            <span className="h-2 overflow-hidden rounded-full bg-gray-100" role="img" aria-label={`${tag.value}: in ${percent}% of their items`}>
+              <span className={`block h-full rounded-full ${bar}`} style={{ width: `${percent}%` }} />
+            </span>
+            <span className="text-right tabular-nums text-gray-500">{percent}%</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function UserActivity({ userId, onBack }: { userId: string; onBack(): void }) {
   const { data, loading, error } = useQuery(ACTIVITY, { variables: { userId }, fetchPolicy: 'network-only' });
   const activity = data?.adminLibraryUserActivity;
@@ -117,14 +142,17 @@ function UserActivity({ userId, onBack }: { userId: string; onBack(): void }) {
               <p className="flex flex-wrap items-center gap-2"><span className="w-24 text-xs text-gray-500">Styles</span><Chips values={activity.profileStyles} tone="amber" /></p>
               <p className="flex flex-wrap items-center gap-2"><span className="w-24 text-xs text-gray-500">Level</span><Chips values={activity.skillLevel ? [activity.skillLevel.toLowerCase()] : []} tone="gray" /></p>
               <h4 className="pt-2 font-semibold">Learned from reading and listening</h4>
-              <p className="flex flex-wrap items-center gap-2">
-                <span className="w-24 text-xs text-gray-500">Instruments</span>
-                <Chips values={activity.historyInstruments.map((tag: any) => `${tag.value} ${Math.round(tag.share * 100)}%`)} />
+              <p className="text-xs text-gray-500">
+                Share of their items that involve each tag. An item can have several - a Lied counts for both voice and piano - so the bars overlap and don&rsquo;t add up to 100%.
               </p>
-              <p className="flex flex-wrap items-center gap-2">
-                <span className="w-24 text-xs text-gray-500">Styles</span>
-                <Chips values={activity.historyStyles.map((tag: any) => `${tag.value} ${Math.round(tag.share * 100)}%`)} tone="amber" />
-              </p>
+              <div className="flex items-start gap-2">
+                <span className="w-24 shrink-0 pt-0.5 text-xs text-gray-500">Instruments</span>
+                <ShareBars tags={activity.historyInstruments} />
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="w-24 shrink-0 pt-0.5 text-xs text-gray-500">Styles</span>
+                <ShareBars tags={activity.historyStyles} tone="amber" />
+              </div>
               <p className="flex flex-wrap items-center gap-2"><span className="w-24 text-xs text-gray-500">Composers</span><Chips values={activity.historyCreators} tone="gray" /></p>
             </div>
 
