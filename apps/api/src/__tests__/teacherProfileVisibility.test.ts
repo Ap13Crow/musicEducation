@@ -75,6 +75,51 @@ describe('teachers query directory visibility', () => {
   });
 });
 
+describe('teachers query free-text search', () => {
+  function setup(ids: string[]) {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const $queryRaw = jest.fn().mockResolvedValue(ids.map((id) => ({ id })));
+    const prisma = fakePrisma({
+      $queryRaw,
+      user: { findMany: jest.fn().mockResolvedValue([]) },
+      teacherProfile: { findMany, count: jest.fn().mockResolvedValue(0), upsert: jest.fn() },
+    });
+    return { prisma, findMany, $queryRaw };
+  }
+
+  it('matches tags case-insensitively in SQL, not with an exact `has`', async () => {
+    const { prisma, findMany, $queryRaw } = setup(['tp-1']);
+
+    await userResolvers.Query.teachers(null, { filter: { search: 'violin' } }, { prisma, user: null } as any);
+
+    const sql = $queryRaw.mock.calls[0][0];
+    expect(sql.sql).toContain('ILIKE');
+    expect(sql.sql).toContain('unnest(tp."instruments" || tp."musicStyles")');
+    expect(sql.values).toContain('%violin%');
+    expect(findMany.mock.calls[0][0].where).toEqual(expect.objectContaining({ id: { in: ['tp-1'] } }));
+    expect(findMany.mock.calls[0][0].where).not.toHaveProperty('OR');
+  });
+
+  it('requires every word and escapes LIKE wildcards', async () => {
+    const { prisma, $queryRaw } = setup([]);
+
+    await userResolvers.Query.teachers(null, { filter: { search: ' jazz  100%_ ' } }, { prisma, user: null } as any);
+
+    const sql = $queryRaw.mock.calls[0][0];
+    expect(sql.values).toEqual(expect.arrayContaining(['%jazz%', '%100\\%\\_%']));
+    expect(sql.sql).toContain(') AND (');
+  });
+
+  it('ignores a blank search', async () => {
+    const { prisma, findMany, $queryRaw } = setup([]);
+
+    await userResolvers.Query.teachers(null, { filter: { search: '   ' } }, { prisma, user: null } as any);
+
+    expect($queryRaw).not.toHaveBeenCalled();
+    expect(findMany.mock.calls[0][0].where).not.toHaveProperty('id');
+  });
+});
+
 describe('applyAsTeacher isPublic default', () => {
   it('defaults a self-provisioned ADMIN profile to isPublic: false (not publicly listed until explicitly opted in)', async () => {
     const upsert = jest.fn().mockResolvedValue({ id: 'tp-1' });

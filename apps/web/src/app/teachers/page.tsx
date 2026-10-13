@@ -226,17 +226,9 @@ export default function TeachersPage() {
       if (minExperience !== undefined && (t.yearsExperience ?? 0) < minExperience) return false;
       if (minRating !== undefined && (t.avgRating ?? 0) < minRating) return false;
       if (availableOnly && !t.isAvailable) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        const match = t.user?.displayName?.toLowerCase().includes(q) ||
-          t.headline?.toLowerCase().includes(q) ||
-          t.teachingBio?.toLowerCase().includes(q) ||
-          t.instruments?.some((i: string) => i.toLowerCase().includes(q));
-        if (!match) return false;
-      }
       return true;
     });
-  }, [data, activeInstrument, activeFormat, minExperience, minRating, availableOnly, searchQuery]);
+  }, [data, activeInstrument, activeFormat, minExperience, minRating, availableOnly]);
 
   const hasActiveFilters = !!activeInstrument || !!activeFormat || minExperience !== undefined || minRating !== undefined || availableOnly || !!availableDate || !!searchQuery;
 

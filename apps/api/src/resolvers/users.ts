@@ -8,7 +8,34 @@ import {
   LEAD_DAYS_MIN, LEAD_DAYS_MAX, CANCELLATION_DAYS_MIN, CANCELLATION_DAYS_MAX,
 } from '../lib/bookingPolicy.js';
 import { getBookableSlots, validateBookableRange } from '../lib/bookableSlots.js';
+import { Prisma } from '@my-music-coach/database';
 import type { GraphQLContext } from '../types.js';
+
+// Free-text teacher search: every word must appear, case- and accent-
+// insensitively, somewhere in the bio, name, city, country or one of the
+// instrument/style tags. Prisma's `has` on a String[] is an exact,
+// case-sensitive element match ("violin" never found "Violin"), so the tag
+// part needs raw SQL; library_unaccent comes from migration 048.
+async function searchTeacherProfileIds(prisma: GraphQLContext['prisma'], search: string): Promise<string[]> {
+  const words = search.trim().split(/\s+/).filter(Boolean).slice(0, 8);
+  if (words.length === 0) return [];
+  const conditions = words.map((word) => {
+    const like = `%${word.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    const pattern = Prisma.sql`library_unaccent(${like})`;
+    return Prisma.sql`(
+      library_unaccent(coalesce(tp."bio", '')) ILIKE ${pattern}
+      OR library_unaccent(coalesce(up."displayName", '')) ILIKE ${pattern}
+      OR library_unaccent(coalesce(up."city", '')) ILIKE ${pattern}
+      OR library_unaccent(coalesce(up."country", '')) ILIKE ${pattern}
+      OR EXISTS (SELECT 1 FROM unnest(tp."instruments" || tp."musicStyles") AS tag WHERE library_unaccent(tag) ILIKE ${pattern})
+    )`;
+  });
+  const rows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT tp."id" FROM "TeacherProfile" tp
+    LEFT JOIN "UserProfile" up ON up."userId" = tp."userId"
+    WHERE ${Prisma.join(conditions, ' AND ')}`);
+  return rows.map((row) => row.id);
+}
 
 // The languages courses are published in (Course.language).
 const COURSE_LANGUAGES = ['en', 'de', 'fr'];
@@ -156,13 +183,8 @@ export const userResolvers = {
             },
           };
         }
-        if (filter.search) {
-          where.OR = [
-            { bio: { contains: filter.search, mode: 'insensitive' } },
-            { instruments: { has: filter.search } },
-            { musicStyles: { has: filter.search } },
-            { user: { profile: { is: { displayName: { contains: filter.search, mode: 'insensitive' } } } } },
-          ];
+        if (filter.search?.trim()) {
+          where.id = { in: await searchTeacherProfileIds(prisma, filter.search) };
         }
       }
       const skip = (page - 1) * limit;
