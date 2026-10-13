@@ -1,4 +1,4 @@
-import { __clearSiteSearchLexicons, COURSE_SEARCH, EXTERNAL_EVENT_SEARCH, siteSearch } from '../lib/siteSearch';
+import { __clearSiteSearchLexicons, COURSE_SEARCH, EXTERNAL_EVENT_SEARCH, siteSearch, USER_SEARCH } from '../lib/siteSearch';
 
 // $queryRaw answers in call order: exact pass, then (under 3 hits) the
 // "did you mean" lexicon, then (if still empty) the corrected spelling, then
@@ -71,5 +71,19 @@ describe('siteSearch spelling correction', () => {
     expect(result).toEqual({ ids: ['x9'], fuzzy: true, suggestion: 'beethoven' });
     expect($queryRaw.mock.calls[2][0].values).toContain('beethoven');
     expect($queryRaw).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('siteSearch exclusions', () => {
+  beforeEach(() => __clearSiteSearchLexicons());
+
+  it('keeps -excluded words out of the similar-word pass too', async () => {
+    const { prisma, $queryRaw } = fakePrisma([], [], []);
+
+    await siteSearch(prisma, USER_SEARCH, 'anna -schmidt');
+
+    const similar = $queryRaw.mock.calls[2][0];
+    expect(similar.sql).toContain('AND NOT (');
+    expect(similar.values).toContain('schmidt');
   });
 });

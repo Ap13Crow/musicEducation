@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { gql, useQuery } from '@apollo/client';
 import { ArrowLeft, BookOpen, CheckCircle2, Clock, FolderOpen, Search, Sparkles, Star, Users } from 'lucide-react';
+import { SEARCH_INFO_FIELDS, SearchNotice } from '@/components/SearchNotice';
 
 // Admin view of how people use the Library - totals, the most opened items,
 // one row per user, and per user: what they read and listen to, what they
@@ -19,6 +20,7 @@ const USAGE = gql`
         totalCount
         page
         limit
+        ${SEARCH_INFO_FIELDS}
         nodes { userId email role displayName itemsOpened itemsCompleted xpEarned activeMinutes favorites folders lastActiveAt }
       }
     }
@@ -262,6 +264,15 @@ export function LibraryUsageTab() {
             {SORTS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </div>
+        <SearchNotice
+          info={users?.search}
+          onSuggestion={(text) => {
+            setInput(text);
+            setQuery(text);
+            setPage(1);
+          }}
+          className="border-b border-gray-100 px-4 py-2"
+        />
         {loading && !usage ? (
           <p className="px-5 py-4 text-sm text-gray-500">Loading…</p>
         ) : !users?.nodes.length ? (

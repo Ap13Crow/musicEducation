@@ -2,6 +2,7 @@ import { GraphQLError } from 'graphql';
 import { Prisma } from '@my-music-coach/database';
 import { requireRole } from '../middleware/auth.js';
 import { buildAffinity, loadLibraryHistory, recommendLibraryItems } from '../lib/libraryRecommendations.js';
+import { siteSearch, searchInfo, USER_SEARCH } from '../lib/siteSearch.js';
 import type { GraphQLContext } from '../types.js';
 
 // Library recommendations for the signed-in user, and the admin's view of
@@ -39,13 +40,11 @@ const SORTS: Record<string, Prisma.Sql> = {
 };
 
 // One row per user with any Library activity.
-async function usageRows(prisma: any, options: { query?: string | null; userId?: string; sort?: string | null; limit: number; offset: number }) {
+// userIds: the hits of a name/e-mail search (siteSearch's USER_SEARCH).
+async function usageRows(prisma: any, options: { userIds?: string[] | null; userId?: string; sort?: string | null; limit: number; offset: number }) {
   const conditions: Prisma.Sql[] = [];
   if (options.userId) conditions.push(Prisma.sql`u.id = ${options.userId}`);
-  if (options.query?.trim()) {
-    const like = `%${options.query.trim().replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
-    conditions.push(Prisma.sql`(u.email ILIKE ${like} OR p."displayName" ILIKE ${like})`);
-  }
+  if (options.userIds) conditions.push(Prisma.sql`u.id = ANY(${options.userIds})`);
   const where = conditions.length ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}` : Prisma.empty;
   const rows: (UsageRow & { total: number })[] = await prisma.$queryRaw`
     WITH e AS (
@@ -91,8 +90,9 @@ export const libraryInsightsResolvers = {
       const since7 = new Date(now - 7 * DAY_MS);
       const since30 = new Date(now - 30 * DAY_MS);
 
+      const search = await siteSearch(prisma, USER_SEARCH, query);
       const [{ rows, total }, active7, active30, opened30, completed30, xp30, favorites, folders, topRaw] = await Promise.all([
-        usageRows(prisma, { query, sort, limit: safeLimit, offset: (safePage - 1) * safeLimit }),
+        usageRows(prisma, { userIds: search?.ids ?? null, sort, limit: safeLimit, offset: (safePage - 1) * safeLimit }),
         prisma.libraryEngagement.findMany({ where: { updatedAt: { gte: since7 } }, distinct: ['userId'], select: { userId: true } }),
         prisma.libraryEngagement.findMany({ where: { updatedAt: { gte: since30 } }, distinct: ['userId'], select: { userId: true } }),
         prisma.libraryEngagement.count({ where: { startedAt: { gte: since30 } } }),
@@ -122,7 +122,7 @@ export const libraryInsightsResolvers = {
         topItems: topRaw
           .filter((row: any) => itemById.has(row.itemId))
           .map((row: any) => ({ item: itemById.get(row.itemId), opens: row._count._all, completions: completions.get(row.itemId) ?? 0 })),
-        users: { nodes: rows.map(toUsage), totalCount: total, page: safePage, limit: safeLimit },
+        users: { nodes: rows.map(toUsage), totalCount: total, page: safePage, limit: safeLimit, search: searchInfo(search) },
       };
     },
 

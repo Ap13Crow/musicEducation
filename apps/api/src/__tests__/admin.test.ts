@@ -112,6 +112,20 @@ describe('adminUsers', () => {
   });
 });
 
+describe('adminUserPage', () => {
+  it('searches names and e-mail addresses with the shared site search', async () => {
+    const findMany = jest.fn().mockResolvedValue([{ id: 'u1' }]);
+    const $queryRaw = jest.fn().mockResolvedValue([{ id: 'u1' }, { id: 'u2' }, { id: 'u3' }]);
+    const prisma = fakePrisma({ user: { findMany }, $queryRaw });
+
+    const page = await adminResolvers.Query.adminUserPage(null, { search: 'apollon' }, { prisma, user: adminUser } as any);
+
+    expect($queryRaw.mock.calls[0][0].sql).toContain('"User" u LEFT JOIN "UserProfile" up');
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'ACTIVE', id: { in: ['u1', 'u2', 'u3'] } } }));
+    expect(page).toEqual({ nodes: [{ id: 'u1' }], search: { fuzzy: false, suggestion: null } });
+  });
+});
+
 describe('externalEventProviderStatus', () => {
   it('reports Classictic configuration and cached event counts to admins', async () => {
     const prisma = fakePrisma({

@@ -852,11 +852,16 @@ type LibraryImportSourceResults {
 }
 
 type LibraryImportSearchResult {
+  # The query actually searched: the corrected spelling when fuzzy.
   query: String!
   page: Int!
   pageSize: Int!
   totalPages: Int!
   sources: [LibraryImportSourceResults!]!
+  # No catalogue had a hit, so the corrected spelling was searched instead.
+  fuzzy: Boolean!
+  # "Did you mean", from the Library's own words.
+  suggestion: String
 }
 
 input LibraryImportSelectionInput {
@@ -938,6 +943,8 @@ type LibraryUserUsagePage {
   totalCount: Int!
   page: Int!
   limit: Int!
+  # Set when a name/e-mail search was given - see SearchInfo.
+  search: SearchInfo
 }
 
 type LibraryUsageOverview {
@@ -1314,6 +1321,11 @@ type LessonProgress {
 type SearchInfo {
   fuzzy: Boolean!
   suggestion: String
+}
+
+type AdminUserPage {
+  nodes: [User!]!
+  search: SearchInfo
 }
 
 type CourseConnection {
@@ -2214,6 +2226,8 @@ type Query {
   adminSettings: [AdminSetting!]!
   # DEACTIVATED users are excluded unless includeDeactivated is true.
   adminUsers(role: Role, search: String, page: Int, limit: Int, includeDeactivated: Boolean): [User!]!
+  # adminUsers plus how its search went.
+  adminUserPage(role: Role, search: String, page: Int, limit: Int, includeDeactivated: Boolean): AdminUserPage!
   # Transactional-email delivery queue, most recent first - ADMIN only. A
   # non-empty DEAD_LETTER filter is the "notifications are silently
   # failing" signal this exists for.

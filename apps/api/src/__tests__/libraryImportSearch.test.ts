@@ -22,6 +22,7 @@ jest.mock('../lib/dnb', () => ({
 import { searchCataloguePage } from '@my-music-coach/bnf-gallica';
 import { fetchDnbRecords, searchDnb } from '../lib/dnb';
 import { __clearImportCache, importSelection, searchImportSources } from '../lib/libraryImportSearch';
+import { __setLexicon } from '../lib/librarySearch';
 
 const dnbRecord = {
   idn: '1376235218',
@@ -108,6 +109,30 @@ describe('searchImportSources', () => {
     const result = await searchImportSources(prisma, { query: 'Schubert' });
     expect(searchCataloguePage).not.toHaveBeenCalled();
     expect(result.sources.find((source) => source.source === 'BNF')!.error).toMatch(/leaving it alone/);
+  });
+});
+
+describe('searchImportSources spelling', () => {
+  afterEach(() => __setLexicon(null));
+
+  it('searches the corrected spelling when no catalogue has a hit', async () => {
+    __setLexicon({ schubert: 300, lied: 80 });
+    (searchDnb as jest.Mock).mockImplementation(async ({ query }: any) => (query === 'schubert lied' ? { total: 66, records: [dnbRecord] } : { total: 0, records: [] }));
+    (searchCataloguePage as jest.Mock).mockResolvedValue({ total: 0, records: [] });
+
+    const result = await searchImportSources(fakePrisma(), { query: 'Shubert lied' });
+
+    expect(result).toMatchObject({ query: 'schubert lied', fuzzy: true, suggestion: 'schubert lied' });
+    expect(result.sources.find((source) => source.source === 'DNB')!.total).toBe(66);
+  });
+
+  it('only suggests when the typed words already find something, and never for an exact phrase', async () => {
+    __setLexicon({ schubert: 300 });
+    (searchDnb as jest.Mock).mockResolvedValue({ total: 1, records: [dnbRecord] });
+    (searchCataloguePage as jest.Mock).mockResolvedValue({ total: 0, records: [] });
+
+    expect(await searchImportSources(fakePrisma(), { query: 'Shubert' })).toMatchObject({ query: 'Shubert', fuzzy: false, suggestion: 'schubert' });
+    expect(await searchImportSources(fakePrisma(), { query: 'Shubert', mode: 'PHRASE' })).toMatchObject({ fuzzy: false, suggestion: null });
   });
 });
 

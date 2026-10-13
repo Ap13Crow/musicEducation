@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { gql, useLazyQuery, useMutation } from '@apollo/client';
 import { AlertTriangle, BookOpen, CheckCircle2, ChevronLeft, ChevronRight, Download, ExternalLink, Search } from 'lucide-react';
+import { SearchNotice } from '@/components/SearchNotice';
 
 // Admin import: one query against Gallica (BnF) and the Deutsche
 // Nationalbibliothek side by side, every result page by page, tick what to
@@ -17,6 +18,8 @@ const SEARCH = gql`
       page
       pageSize
       totalPages
+      fuzzy
+      suggestion
       sources {
         source
         total
@@ -126,8 +129,8 @@ export function LibraryImportSearch() {
     void runSearch({ variables: { input } });
   }
 
-  function submit() {
-    const text = query.trim();
+  function submit(override?: string) {
+    const text = (override ?? query).trim();
     if (!text || !sources.length) return;
     setLastImport(null);
     search(1, {
@@ -282,6 +285,14 @@ export function LibraryImportSearch() {
           )}
         </div>
       )}
+
+      <SearchNotice
+        info={result}
+        onSuggestion={(text) => {
+          setQuery(text);
+          submit(text);
+        }}
+      />
 
       {result && (
         <>

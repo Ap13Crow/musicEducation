@@ -1,5 +1,5 @@
 import { Prisma, type PrismaClient } from '@my-music-coach/database';
-import { parseQuery, suggestQuery, type Lexicon } from './librarySearch.js';
+import { excludedTsquery, parseQuery, suggestQuery, type Lexicon } from './librarySearch.js';
 
 // One search standard for every public search bar - courses, events,
 // external events and teachers work like the Library (librarySearch.ts):
@@ -83,6 +83,23 @@ export const TEACHER_SEARCH: SearchSurface = {
     ${tags('tp."instruments"')}, ${tags('tp."musicStyles"')}, up."city", up."country")))`,
 };
 
+// Admin user lists: display name and e-mail address. The address is indexed
+// whole ("jens.apel@apollon.care"), by its domain ("apollon.care") and by
+// its parts ("jens", "apel", "apollon", "care"). The scope is every user:
+// the resolver applies its own status/role filters.
+const EMAIL_PARTS = (column: string) => Prisma.raw(`regexp_replace(coalesce(${column}, ''), '[^[:alnum:]]+', ' ', 'g')`);
+export const USER_SEARCH: SearchSurface = {
+  key: 'user',
+  from: Prisma.sql`"User" u LEFT JOIN "UserProfile" up ON up."userId" = u."id"`,
+  scope: Prisma.sql`TRUE`,
+  id: Prisma.sql`u."id"`,
+  vector: Prisma.sql`(
+    setweight(to_tsvector('simple'::regconfig, library_unaccent(coalesce(up."displayName", ''))), 'A') ||
+    setweight(to_tsvector('simple'::regconfig, library_unaccent(${EMAIL_PARTS('u."email"')})), 'A') ||
+    setweight(to_tsvector('simple'::regconfig, coalesce(u."email", '') || ' ' || regexp_replace(coalesce(u."email", ''), '^[^@]*@', '')), 'B'))`,
+  similarText: Prisma.sql`library_unaccent(lower(concat_ws(' ', up."displayName", ${EMAIL_PARTS('u."email"')})))`,
+};
+
 async function selectIds(prisma: PrismaClient, surface: SearchSurface, where: Prisma.Sql, rank: Prisma.Sql): Promise<string[]> {
   const rows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
     SELECT ${surface.id} AS id FROM ${surface.from}
@@ -148,12 +165,10 @@ export async function siteSearch(
   const words = parsed.words.length ? parsed.words : parsed.terms;
   if (ids.length === 0 && words.length) {
     const scores = words.map((word) => Prisma.sql`word_similarity(library_unaccent(lower(${word})), ${surface.similarText})`);
-    const similar = await selectIds(
-      prisma,
-      surface,
-      Prisma.join(scores.map((score) => Prisma.sql`${score} >= ${SIMILARITY}`), ' AND '),
-      Prisma.sql`(${Prisma.join(scores, ' + ')})`,
-    );
+    const conditions = scores.map((score) => Prisma.sql`${score} >= ${SIMILARITY}`);
+    const excluded = excludedTsquery(parsed);
+    if (excluded) conditions.push(Prisma.sql`NOT (${surface.vector} @@ ${excluded})`);
+    const similar = await selectIds(prisma, surface, Prisma.join(conditions, ' AND '), Prisma.sql`(${Prisma.join(scores, ' + ')})`);
     if (similar.length) {
       ids = similar;
       fuzzy = true;

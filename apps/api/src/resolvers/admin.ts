@@ -2,7 +2,33 @@ import { GraphQLError } from 'graphql';
 import { classicticConfigurationSource, isClassicticConfigured, runClassicticIngest } from '@my-music-coach/external-events';
 import { requireRole } from '../middleware/auth.js';
 import { deleteKeycloakUser, setKeycloakUserRealmRole, type ApplicationRealmRole } from '../lib/keycloakAdmin.js';
+import { siteSearch, searchInfo, USER_SEARCH } from '../lib/siteSearch.js';
 import type { GraphQLContext } from '../types.js';
+
+async function adminUserPage(
+  { role, search: query, page = 1, limit = 50, includeDeactivated = false }: any,
+  { prisma, user }: GraphQLContext,
+) {
+  requireRole(user, 'ADMIN');
+  // Hidden by default: a DEACTIVATED user's Keycloak identity is gone
+  // (see adminDeactivateUser / the worker's keycloak-user-sync job),
+  // and the admin user list is where "did removing them actually work"
+  // gets judged - leaving them mixed in with active accounts would look
+  // exactly like the original bug (deleted-in-Keycloak users still
+  // showing up here).
+  const where: any = includeDeactivated ? {} : { status: 'ACTIVE' };
+  if (role) where.role = role;
+  const search = await siteSearch(prisma, USER_SEARCH, query);
+  if (search) where.id = { in: search.ids };
+  const nodes = await prisma.user.findMany({
+    where,
+    skip: (page - 1) * limit,
+    take: limit,
+    orderBy: { createdAt: 'desc' },
+    include: { profile: true },
+  });
+  return { nodes, search: searchInfo(search) };
+}
 
 export const adminResolvers = {
   Query: {
@@ -124,29 +150,14 @@ export const adminResolvers = {
       };
     },
 
-    async adminUsers(_: unknown, { role, search, page = 1, limit = 50, includeDeactivated = false }: any, { prisma, user }: GraphQLContext) {
-      requireRole(user, 'ADMIN');
-      // Hidden by default: a DEACTIVATED user's Keycloak identity is gone
-      // (see adminDeactivateUser / the worker's keycloak-user-sync job),
-      // and the admin user list is where "did removing them actually work"
-      // gets judged - leaving them mixed in with active accounts would look
-      // exactly like the original bug (deleted-in-Keycloak users still
-      // showing up here).
-      const where: any = includeDeactivated ? {} : { status: 'ACTIVE' };
-      if (role) where.role = role;
-      if (search) {
-        where.OR = [
-          { email: { contains: search, mode: 'insensitive' } },
-          { profile: { displayName: { contains: search, mode: 'insensitive' } } },
-        ];
-      }
-      return prisma.user.findMany({
-        where,
-        skip: (page - 1) * limit,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        include: { profile: true },
-      });
+    async adminUsers(_: unknown, args: any, context: GraphQLContext) {
+      return (await adminUserPage(args, context)).nodes;
+    },
+
+    // The admin user list with how its search went (SearchInfo), which a
+    // bare [User!] has no room for. adminUsers stays for older callers.
+    async adminUserPage(_: unknown, args: any, context: GraphQLContext) {
+      return adminUserPage(args, context);
     },
   },
 

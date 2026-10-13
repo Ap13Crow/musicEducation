@@ -99,6 +99,14 @@ export function webSearchText(raw: string, mode: SearchMode): string {
   return raw;
 }
 
+// The -excluded words as one tsquery that matches if any of them occurs, so
+// the similar-word pass can still keep them out (it only sees the terms).
+export function excludedTsquery(parsed: ParsedQuery): Prisma.Sql | null {
+  if (!parsed.excluded.length) return null;
+  const text = parsed.excluded.map((term) => (/\s/.test(term) ? `"${term.replace(/"/g, '')}"` : term)).join(' or ');
+  return Prisma.sql`websearch_to_tsquery('simple'::regconfig, library_unaccent(${text}))`;
+}
+
 // ── "did you mean" ─────────────────────────────────────────────
 
 export function foldWord(word: string): string {
@@ -202,6 +210,16 @@ export function suggestQuery(raw: string, words: string[], known: Lexicon): stri
   return changed ? suggestion : null;
 }
 
+// "Did you mean" against the words of the Library - also used by the admin
+// import search, whose catalogues have no suggestions of their own.
+export async function suggestLibraryQuery(prisma: PrismaClient, raw: string): Promise<string | null> {
+  try {
+    return suggestQuery(raw, parseQuery(raw).words, await loadLexicon(prisma));
+  } catch {
+    return null;
+  }
+}
+
 export function __setLexicon(words: Record<string, number> | null) {
   lexicon = words ? { value: { words: new Map(Object.entries(words)), grams: new Map() }, at: Date.now() } : null;
 }
@@ -260,6 +278,8 @@ function textConditions(input: LibrarySearchInput, fuzzy: boolean): { where: Pri
     const each = words.map((word) => Prisma.sql`word_similarity(library_unaccent(lower(${word})), ${haystack}) >= 0.5`);
     if (!each.length) return null;
     conditions.push(Prisma.sql`(${Prisma.join(each, mode === 'ANY' ? ' OR ' : ' AND ')})`);
+    const excluded = excludedTsquery(parsed);
+    if (excluded) conditions.push(Prisma.sql`NOT (${vector} @@ ${excluded})`);
     const rank = Prisma.sql`(${Prisma.join(words.map((word) => Prisma.sql`word_similarity(library_unaccent(lower(${word})), ${haystack})`), ' + ')})`;
     return { where: Prisma.join(conditions, ' AND '), rank };
   }

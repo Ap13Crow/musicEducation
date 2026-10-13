@@ -7,6 +7,7 @@ import { keycloakAdminUrl, keycloakIssuer, keycloakSigningInUrl } from '@/lib/ex
 import { useSession, signIn } from 'next-auth/react';
 import { hasRole } from '@/lib/roles';
 import { LibraryImportSearch } from '@/components/admin/LibraryImportSearch';
+import { SEARCH_INFO_FIELDS, SearchNotice } from '@/components/SearchNotice';
 import { LibraryUsageTab } from '@/components/admin/LibraryUsageTab';
 import { MembershipRevenueCard } from '@/components/admin/MembershipRevenueCard';
 import {
@@ -111,13 +112,16 @@ function OverviewTab() {
 
 const GET_ADMIN_USERS = gql`
   query AdminUsers($role: Role, $search: String, $includeDeactivated: Boolean) {
-    adminUsers(role: $role, search: $search, includeDeactivated: $includeDeactivated, limit: 100) {
-      id
-      displayName
-      email
-      role
-      status
-      createdAt
+    adminUserPage(role: $role, search: $search, includeDeactivated: $includeDeactivated, limit: 100) {
+      nodes {
+        id
+        displayName
+        email
+        role
+        status
+        createdAt
+      }
+      ${SEARCH_INFO_FIELDS}
     }
   }
 `;
@@ -156,7 +160,7 @@ function UsersTab() {
   const [deactivateUser] = useMutation(DEACTIVATE_USER, { refetchQueries: [{ query: GET_ADMIN_USERS, variables: queryVariables }] });
 
   const users: { id: string; displayName: string; email: string; role: string; status: string; createdAt: string }[] =
-    data?.adminUsers ?? [];
+    data?.adminUserPage?.nodes ?? [];
 
   async function handleRoleChange(userId: string, role: string) {
     setChangingRole(userId);
@@ -206,6 +210,7 @@ function UsersTab() {
           Show deactivated
         </label>
       </div>
+      <SearchNotice info={data?.adminUserPage?.search} onSuggestion={setSearchQuery} />
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

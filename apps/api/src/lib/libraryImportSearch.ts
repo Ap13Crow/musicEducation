@@ -12,6 +12,7 @@ import { bnfPausedUntil, pauseBnf } from './libraryMirror.js';
 import { archiveQuery, groupSides, historicCutoffYear, searchSides, tidyTitle, upsertArchiveRecord, type Archive78Record } from './archive78.js';
 import { EUROPEANA_MAX_PAGE_SIZE, europeanaConfigured, europeanaItemData, fetchEuropeanaDetails, searchEuropeana, type EuropeanaRecord } from './europeana.js';
 import { hideDuplicateRecordings } from './recordingDuplicates.js';
+import { suggestLibraryQuery } from './librarySearch.js';
 
 // The admin's federated import: one query runs against Gallica and the DNB
 // side by side, page by page, and the admin ticks what to bring into the
@@ -251,9 +252,25 @@ async function searchSource(
 
 const REF_SELECT = { id: true, shortId: true, title: true, source: true, ark: true, creator: true, titleKey: true } as const;
 
+// The catalogues run their own search engines, so of the site's search
+// standard (siteSearch.ts) only the spelling step applies here: a "did you
+// mean" from the Library's words when there are under 3 hits, and with no
+// hits at all the corrected query is searched instead (marked fuzzy).
 export async function searchImportSources(prisma: PrismaClient, input: ImportSearchInput) {
   const query = input.query?.trim() ?? '';
   if (!query) throw new Error('Enter something to search for.');
+  const first = await searchCatalogues(prisma, input, query);
+  const hits = first.sources.reduce((sum, result) => sum + result.total, 0);
+  const suggestion = hits < 3 && input.mode !== 'PHRASE' ? await suggestLibraryQuery(prisma, query) : null;
+  // A catalogue that is down or not configured simply counts as no hits.
+  if (suggestion && hits === 0) {
+    const corrected = await searchCatalogues(prisma, input, suggestion);
+    if (corrected.sources.some((result) => result.total > 0)) return { ...corrected, fuzzy: true, suggestion };
+  }
+  return { ...first, fuzzy: false, suggestion };
+}
+
+async function searchCatalogues(prisma: PrismaClient, input: ImportSearchInput, query: string) {
   const page = Math.max(1, Math.trunc(input.page ?? 1));
   const pageSize = Math.max(5, Math.min(Math.trunc(input.pageSize ?? DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE));
   const sources = (input.sources?.length ? input.sources : IMPORT_SOURCES).filter((source) => IMPORT_SOURCES.includes(source));
