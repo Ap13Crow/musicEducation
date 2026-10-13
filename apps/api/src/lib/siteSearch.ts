@@ -98,8 +98,11 @@ const LEXICON_TTL_MS = 10 * 60 * 1000;
 async function loadLexicon(prisma: PrismaClient, surface: SearchSurface): Promise<Lexicon> {
   const cached = lexicons.get(surface.key);
   if (cached && Date.now() - cached.at < LEXICON_TTL_MS) return cached.value;
+  // A word in a title, name or tag (weights A and B) counts ten times: it is
+  // what people search for, so "betoven" means beethoven, not the "beloved"
+  // that only fills descriptions.
   const rows = await prisma.$queryRaw<{ word: string; ndoc: number }[]>(Prisma.sql`
-    SELECT lexeme AS word, count(*)::int AS ndoc
+    SELECT lexeme AS word, (count(*) + 9 * count(*) FILTER (WHERE weights && ARRAY['A', 'B']))::int AS ndoc
     FROM (SELECT ${surface.vector} AS v FROM ${surface.from} WHERE ${surface.scope}) docs, unnest(docs.v)
     WHERE length(lexeme) >= 3 AND lexeme !~ '^[0-9]+$'
     GROUP BY lexeme`);
