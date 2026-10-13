@@ -1,0 +1,73 @@
+# Renders the restored versions (Mild / Medium / Strong) of the Internet
+# Archive 78 rpm sides - apps/api/src/audioRestorer.ts, the API image with
+# another command. Separate from the API pod so ffmpeg never slows the site:
+# its own CPU allowance, lowest priority (nice), no Service, no traffic.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audio-restorer
+  labels: &restorerLabels
+    app.kubernetes.io/name: audio-restorer
+    app.kubernetes.io/component: library-audio-restoration
+    app.kubernetes.io/part-of: mymusic-coach
+spec:
+  replicas: 1
+  # One pod at a time: two would render the same sides.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audio-restorer
+  template:
+    metadata:
+      labels: *restorerLabels
+    spec:
+      automountServiceAccountToken: false
+      # Long enough to finish the side in hand (a few minutes at most).
+      terminationGracePeriodSeconds: 300
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: audio-restorer
+          image: mymusiccoach/api:dev
+          imagePullPolicy: IfNotPresent
+          command: ['node', 'dist/audioRestorer.js']
+          envFrom:
+            - secretRef:
+                name: postgres-mymusiccoach
+            - secretRef:
+                name: library-media-s3
+                optional: true
+          env:
+            - name: NODE_ENV
+              value: production
+          volumeMounts:
+            - name: postgres-ca
+              mountPath: /etc/postgres-ca
+              readOnly: true
+            # Masters (24-bit FLAC, up to a few hundred MB) and renders.
+            - name: temporary
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: '2'
+              memory: 1Gi
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
+            readOnlyRootFilesystem: true
+      volumes:
+        - name: postgres-ca
+          configMap:
+            name: postgres-ca
+        - name: temporary
+          emptyDir:
+            sizeLimit: 4Gi

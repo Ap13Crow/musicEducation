@@ -1603,6 +1603,12 @@ model LibraryItem {
   mirroredAt         DateTime?
   mirrorError        String?
   mirrorAttempts     Int      @default(0)
+  // Restored versions (lib/audioRestoration.ts): set once every side of an
+  // Internet Archive 78 has its Mild/Medium/Strong renders.
+  restoredAt         DateTime?
+  restoreError       String?
+  restoreAttempts    Int      @default(0)
+  restorations       LibraryAudioRestoration[]
   ingestedAt         DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -1635,7 +1641,25 @@ model LibraryMediaObject {
   size        Int
   createdAt   DateTime @default(now())
 
-  uses LibraryItemMedia[]
+  uses         LibraryItemMedia[]
+  restorations LibraryAudioRestoration[]
+}
+
+// Restored versions of an Internet Archive 78 side (lib/audioRestoration.ts,
+// migration 058): MILD, MEDIUM or STRONG, beside the untouched original.
+model LibraryAudioRestoration {
+  itemId    String
+  // Position in LibraryItem.files.
+  fileIndex Int
+  level     String
+  sha256    String
+  createdAt DateTime @default(now())
+
+  item   LibraryItem        @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  object LibraryMediaObject @relation(fields: [sha256], references: [sha256])
+
+  @@id([itemId, fileIndex, level])
+  @@index([sha256])
 }
 
 // Which stored file plays which role for an item - the item's own

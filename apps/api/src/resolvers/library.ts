@@ -33,6 +33,19 @@ const OPENSCORE_CORPORA = ['LIEDER', 'STRING_QUARTETS'] as const;
 let openScoreIngestRunning = false;
 
 export const libraryResolvers = {
+  // Restored versions of a 78 side (lib/audioRestoration.ts) - null until all
+  // three are rendered, so the player never offers a version that 404s.
+  LibraryFile: {
+    async restored(file: { itemId?: string; index?: number; contentType: string }, _: unknown, { prisma }: GraphQLContext) {
+      if (!file.itemId || file.index == null || !file.contentType.startsWith('audio/')) return null;
+      const rows = await prisma.libraryAudioRestoration.findMany({ where: { itemId: file.itemId, fileIndex: file.index }, select: { level: true } });
+      const levels = new Set(rows.map((row: { level: string }) => row.level));
+      if (!['MILD', 'MEDIUM', 'STRONG'].every((level) => levels.has(level))) return null;
+      const base = `/api/library/items/${file.itemId}/files/${file.index}`;
+      return { mild: `${base}/mild.mp3`, medium: `${base}/medium.mp3`, strong: `${base}/strong.mp3` };
+    },
+  },
+
   LibraryItem: {
     shareUrl: (item: { shortId: string }) => libraryShareUrl(item.shortId),
     // The same work in the other form (lib/libraryWorkLinks.ts): a
@@ -93,6 +106,9 @@ export const libraryResolvers = {
           contentType,
           durationSeconds: Number.isFinite(file?.durationSeconds) ? file.durationSeconds : null,
           shareUrl: libraryShareUrl(item.shortId, index + 1),
+          // For LibraryFile.restored - not part of the schema.
+          itemId: item.id,
+          index,
         }];
       }),
     // Only from our local copy: our server never fetches Gallica for a

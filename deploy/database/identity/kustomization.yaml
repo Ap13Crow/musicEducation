@@ -62,3 +62,4 @@ configMapGenerator:
       - 055-membership-revenue-share.sql
       - 056-site-search.sql
       - 057-library-work-links.sql
+      - 058-library-audio-restoration.sql

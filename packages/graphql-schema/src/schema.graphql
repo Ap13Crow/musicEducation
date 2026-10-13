@@ -689,6 +689,17 @@ type LibraryFile {
   durationSeconds: Int
   # Permanent public link to this one file (https://<app>/l/<shortId>/<n>).
   shareUrl: String!
+  # Internet Archive 78s: restored versions of this side, beside the
+  # untouched original (url). Null until all three are rendered.
+  restored: LibraryRestoredAudio
+}
+
+# Same side, three strengths of noise reduction (apps/api/src/lib/
+# audioRestoration.ts). Strong is the player's default.
+type LibraryRestoredAudio {
+  mild: String!
+  medium: String!
+  strong: String!
 }
 
 enum LibraryImportSource {

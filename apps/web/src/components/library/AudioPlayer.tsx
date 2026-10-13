@@ -1,12 +1,35 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward } from 'lucide-react';
+import { AudioLines, Check, Pause, Play, Repeat, RotateCcw, RotateCw, SkipBack, SkipForward } from 'lucide-react';
 
 export interface AudioTrack {
   title: string;
   url: string;
   durationSeconds?: number | null;
+  // Internet Archive 78s: restored versions of this side (API:
+  // lib/audioRestoration.ts), offered beside the untouched original.
+  restored?: { mild: string; medium: string; strong: string } | null;
+}
+
+// Strong is the default (operator's choice after an A/B listening test);
+// a listener's own pick is remembered on this device.
+type Quality = 'original' | 'mild' | 'medium' | 'strong';
+const QUALITIES: { value: Quality; label: string; detail: string }[] = [
+  { value: 'strong', label: 'Strong', detail: 'Least surface noise' },
+  { value: 'medium', label: 'Medium', detail: 'Clicks and most hiss removed' },
+  { value: 'mild', label: 'Mild', detail: 'Only the obvious noise removed' },
+  { value: 'original', label: 'Original', detail: 'The transfer, untouched' },
+];
+const QUALITY_KEY = 'library-audio-quality';
+
+function savedQuality(): Quality {
+  try {
+    const value = window.localStorage.getItem(QUALITY_KEY);
+    return QUALITIES.some((option) => option.value === value) ? (value as Quality) : 'strong';
+  } catch {
+    return 'strong';
+  }
 }
 
 const SPEEDS = [1, 1.25, 0.5, 0.75];
@@ -49,8 +72,45 @@ export function AudioPlayer({
   const [loop, setLoop] = useState(false);
   const [error, setError] = useState(false);
   const autoPlayNext = useRef(false);
+  const [quality, setQuality] = useState<Quality>('strong');
+  const [qualityOpen, setQualityOpen] = useState(false);
+  // Where to carry on after switching versions of the same side.
+  const resumeAt = useRef<{ time: number; play: boolean } | null>(null);
+  const qualityMenu = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setQuality(savedQuality()), []);
 
   const track = tracks[Math.min(index, tracks.length - 1)];
+  const restored = track?.restored ?? null;
+  const source = restored && quality !== 'original' ? restored[quality] : track?.url;
+
+  function chooseQuality(next: Quality) {
+    setQualityOpen(false);
+    if (next === quality) return;
+    const audio = audioRef.current;
+    if (audio && restored) resumeAt.current = { time: audio.currentTime, play: !audio.paused };
+    setQuality(next);
+    try {
+      window.localStorage.setItem(QUALITY_KEY, next);
+    } catch {
+      // Private mode: the choice lasts for this page only.
+    }
+  }
+
+  // Close the quality menu on an outside click or Escape.
+  useEffect(() => {
+    if (!qualityOpen) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!qualityMenu.current?.contains(event.target as Node)) setQualityOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => event.key === 'Escape' && setQualityOpen(false);
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [qualityOpen]);
   const speed = SPEEDS[speedIndex];
   const hasPrevious = index > 0;
   const hasNext = index < tracks.length - 1;
@@ -136,7 +196,7 @@ export function AudioPlayer({
     <section className="card overflow-hidden p-0" aria-label="Recording player" data-testid="audio-player">
       <audio
         ref={audioRef}
-        src={track.url}
+        src={source}
         preload="metadata"
         loop={loop}
         onPlay={() => setPlaying(true)}
@@ -144,6 +204,12 @@ export function AudioPlayer({
         onTimeUpdate={(event) => setTime(event.currentTarget.currentTime)}
         onLoadedMetadata={(event) => {
           event.currentTarget.playbackRate = speed;
+          const resume = resumeAt.current;
+          if (resume) {
+            resumeAt.current = null;
+            event.currentTarget.currentTime = resume.time;
+            if (resume.play) void event.currentTarget.play().catch(() => setPlaying(false));
+          }
           if (Number.isFinite(event.currentTarget.duration)) {
             setDuration(event.currentTarget.duration);
             trackSeconds.current.set(index, event.currentTarget.duration);
@@ -224,6 +290,44 @@ export function AudioPlayer({
         >
           <Repeat className="h-4 w-4" /> Loop
         </button>
+        {restored && (
+          <div ref={qualityMenu} className="relative">
+            <button
+              type="button"
+              onClick={() => setQualityOpen(!qualityOpen)}
+              aria-haspopup="listbox"
+              aria-expanded={qualityOpen}
+              aria-label={`Sound: ${QUALITIES.find((option) => option.value === quality)?.label}, tap to change`}
+              className={`inline-flex h-11 items-center gap-1.5 rounded-full px-4 text-sm font-semibold ${quality !== 'original' ? 'bg-primary-50 text-primary-700' : 'text-gray-700 hover:bg-gray-100'}`}
+            >
+              <AudioLines className="h-4 w-4" /> {QUALITIES.find((option) => option.value === quality)?.label}
+            </button>
+            {qualityOpen && (
+              <ul
+                role="listbox"
+                aria-label="Noise reduction"
+                className="absolute bottom-full right-0 z-20 mb-2 w-64 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 text-left shadow-lg"
+              >
+                <li className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wide text-gray-400">Noise reduction</li>
+                {QUALITIES.map((option) => (
+                  <li key={option.value} role="option" aria-selected={quality === option.value}>
+                    <button
+                      type="button"
+                      onClick={() => chooseQuality(option.value)}
+                      className="flex min-h-[2.75rem] w-full items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 active:bg-gray-100"
+                    >
+                      <span className="w-4 shrink-0 text-primary-600">{quality === option.value && <Check className="h-4 w-4" />}</span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-gray-900">{option.label}</span>
+                        <span className="block text-xs text-gray-500">{option.detail}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
 
       {error && <p className="px-4 pb-3 text-center text-sm text-red-700">This recording couldn&rsquo;t be loaded. Try again shortly.</p>}

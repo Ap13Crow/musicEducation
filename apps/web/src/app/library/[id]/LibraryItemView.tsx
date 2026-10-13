@@ -24,7 +24,7 @@ const GET_LIBRARY_ITEM = gql`
     libraryItem(id: $id) {
       id shortId shareUrl source ark category title creator date documentType permalink catalogueUrl
       scoreUrl pagesUrl embedUrl audioUrl license attribution description thumbnailUrl instruments musicStyles skillLevels
-      files { label url contentType durationSeconds shareUrl }
+      files { label url contentType durationSeconds shareUrl restored { mild medium strong } }
       ${SAME_WORK_FIELDS}
     }
   }
@@ -55,7 +55,7 @@ export default function LibraryItemView() {
     ...(item?.audioUrl ? [{ title: item.title, url: item.audioUrl }] : []),
     ...files
       .filter((file) => file.contentType.startsWith('audio/'))
-      .map((file) => ({ title: file.label, url: file.url, durationSeconds: file.durationSeconds })),
+      .map((file) => ({ title: file.label, url: file.url, durationSeconds: file.durationSeconds, restored: file.restored })),
   ];
 
   // One viewer per page earns the item's XP: the player for recordings,

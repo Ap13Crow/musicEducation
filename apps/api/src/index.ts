@@ -512,6 +512,23 @@ async function main() {
     }
   });
 
+  // Restored versions of an Internet Archive 78 side (lib/audioRestoration.ts).
+  app.get('/library/items/:id/files/:index/:level(mild|medium|strong).mp3', async (req, res) => {
+    try {
+      const fileIndex = Number(req.params.index);
+      if (!libraryMediaStoreConfigured() || !Number.isInteger(fileIndex)) return res.status(404).send('Not found');
+      const row = await prisma.libraryAudioRestoration.findUnique({
+        where: { itemId_fileIndex_level: { itemId: req.params.id, fileIndex, level: req.params.level.toUpperCase() } },
+        select: { sha256: true, item: { select: { hiddenAt: true } } },
+      });
+      if (!row || row.item.hiddenAt) return res.status(404).send('Not found');
+      return await sendLibraryObject(req, res, row.sha256);
+    } catch (error) {
+      logger.error({ error, id: req.params.id, index: req.params.index, level: req.params.level }, 'Restored audio failed');
+      return res.status(502).send('File temporarily unavailable');
+    }
+  });
+
   app.get('/library/items/:id/files/:index.pdf', async (req, res) => {
     try {
       const index = Number(req.params.index);

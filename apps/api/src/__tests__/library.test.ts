@@ -203,9 +203,24 @@ describe('LibraryItem.files', () => {
         contentType: 'application/pdf',
         durationSeconds: null,
         shareUrl: 'https://mymusic.coach/l/q1short/1',
+        itemId: 'q1',
+        index: 0,
       },
     ]);
     expect(libraryResolvers.LibraryItem.files({ id: 'q2', shortId: 'q2short', files: null })).toEqual([]);
+  });
+
+  it('offers restored versions only once all three are rendered', async () => {
+    const findMany = jest.fn().mockResolvedValueOnce([{ level: 'MILD' }, { level: 'MEDIUM' }]).mockResolvedValueOnce([{ level: 'MILD' }, { level: 'MEDIUM' }, { level: 'STRONG' }]);
+    const context = { prisma: { libraryAudioRestoration: { findMany } } } as any;
+    const file = { itemId: 'a1', index: 1, contentType: 'audio/mpeg' };
+    expect(await libraryResolvers.LibraryFile.restored(file, null, context)).toBeNull();
+    expect(await libraryResolvers.LibraryFile.restored(file, null, context)).toEqual({
+      mild: '/api/library/items/a1/files/1/mild.mp3',
+      medium: '/api/library/items/a1/files/1/medium.mp3',
+      strong: '/api/library/items/a1/files/1/strong.mp3',
+    });
+    expect(await libraryResolvers.LibraryFile.restored({ itemId: 'a1', index: 0, contentType: 'application/pdf' }, null, context)).toBeNull();
   });
 
   it('streams archive.org audio directly, with its duration', () => {
@@ -216,7 +231,7 @@ describe('LibraryItem.files', () => {
         shortId: 'm1short',
         files: [{ label: 'Meditation', sourceUrl: url, contentType: 'audio/mpeg', durationSeconds: 430 }],
       }),
-    ).toEqual([{ label: 'Meditation', url, contentType: 'audio/mpeg', durationSeconds: 430, shareUrl: 'https://mymusic.coach/l/m1short/1' }]);
+    ).toEqual([{ label: 'Meditation', url, contentType: 'audio/mpeg', durationSeconds: 430, shareUrl: 'https://mymusic.coach/l/m1short/1', itemId: 'm1', index: 0 }]);
   });
 });
 

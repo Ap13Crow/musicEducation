@@ -6,4 +6,5 @@ resources:
   - api.yaml
   - web.yaml
   - worker.yaml
+  - audio-restorer.yaml
   - network-policy.yaml

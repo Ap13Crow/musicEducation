@@ -1,5 +1,5 @@
-# S3 API reachable only from the application (api, worker); the RPC and
-# admin ports are never exposed beyond the pod.
+# S3 API reachable only from the application (api, worker, audio-restorer);
+# the RPC and admin ports are never exposed beyond the pod.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -16,7 +16,7 @@ spec:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
-                values: ['api', 'worker']
+                values: ['api', 'worker', 'audio-restorer']
       ports:
         - protocol: TCP
           port: 3900
