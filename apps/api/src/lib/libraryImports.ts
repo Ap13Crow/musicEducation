@@ -8,6 +8,7 @@ import { importArchive78 } from './archive78.js';
 import { europeanaConfigured, importEuropeana } from './europeana.js';
 import { hideDuplicateRecordings } from './recordingDuplicates.js';
 import { logger } from '../utils/logger.js';
+import { relinkLibraryWorksSoon } from './libraryWorkLinks.js';
 
 // Admin-started imports of the openly licensed Library sources. They run in
 // the background (Mutopia alone is ~1,300 paced RDF fetches - minutes, far
@@ -145,6 +146,8 @@ export async function startLibraryImport(prisma: PrismaClient, source: LibraryIm
       // New items need card images - Musopen has none to fetch - and a
       // local copy of their files.
       if (source !== 'THUMBNAILS' && source !== 'MUSOPEN' && source !== 'MIRROR') await startLibraryImport(prisma, 'THUMBNAILS');
+      // New recordings and scores may be the same work as ones we hold.
+      if (source !== 'THUMBNAILS' && source !== 'MIRROR') relinkLibraryWorksSoon(prisma);
       if (source !== 'MIRROR' && libraryMediaStoreConfigured()) await requestLibraryImport(prisma, 'MIRROR');
       if (rerunRequested.delete(source)) await startLibraryImport(prisma, source);
     })

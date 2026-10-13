@@ -23,6 +23,7 @@ import { libraryMediaStoreConfigured, putStoredUpload, sendLibraryObject, sendSt
 import { verifyLocalUploadToken } from './lib/storage.js';
 import { libraryMirrorPending } from './lib/libraryMirror.js';
 import { eventCardImage } from './lib/eventImages.js';
+import { relinkLibraryWorksSoon } from './lib/libraryWorkLinks.js';
 import type { GraphQLContext } from './types.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -646,6 +647,9 @@ async function main() {
       .catch((error: unknown) => logger.warn({ error }, 'Library mirror resume skipped'));
   };
   setTimeout(resumeMirror, 90_000).unref();
+  // Recording <-> score links (lib/libraryWorkLinks.ts): recomputed after
+  // every import, and once after start so matcher changes take effect.
+  setTimeout(() => relinkLibraryWorksSoon(prisma), 120_000).unref();
   setInterval(resumeMirror, 60 * 60 * 1000).unref();
   scheduleNightlyLibraryImports(prisma);
   scheduleMembershipSettlement(prisma);

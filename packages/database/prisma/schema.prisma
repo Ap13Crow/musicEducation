@@ -1595,6 +1595,9 @@ model LibraryItem {
   media              LibraryItemMedia[]
   engagements        LibraryEngagement[]
   lessonReferences   LessonLibraryReference[]
+  // Recordings and scores of the same work (lib/libraryWorkLinks.ts).
+  scoreLinks         LibraryWorkLink[] @relation("WorkLinkRecording")
+  recordingLinks     LibraryWorkLink[] @relation("WorkLinkScore")
   // Local copy (lib/libraryMirror.ts): set once every file of the item is in
   // our own store, so the Library no longer needs the source to be reachable.
   mirroredAt         DateTime?
@@ -1690,6 +1693,24 @@ model LibraryEngagement {
 
 // A user's starred Library items - separate from folders: starring needs no
 // decision about where an item belongs.
+// A recording and a score of the same work, found by
+// apps/api/src/lib/libraryWorkLinks.ts and recomputed after every Library
+// import (migration 057). rejectedAt: an admin said "not this work" - the
+// pair is never shown and never re-created.
+model LibraryWorkLink {
+  recordingId String
+  scoreId     String
+  // CATALOGUE or TITLE - how the match was made.
+  method      String
+  rejectedAt  DateTime?
+  createdAt   DateTime    @default(now())
+  recording   LibraryItem @relation("WorkLinkRecording", fields: [recordingId], references: [id], onDelete: Cascade)
+  score       LibraryItem @relation("WorkLinkScore", fields: [scoreId], references: [id], onDelete: Cascade)
+
+  @@id([recordingId, scoreId])
+  @@index([scoreId])
+}
+
 model LibraryFavorite {
   userId    String
   itemId    String

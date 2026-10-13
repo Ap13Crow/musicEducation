@@ -12,6 +12,7 @@ import { importSelection, searchImportSources } from '../lib/libraryImportSearch
 import { searchLibrary } from '../lib/librarySearch.js';
 import { libraryMediaStoreConfigured } from '../lib/libraryMediaStore.js';
 import { SHORT_ID_PATTERN, libraryShareUrl } from '../lib/libraryLinks.js';
+import { relinkLibraryWorksSoon } from '../lib/libraryWorkLinks.js';
 import type { GraphQLContext } from '../types.js';
 
 // Library - public, no-login browsing of the persisted LibraryItem catalogue
@@ -34,6 +35,29 @@ let openScoreIngestRunning = false;
 export const libraryResolvers = {
   LibraryItem: {
     shareUrl: (item: { shortId: string }) => libraryShareUrl(item.shortId),
+    // The same work in the other form (lib/libraryWorkLinks.ts): a
+    // recording's scores, a score's recordings. Rejected links and hidden
+    // items never show.
+    async sameWorkScores(item: { id: string; category: string }, _: unknown, { prisma }: GraphQLContext) {
+      if (item.category !== 'AUDIO_RECORDING') return [];
+      const links = await prisma.libraryWorkLink.findMany({
+        where: { recordingId: item.id, rejectedAt: null, score: { hiddenAt: null } },
+        include: { score: true },
+        orderBy: [{ method: 'asc' }, { createdAt: 'asc' }],
+        take: 8,
+      });
+      return links.map((link: any) => link.score);
+    },
+    async sameWorkRecordings(item: { id: string; category: string }, _: unknown, { prisma }: GraphQLContext) {
+      if (item.category !== 'SHEET_MUSIC') return [];
+      const links = await prisma.libraryWorkLink.findMany({
+        where: { scoreId: item.id, rejectedAt: null, recording: { hiddenAt: null } },
+        include: { recording: true },
+        orderBy: [{ method: 'asc' }, { createdAt: 'asc' }],
+        take: 8,
+      });
+      return links.map((link: any) => link.recording);
+    },
     availableHere: (item: { source: string; mirroredAt?: Date | null }) =>
       !['BNF', 'DNB', 'EUROPEANA'].includes(item.source) || Boolean(item.mirroredAt),
     // Same-origin route (apps/web proxies /api/library/* to apps/api's
@@ -222,7 +246,20 @@ export const libraryResolvers = {
       }
       // Files, page scans and card images follow in the background.
       if (result.imported.length && libraryMediaStoreConfigured()) void requestLibraryImport(prisma, 'MIRROR').catch(() => undefined);
+      if (result.imported.length) relinkLibraryWorksSoon(prisma);
       return result;
+    },
+
+    // ADMIN: "not this work" - the pair stays recorded as rejected, so the
+    // next recompute does not bring it back.
+    async rejectLibraryWorkLink(_: unknown, { recordingId, scoreId }: { recordingId: string; scoreId: string }, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'ADMIN');
+      await prisma.libraryWorkLink.upsert({
+        where: { recordingId_scoreId: { recordingId, scoreId } },
+        create: { recordingId, scoreId, method: 'TITLE', rejectedAt: new Date() },
+        update: { rejectedAt: new Date() },
+      });
+      return true;
     },
 
     async startLibraryImport(_: unknown, { source }: { source: string }, { prisma, user }: GraphQLContext) {

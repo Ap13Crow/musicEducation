@@ -17,6 +17,7 @@ import { useItemStates } from '@/components/library/LibraryCollections';
 import { useLibraryEngagement, type EngagementMode } from '@/components/library/useLibraryEngagement';
 import { EngagementChip } from '@/components/library/EngagementChip';
 import { SOURCE_LABELS } from '../sources';
+import { SAME_WORK_FIELDS, SameWork } from '@/components/library/SameWork';
 
 const GET_LIBRARY_ITEM = gql`
   query GetLibraryItem($id: ID!) {
@@ -24,6 +25,7 @@ const GET_LIBRARY_ITEM = gql`
       id shortId shareUrl source ark category title creator date documentType permalink catalogueUrl
       scoreUrl pagesUrl embedUrl audioUrl license attribution description thumbnailUrl instruments musicStyles skillLevels
       files { label url contentType durationSeconds shareUrl }
+      ${SAME_WORK_FIELDS}
     }
   }
 `;
@@ -128,6 +130,8 @@ export default function LibraryItemView() {
                 </div>
               )}
             </header>
+
+            <SameWork item={item} isAdmin={isAdmin} />
 
             {audioTracks.length > 0 && <AudioPlayer tracks={audioTracks} attribution={item.attribution} onProgress={report} />}
 
