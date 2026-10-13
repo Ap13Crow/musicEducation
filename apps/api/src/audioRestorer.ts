@@ -11,6 +11,8 @@ import { logger } from './utils/logger.js';
 // API pod so ffmpeg never slows the site.
 
 const IDLE_MS = 30 * 60_000;
+// Recordings processed at the same time (each one download + one ffmpeg).
+const CONCURRENCY = Math.max(1, Number(process.env.RESTORE_CONCURRENCY ?? 1) || 1);
 configureDatabaseUrl();
 const prisma = new PrismaClient();
 let stopping = false;
@@ -46,7 +48,7 @@ async function main() {
         const pending = await audioRestorationPending(prisma);
         if (pending > 0) {
           logger.info({ pending }, 'Audio restorer: pass starting');
-          const result = await runAudioRestoration(prisma, { limit: 25, shouldStop: () => stopping });
+          const result = await runAudioRestoration(prisma, { limit: 25 * CONCURRENCY, concurrency: CONCURRENCY, shouldStop: () => stopping });
           logger.info(result, 'Audio restorer: pass finished');
           if (result.restored > 0) continue;
         }

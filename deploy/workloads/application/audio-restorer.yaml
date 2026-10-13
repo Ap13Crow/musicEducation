@@ -43,6 +43,9 @@ spec:
           env:
             - name: NODE_ENV
               value: production
+            # Recordings restored in parallel - one ffmpeg each, ~1.5 CPU.
+            - name: RESTORE_CONCURRENCY
+              value: '4'
           volumeMounts:
             - name: postgres-ca
               mountPath: /etc/postgres-ca
@@ -55,8 +58,8 @@ spec:
               cpu: 100m
               memory: 256Mi
             limits:
-              cpu: '2'
-              memory: 1Gi
+              cpu: '6'
+              memory: 3Gi
           securityContext:
             runAsUser: 1000
             runAsGroup: 1000
@@ -70,4 +73,4 @@ spec:
             name: postgres-ca
         - name: temporary
           emptyDir:
-            sizeLimit: 4Gi
+            sizeLimit: 12Gi

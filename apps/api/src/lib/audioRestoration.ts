@@ -133,7 +133,7 @@ export async function audioRestorationPending(prisma: PrismaClient): Promise<num
 // time. Sides already done (an earlier, interrupted pass) are skipped.
 export async function runAudioRestoration(
   prisma: PrismaClient,
-  options: { limit?: number; shouldStop?: () => boolean } = {},
+  options: { limit?: number; concurrency?: number; shouldStop?: () => boolean } = {},
 ): Promise<{ total: number; restored: number; failed: number }> {
   const items: RestoreItem[] = await prisma.libraryItem.findMany({
     where: pendingWhere,
@@ -142,38 +142,48 @@ export async function runAudioRestoration(
     take: options.limit,
   } as any);
   const result = { total: items.length, restored: 0, failed: 0 };
-  for (const item of items) {
-    if (options.shouldStop?.()) break;
-    try {
-      const files = Array.isArray(item.files) ? (item.files as any[]) : [];
-      const done = await prisma.libraryAudioRestoration.findMany({ where: { itemId: item.id }, select: { fileIndex: true, level: true } });
-      const have = new Set(done.map((row: { fileIndex: number; level: string }) => `${row.fileIndex}:${row.level}`));
-      for (const [fileIndex, file] of files.entries()) {
-        if (!String(file?.contentType ?? '').startsWith('audio/') || !file?.sourceUrl) continue;
-        if (RESTORATION_LEVELS.every((level) => have.has(`${fileIndex}:${level}`))) continue;
-        const started = Date.now();
-        const versions = await restoreSide(String(file.sourceUrl));
-        for (const level of RESTORATION_LEVELS) {
-          const sha256 = await storeLibraryObject(prisma, versions[level], 'audio/mpeg');
-          await prisma.libraryAudioRestoration.upsert({
-            where: { itemId_fileIndex_level: { itemId: item.id, fileIndex, level } },
-            create: { itemId: item.id, fileIndex, level, sha256 },
-            update: { sha256 },
-          });
-        }
-        logger.info({ itemId: item.id, fileIndex, seconds: Math.round((Date.now() - started) / 1000) }, 'Audio restoration: side done');
-      }
-      await prisma.libraryItem.update({ where: { id: item.id }, data: { restoredAt: new Date(), restoreError: null } } as any);
-      result.restored += 1;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.warn({ itemId: item.id, message }, 'Audio restoration: item failed');
-      result.failed += 1;
-      await prisma.libraryItem.update({
-        where: { id: item.id },
-        data: { restoreError: message.slice(0, 500), restoreAttempts: { increment: 1 } },
-      } as any);
+  // Several items at once (each its own download + ffmpeg); every lane takes
+  // the next item from the shared queue.
+  const queue = [...items];
+  const lane = async () => {
+    for (let item = queue.shift(); item; item = queue.shift()) {
+      if (options.shouldStop?.()) return;
+      await restoreItem(prisma, item, result);
     }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, options.concurrency ?? 1) }, lane));
   return result;
+}
+
+async function restoreItem(prisma: PrismaClient, item: RestoreItem, result: { restored: number; failed: number }) {
+  try {
+    const files = Array.isArray(item.files) ? (item.files as any[]) : [];
+    const done = await prisma.libraryAudioRestoration.findMany({ where: { itemId: item.id }, select: { fileIndex: true, level: true } });
+    const have = new Set(done.map((row: { fileIndex: number; level: string }) => `${row.fileIndex}:${row.level}`));
+    for (const [fileIndex, file] of files.entries()) {
+      if (!String(file?.contentType ?? '').startsWith('audio/') || !file?.sourceUrl) continue;
+      if (RESTORATION_LEVELS.every((level) => have.has(`${fileIndex}:${level}`))) continue;
+      const started = Date.now();
+      const versions = await restoreSide(String(file.sourceUrl));
+      for (const level of RESTORATION_LEVELS) {
+        const sha256 = await storeLibraryObject(prisma, versions[level], 'audio/mpeg');
+        await prisma.libraryAudioRestoration.upsert({
+          where: { itemId_fileIndex_level: { itemId: item.id, fileIndex, level } },
+          create: { itemId: item.id, fileIndex, level, sha256 },
+          update: { sha256 },
+        });
+      }
+      logger.info({ itemId: item.id, fileIndex, seconds: Math.round((Date.now() - started) / 1000) }, 'Audio restoration: side done');
+    }
+    await prisma.libraryItem.update({ where: { id: item.id }, data: { restoredAt: new Date(), restoreError: null } } as any);
+    result.restored += 1;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn({ itemId: item.id, message }, 'Audio restoration: item failed');
+    result.failed += 1;
+    await prisma.libraryItem.update({
+      where: { id: item.id },
+      data: { restoreError: message.slice(0, 500), restoreAttempts: { increment: 1 } },
+    } as any);
+  }
 }
