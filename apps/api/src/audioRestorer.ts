@@ -1,4 +1,5 @@
 import { PrismaClient } from '@my-music-coach/database';
+import { configureDatabaseUrl } from './lib/databaseUrl.js';
 import { audioRestorationPending, runAudioRestoration } from './lib/audioRestoration.js';
 import { libraryMediaStoreConfigured } from './lib/libraryMediaStore.js';
 import { logger } from './utils/logger.js';
@@ -10,6 +11,7 @@ import { logger } from './utils/logger.js';
 // API pod so ffmpeg never slows the site.
 
 const IDLE_MS = 30 * 60_000;
+configureDatabaseUrl();
 const prisma = new PrismaClient();
 let stopping = false;
 
