@@ -77,6 +77,7 @@ export function AudioPlayer({
   // Where to carry on after switching versions of the same side.
   const resumeAt = useRef<{ time: number; play: boolean } | null>(null);
   const qualityMenu = useRef<HTMLDivElement>(null);
+  const qualityPanel = useRef<HTMLDivElement>(null);
 
   useEffect(() => setQuality(savedQuality()), []);
 
@@ -101,7 +102,8 @@ export function AudioPlayer({
   useEffect(() => {
     if (!qualityOpen) return;
     const onPointer = (event: PointerEvent) => {
-      if (!qualityMenu.current?.contains(event.target as Node)) setQualityOpen(false);
+      const target = event.target as Node;
+      if (!qualityMenu.current?.contains(target) && !qualityPanel.current?.contains(target)) setQualityOpen(false);
     };
     const onKey = (event: KeyboardEvent) => event.key === 'Escape' && setQualityOpen(false);
     document.addEventListener('pointerdown', onPointer);
@@ -295,40 +297,40 @@ export function AudioPlayer({
             <button
               type="button"
               onClick={() => setQualityOpen(!qualityOpen)}
-              aria-haspopup="listbox"
-              aria-expanded={qualityOpen}
+                            aria-expanded={qualityOpen}
               aria-label={`Sound: ${QUALITIES.find((option) => option.value === quality)?.label}, tap to change`}
               className={`inline-flex h-11 items-center gap-1.5 rounded-full px-4 text-sm font-semibold ${quality !== 'original' ? 'bg-primary-50 text-primary-700' : 'text-gray-700 hover:bg-gray-100'}`}
             >
               <AudioLines className="h-4 w-4" /> {QUALITIES.find((option) => option.value === quality)?.label}
             </button>
-            {qualityOpen && (
-              <ul
-                role="listbox"
-                aria-label="Noise reduction"
-                className="absolute bottom-full right-0 z-20 mb-2 w-64 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 text-left shadow-lg"
-              >
-                <li className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wide text-gray-400">Noise reduction</li>
-                {QUALITIES.map((option) => (
-                  <li key={option.value} role="option" aria-selected={quality === option.value}>
-                    <button
-                      type="button"
-                      onClick={() => chooseQuality(option.value)}
-                      className="flex min-h-[2.75rem] w-full items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 active:bg-gray-100"
-                    >
-                      <span className="w-4 shrink-0 text-primary-600">{quality === option.value && <Check className="h-4 w-4" />}</span>
-                      <span className="min-w-0">
-                        <span className="block text-sm font-semibold text-gray-900">{option.label}</span>
-                        <span className="block text-xs text-gray-500">{option.detail}</span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
         )}
       </div>
+
+      {/* Inside the card (which clips overflow for its rounded corners), so
+          the choices open as a panel under the row, not a popover. */}
+      {restored && qualityOpen && (
+        <div ref={qualityPanel} className="border-t border-gray-100 px-2 py-1" data-testid="audio-quality">
+          <p className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wide text-gray-400">Noise reduction</p>
+          <ul role="listbox" aria-label="Noise reduction" className="grid gap-0.5 sm:grid-cols-2">
+            {QUALITIES.map((option) => (
+              <li key={option.value} role="option" aria-selected={quality === option.value}>
+                <button
+                  type="button"
+                  onClick={() => chooseQuality(option.value)}
+                  className={`flex min-h-[2.75rem] w-full items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-gray-50 active:bg-gray-100 ${quality === option.value ? 'bg-primary-50/60' : ''}`}
+                >
+                  <span className="w-4 shrink-0 text-primary-600">{quality === option.value && <Check className="h-4 w-4" />}</span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-gray-900">{option.label}</span>
+                    <span className="block text-xs text-gray-500">{option.detail}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {error && <p className="px-4 pb-3 text-center text-sm text-red-700">This recording couldn&rsquo;t be loaded. Try again shortly.</p>}
 
