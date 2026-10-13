@@ -87,36 +87,25 @@ describe('teachers query free-text search', () => {
     return { prisma, findMany, $queryRaw };
   }
 
-  it('matches tags case-insensitively in SQL, not with an exact `has`', async () => {
-    const { prisma, findMany, $queryRaw } = setup(['tp-1']);
+  it('limits the list to the shared site search hits and reports how the search went', async () => {
+    const { prisma, findMany, $queryRaw } = setup(['tp-1', 'tp-2', 'tp-3']);
 
-    await userResolvers.Query.teachers(null, { filter: { search: 'violin' } }, { prisma, user: null } as any);
+    const result = await userResolvers.Query.teachers(null, { filter: { search: 'violin' } }, { prisma, user: null } as any);
 
-    const sql = $queryRaw.mock.calls[0][0];
-    expect(sql.sql).toContain('ILIKE');
-    expect(sql.sql).toContain('unnest(tp."instruments" || tp."musicStyles")');
-    expect(sql.values).toContain('%violin%');
-    expect(findMany.mock.calls[0][0].where).toEqual(expect.objectContaining({ id: { in: ['tp-1'] } }));
+    expect($queryRaw.mock.calls[0][0].sql).toContain('"TeacherProfile" tp');
+    expect(findMany.mock.calls[0][0].where).toEqual(expect.objectContaining({ id: { in: ['tp-1', 'tp-2', 'tp-3'] } }));
     expect(findMany.mock.calls[0][0].where).not.toHaveProperty('OR');
-  });
-
-  it('requires every word and escapes LIKE wildcards', async () => {
-    const { prisma, $queryRaw } = setup([]);
-
-    await userResolvers.Query.teachers(null, { filter: { search: ' jazz  100%_ ' } }, { prisma, user: null } as any);
-
-    const sql = $queryRaw.mock.calls[0][0];
-    expect(sql.values).toEqual(expect.arrayContaining(['%jazz%', '%100\\%\\_%']));
-    expect(sql.sql).toContain(') AND (');
+    expect(result.search).toEqual({ fuzzy: false, suggestion: null });
   });
 
   it('ignores a blank search', async () => {
     const { prisma, findMany, $queryRaw } = setup([]);
 
-    await userResolvers.Query.teachers(null, { filter: { search: '   ' } }, { prisma, user: null } as any);
+    const result = await userResolvers.Query.teachers(null, { filter: { search: '   ' } }, { prisma, user: null } as any);
 
     expect($queryRaw).not.toHaveBeenCalled();
     expect(findMany.mock.calls[0][0].where).not.toHaveProperty('id');
+    expect(result.search).toBeNull();
   });
 });
 

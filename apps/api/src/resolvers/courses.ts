@@ -2,6 +2,7 @@ import { GraphQLError } from 'graphql';
 import { enrollWithoutPayment, enrollmentGrantsAccess } from '../lib/courseAccess.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { isOwnedUploadUrl } from '../lib/storage.js';
+import { siteSearch, searchInfo, COURSE_SEARCH } from '../lib/siteSearch.js';
 import type { GraphQLContext } from '../types.js';
 
 export async function requireOwnedCourse(prisma: any, user: any, courseId: string) {
@@ -115,13 +116,9 @@ export const courseResolvers = {
           if (filter.minPrice !== undefined) where.price.gte = filter.minPrice;
           if (filter.maxPrice !== undefined) where.price.lte = filter.maxPrice;
         }
-        if (filter.search) {
-          where.OR = [
-            { title: { contains: filter.search, mode: 'insensitive' } },
-            { description: { contains: filter.search, mode: 'insensitive' } },
-          ];
-        }
       }
+      const search = await siteSearch(prisma, COURSE_SEARCH, filter?.search);
+      if (search) where.id = { in: search.ids };
 
       const skip = (page - 1) * limit;
       const [nodes, totalCount] = await Promise.all([
@@ -136,6 +133,7 @@ export const courseResolvers = {
           hasPreviousPage: page > 1,
           totalCount,
         },
+        search: searchInfo(search),
       };
     },
 

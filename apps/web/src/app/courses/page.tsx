@@ -7,6 +7,7 @@ import { BookOpen, Clock, Star, Users, Search, SlidersHorizontal, X, CheckCircle
 import Link from 'next/link';
 import { COURSE_LANGUAGES, languageName, useCourseLanguage } from '@/lib/courseLanguage';
 import { PillarHeader } from '@/components/PillarHeader';
+import { SEARCH_INFO_FIELDS, SearchNotice } from '@/components/SearchNotice';
 
 const INSTRUMENTS = ['Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute', 'Clarinet', 'Oboe', 'Trumpet', 'Organ', 'Harp', 'Percussion', 'Composition', 'Theory'];
 const LEVELS = ['All', 'Beginner', 'Intermediate', 'Advanced', 'Professional'];
@@ -22,6 +23,7 @@ const GET_COURSES = gql`
         teacher { id headline user { displayName avatarUrl } }
       }
       pageInfo { totalCount hasNextPage }
+      ${SEARCH_INFO_FIELDS}
     }
   }
 `;
@@ -139,13 +141,9 @@ export default function CoursesPage() {
       if (activeInstrument && !c.instruments?.some((i: string) => i.toLowerCase() === activeInstrument.toLowerCase())) return false;
       if (freeOnly && !c.isFreeTier) return false;
       if (activeLanguage && c.language !== activeLanguage) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        if (!c.title?.toLowerCase().includes(q) && !c.shortSummary?.toLowerCase().includes(q)) return false;
-      }
       return true;
     });
-  }, [data, activeLevel, activeInstrument, searchQuery, freeOnly, activeLanguage]);
+  }, [data, activeLevel, activeInstrument, freeOnly, activeLanguage]);
 
   const totalCount = data?.courses?.pageInfo?.totalCount ?? filteredCourses.length;
   const usingFallback = false;
@@ -196,6 +194,7 @@ export default function CoursesPage() {
             )}
           </button>
         </div>
+        <SearchNotice info={data?.courses?.search} onSuggestion={setSearchQuery} className="-mt-3 mb-6" />
 
         {/* Filters panel */}
         {showFilters && (

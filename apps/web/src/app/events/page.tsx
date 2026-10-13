@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { Calendar, CalendarX, Search, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { PillarHeader } from '@/components/PillarHeader';
+import { SEARCH_INFO_FIELDS, SearchNotice } from '@/components/SearchNotice';
 import { INSTRUMENTS, MUSIC_STYLES } from '@/lib/musicVocabulary';
 
 const SKILL_LEVELS = ['BEGINNER', 'ELEMENTARY', 'INTERMEDIATE', 'ADVANCED', 'PROFESSIONAL'];
@@ -21,6 +22,7 @@ const GET_EVENTS = gql`
         city country startsAt endsAt price currency thumbnailUrl
         instruments musicStyles skillLevels
       }
+      ${SEARCH_INFO_FIELDS}
     }
     externalEvents(filter: $extFilter, page: 1, limit: 12) {
       nodes {
@@ -28,6 +30,7 @@ const GET_EVENTS = gql`
         minPrice maxPrice currency classifications attribution
         instruments musicStyles skillLevels recommendationScore attendanceXp
       }
+      ${SEARCH_INFO_FIELDS}
     }
   }
 `;
@@ -207,6 +210,21 @@ export default function EventsPage() {
   const events: any[] = usingFallback ? fallbackEvents : data?.events?.nodes ?? [];
   const externalEvents: any[] = data?.externalEvents?.nodes ?? [];
   const recommended: any[] = recommendedData?.recommendedExternalEvents ?? [];
+  // Both lists searched the same text: "only similar words" when neither
+  // has an exact match, and one "did you mean" for the page.
+  const nativeSearch = data?.events?.search;
+  const externalSearch = data?.externalEvents?.search;
+  const exactHits = (info: any, count: number) => Boolean(info && !info.fuzzy && count > 0);
+  const searchInfo = nativeSearch || externalSearch
+    ? {
+        fuzzy: Boolean(nativeSearch?.fuzzy || externalSearch?.fuzzy)
+          && !exactHits(nativeSearch, events.length) && !exactHits(externalSearch, externalEvents.length),
+        // The external list has far more words to suggest from.
+        suggestion: events.length + externalEvents.length >= 3 && !nativeSearch?.fuzzy && !externalSearch?.fuzzy
+          ? null
+          : externalSearch?.suggestion ?? nativeSearch?.suggestion ?? null,
+      }
+    : null;
 
   function clearFilters() {
     setSearch(''); setInstrument(''); setMusicStyle(''); setSkillLevel(''); setFromDate('');
@@ -291,6 +309,7 @@ export default function EventsPage() {
                 )}
               </button>
             </div>
+            <SearchNotice info={searchInfo} onSuggestion={setSearch} className="mt-3" />
 
             {showFilters && (
               <div className="mt-4 space-y-4 rounded-lg border border-gray-200 bg-white p-4">

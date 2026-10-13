@@ -119,7 +119,7 @@ export function trigramSimilarity(a: Set<string>, b: Set<string>): number {
   return shared / (a.size + b.size - shared || 1);
 }
 
-type Lexicon = { words: Map<string, number>; grams: Map<string, Set<string>> };
+export type Lexicon = { words: Map<string, number>; grams: Map<string, Set<string>> };
 let lexicon: { value: Lexicon; at: number } | null = null;
 const LEXICON_TTL_MS = 10 * 60 * 1000;
 
@@ -133,17 +133,56 @@ async function loadLexicon(prisma: PrismaClient): Promise<Lexicon> {
   return value;
 }
 
+// Typing errors a reader still recognises: one wrong, missing, extra or
+// swapped letter in a short word, two in a longer one.
+export function maxTypos(word: string): number {
+  return word.length <= 5 ? 1 : 2;
+}
+
+// Optimal string alignment distance (Levenshtein plus adjacent swaps),
+// giving up early once it exceeds `limit`.
+export function editDistance(a: string, b: string, limit = Infinity): number {
+  if (Math.abs(a.length - b.length) > limit) return limit + 1;
+  let prevPrev: number[] = [];
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    let rowMin = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let value = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) value = Math.min(value, prevPrev[j - 2] + 1);
+      row.push(value);
+      rowMin = Math.min(rowMin, value);
+    }
+    if (rowMin > limit) return limit + 1;
+    prevPrev = prev;
+    prev = row;
+  }
+  return prev[b.length];
+}
+
+// The best known word for a misspelt one: trigram-similar words first
+// (as pg_trgm sees them), else the commonest word within maxTypos edits -
+// trigrams miss single-letter typos in short words ("vilin", "betoven").
 export function closestWord(word: string, known: Lexicon): string | null {
   const grams = trigrams(word);
+  const limit = maxTypos(word);
   let best: { word: string; score: number; ndoc: number } | null = null;
+  let nearest: { word: string; distance: number; ndoc: number } | null = null;
   for (const [candidate, ndoc] of known.words) {
     if (Math.abs(candidate.length - word.length) > 3) continue;
     let candidateGrams = known.grams.get(candidate);
     if (!candidateGrams) known.grams.set(candidate, (candidateGrams = trigrams(candidate)));
     const score = trigramSimilarity(grams, candidateGrams);
     if (score >= 0.4 && (!best || score > best.score || (score === best.score && ndoc > best.ndoc))) best = { word: candidate, score, ndoc };
+    if (best) continue;
+    const distance = editDistance(word, candidate, limit);
+    if (distance <= limit && (!nearest || distance < nearest.distance || (distance === nearest.distance && ndoc > nearest.ndoc))) {
+      nearest = { word: candidate, distance, ndoc };
+    }
   }
-  return best?.word ?? null;
+  return best?.word ?? nearest?.word ?? null;
 }
 
 export function suggestQuery(raw: string, words: string[], known: Lexicon): string | null {
@@ -342,6 +381,15 @@ export async function searchLibrary(prisma: PrismaClient, input: LibrarySearchIn
       suggestion = suggestQuery(query, parseQuery(query).words, await loadLexicon(prisma));
     } catch {
       suggestion = null;
+    }
+  }
+  // Still nothing: search the spelling-corrected words instead (the same
+  // last step as every other search bar - see siteSearch.ts).
+  if (suggestion && result.total === 0 && !input.caseSensitive && input.match !== 'PHRASE') {
+    const corrected = await run(prisma, { ...clean, query: suggestion }, false, page, limit);
+    if (corrected.total > 0) {
+      result = corrected;
+      fuzzy = true;
     }
   }
   return { ids: result.ids, totalCount: result.total, page, limit, fuzzy, suggestion, facets: result.facets };

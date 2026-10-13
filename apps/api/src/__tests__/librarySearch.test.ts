@@ -1,4 +1,4 @@
-import { __setLexicon, foldWord, parseQuery, suggestQuery, trigramSimilarity, trigrams, webSearchText } from '../lib/librarySearch';
+import { __setLexicon, closestWord, editDistance, foldWord, parseQuery, suggestQuery, trigramSimilarity, trigrams, webSearchText } from '../lib/librarySearch';
 
 // The SQL itself is exercised against a real PostgreSQL 17 with every
 // migration applied (see the step-5 commit); these cover the query handling
@@ -36,5 +36,22 @@ describe('library search query handling', () => {
     expect(suggestQuery('sonate', ['sonate'], lexicon)).toBeNull();
     expect(suggestQuery('xyzzy', ['xyzzy'], lexicon)).toBeNull();
     __setLexicon(null);
+  });
+});
+
+describe('typo tolerance', () => {
+  it('counts edits, with an adjacent swap as one', () => {
+    expect(editDistance('vilin', 'violin')).toBe(1);
+    expect(editDistance('betoven', 'beethoven')).toBe(2);
+    expect(editDistance('paino', 'piano')).toBe(1);
+    expect(editDistance('cello', 'piano', 1)).toBe(2);
+  });
+
+  it('corrects short-word typos that trigrams miss', () => {
+    const lexicon = { words: new Map([['violin', 40], ['viola', 9], ['beethoven', 120], ['piano', 300]]), grams: new Map() };
+    expect(closestWord('vilin', lexicon)).toBe('violin');
+    expect(closestWord('betoven', lexicon)).toBe('beethoven');
+    expect(closestWord('paino', lexicon)).toBe('piano');
+    expect(closestWord('trumpet', lexicon)).toBeNull();
   });
 });

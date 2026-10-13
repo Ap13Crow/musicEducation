@@ -433,6 +433,8 @@ type UserConnection {
 type TeacherConnection {
   nodes: [TeacherProfile!]!
   pageInfo: PageInfo!
+  # Set when a search term was given - see SearchInfo.
+  search: SearchInfo
 }
 
 # A student's self-service request to become a teacher — reviewed by an
@@ -1306,9 +1308,19 @@ type LessonProgress {
   completedAt: DateTime
 }
 
+# How a list's free-text search went (apps/api/src/lib/siteSearch.ts, the
+# same standard as the Library): fuzzy = no exact word matches, so the list
+# holds items with similar words; suggestion = "did you mean" text.
+type SearchInfo {
+  fuzzy: Boolean!
+  suggestion: String
+}
+
 type CourseConnection {
   nodes: [Course!]!
   pageInfo: PageInfo!
+  # Set when a search term was given - see SearchInfo.
+  search: SearchInfo
 }
 
 type EnrollmentConnection {
@@ -1491,6 +1503,8 @@ type EventBooking {
 type EventConnection {
   nodes: [Event!]!
   pageInfo: PageInfo!
+  # Set when a search term was given - see SearchInfo.
+  search: SearchInfo
 }
 
 # ── External event discovery (read-only projections; never authored Events) ──────
@@ -1538,6 +1552,8 @@ type ExternalEventProjection {
 type ExternalEventConnection {
   nodes: [ExternalEventProjection!]!
   pageInfo: PageInfo!
+  # Set when a search term was given - see SearchInfo.
+  search: SearchInfo
 }
 
 input ExternalEventFilterInput {

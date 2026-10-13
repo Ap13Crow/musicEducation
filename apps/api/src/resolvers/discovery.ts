@@ -1,6 +1,7 @@
 import { GraphQLError } from 'graphql';
 import { EXTERNAL_EVENT_ATTENDANCE_XP, externalEventRecommendationScore } from '@my-music-coach/external-events';
 import { requireAuth } from '../middleware/auth.js';
+import { siteSearch, searchInfo, EXTERNAL_EVENT_SEARCH } from '../lib/siteSearch.js';
 import type { GraphQLContext } from '../types.js';
 
 /**
@@ -17,9 +18,8 @@ export const discoveryResolvers = {
       const safePage = Math.max(1, page);
       const where: any = {
         // Don't resurface a cached row past the provider's own cache guidance.
-        // Two independent OR clauses (this one and search, below) must
-        // compose with AND, not overwrite each other under the same `where.OR`
-        // key - each gets its own AND-list entry instead.
+        // Kept as an AND-list so further OR clauses can be added without
+        // overwriting this one under the same `where.OR` key.
         AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gte: new Date() } }] }],
       };
       if (filter?.city) where.city = { contains: filter.city, mode: 'insensitive' };
@@ -28,14 +28,8 @@ export const discoveryResolvers = {
       if (filter?.instrument) where.instruments = { has: filter.instrument };
       if (filter?.musicStyle) where.musicStyles = { has: filter.musicStyle };
       if (filter?.skillLevel) where.skillLevels = { has: filter.skillLevel };
-      if (filter?.search) {
-        where.AND.push({
-          OR: [
-            { title: { contains: filter.search, mode: 'insensitive' } },
-            { description: { contains: filter.search, mode: 'insensitive' } },
-          ],
-        });
-      }
+      const search = await siteSearch(prisma, EXTERNAL_EVENT_SEARCH, filter?.search);
+      if (search) where.id = { in: search.ids };
 
       where.startsAt = {};
       if (filter?.minDate) where.startsAt.gte = new Date(filter.minDate);
@@ -55,6 +49,7 @@ export const discoveryResolvers = {
       return {
         nodes,
         pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: safePage > 1, totalCount },
+        search: searchInfo(search),
       };
     },
 

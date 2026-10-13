@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
 import { Library, Search, SlidersHorizontal, X } from 'lucide-react';
 import { CARD_FIELDS, CATEGORY_LABELS, ItemGrid, LoadingGrid } from './LibraryCards';
+import { SearchNotice } from '@/components/SearchNotice';
 
 // The public Library search (API: lib/librarySearch.ts). Everything lives in
 // the URL - a search can be bookmarked or sent to someone - and the facet
@@ -337,18 +338,7 @@ export function LibrarySearchView({ liveApiEnabled }: { liveApiEnabled: boolean 
             {query ? <> for &ldquo;{query}&rdquo;</> : null}
             {loading ? ' · updating…' : ''}
           </p>
-          {result.fuzzy && (
-            <p className="text-amber-800">No exact matches - showing items with similar words.</p>
-          )}
-          {result.suggestion && (
-            <p className="text-gray-700">
-              Did you mean{' '}
-              <button type="button" onClick={() => update({ q: result.suggestion })} className="font-medium text-primary-700 underline hover:text-primary-900">
-                {result.suggestion}
-              </button>
-              ?
-            </p>
-          )}
+          <SearchNotice info={result} onSuggestion={(text) => update({ q: text })} />
           {!showAll && atSourceOnly > 0 && (
             <p className="text-gray-500">
               {atSourceOnly.toLocaleString()} more {atSourceOnly === 1 ? 'item' : 'items'} can only be opened at Gallica or the DNB until we hold a copy.{' '}

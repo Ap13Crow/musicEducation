@@ -60,3 +60,4 @@ configMapGenerator:
       - 053-lesson-source-attribution.sql
       - 054-course-translations.sql
       - 055-membership-revenue-share.sql
+      - 056-site-search.sql

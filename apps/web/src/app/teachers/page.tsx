@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Star, MapPin, Clock, Music, Search, SlidersHorizontal, X, Video, Users as UsersIcon, Calendar, Award, BookOpen } from 'lucide-react';
 import { membershipLabel } from '@/lib/membership';
 import { PillarHeader } from '@/components/PillarHeader';
+import { SEARCH_INFO_FIELDS, SearchNotice } from '@/components/SearchNotice';
 
 const INSTRUMENTS = ['Piano', 'Violin', 'Viola', 'Cello', 'Guitar', 'Voice', 'Flute', 'Clarinet', 'Oboe', 'Trumpet', 'Organ', 'Harp', 'Percussion'];
 const FORMATS = ['Online', 'In-Person', 'Hybrid'];
@@ -37,6 +38,7 @@ const GET_TEACHERS = gql`
         certifications { id title issuingBody }
       }
       pageInfo { totalCount hasNextPage }
+      ${SEARCH_INFO_FIELDS}
     }
   }
 `;
@@ -280,6 +282,7 @@ export default function TeachersPage() {
             )}
           </button>
         </div>
+        <SearchNotice info={data?.teachers?.search} onSuggestion={setSearchQuery} className="-mt-3 mb-6" />
 
         {/* Filters panel */}
         {showFilters && (

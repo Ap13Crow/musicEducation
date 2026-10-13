@@ -4,6 +4,7 @@ import { awardXpOnce } from './xp.js';
 import { eventBookingConfirmedEmailContent, eventBookingCancelledEmailContent } from '../lib/emails.js';
 import { enqueueMail, recipientAddresses } from '../lib/mailOutbox.js';
 import { displayNameOf } from '../lib/displayName.js';
+import { siteSearch, searchInfo, EVENT_SEARCH } from '../lib/siteSearch.js';
 import type { GraphQLContext } from '../types.js';
 import type { Prisma } from '@my-music-coach/database';
 
@@ -117,20 +118,20 @@ export const eventResolvers = {
           if (filter.maxDate) where.startsAt.lte = new Date(filter.maxDate);
         }
         if (filter.maxPrice !== undefined) where.price = { lte: filter.maxPrice };
-        if (filter.search) {
-          where.OR = [
-            { title: { contains: filter.search, mode: 'insensitive' } },
-            { description: { contains: filter.search, mode: 'insensitive' } },
-          ];
-        }
       }
+      const search = await siteSearch(prisma, EVENT_SEARCH, filter?.search);
+      if (search) where.id = { in: search.ids };
 
       const skip = (page - 1) * limit;
       const [nodes, totalCount] = await Promise.all([
         prisma.event.findMany({ where, skip, take: limit, orderBy: { startsAt: 'asc' } }),
         prisma.event.count({ where }),
       ]);
-      return { nodes, pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount } };
+      return {
+        nodes,
+        pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: page > 1, totalCount },
+        search: searchInfo(search),
+      };
     },
 
     async event(_: unknown, { id, slug }: any, { prisma }: GraphQLContext) {
