@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Calendar, CalendarX, Search, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { PillarHeader } from '@/components/PillarHeader';
 import { SEARCH_INFO_FIELDS, SearchNotice } from '@/components/SearchNotice';
+import { EVENT_RECORDING_FIELDS, EventRecordingsPlayer } from '@/components/events/EventRecordings';
 import { INSTRUMENTS, MUSIC_STYLES } from '@/lib/musicVocabulary';
 
 const SKILL_LEVELS = ['BEGINNER', 'ELEMENTARY', 'INTERMEDIATE', 'ADVANCED', 'PROFESSIONAL'];
@@ -21,6 +22,7 @@ const GET_EVENTS = gql`
         id slug title description type format
         city country startsAt endsAt price currency thumbnailUrl
         instruments musicStyles skillLevels
+        ${EVENT_RECORDING_FIELDS}
       }
       ${SEARCH_INFO_FIELDS}
     }
@@ -381,8 +383,8 @@ export default function EventsPage() {
             ) : events.length > 0 ? (
               <div className="space-y-4">
                 {events.map((eventItem) => (
-                  <article key={eventItem.id} className="card p-6 sm:flex sm:items-center sm:justify-between">
-                    <div>
+                  <article key={eventItem.id} className="card p-6 sm:flex sm:items-start sm:justify-between sm:gap-6">
+                    <div className="min-w-0 flex-1">
                       <h2 className="text-xl font-semibold">{eventItem.title}</h2>
                       <p className="mt-1 text-sm text-gray-600">
                         {eventItem.city} · {formatDate(eventItem.startsAt)}
@@ -390,6 +392,7 @@ export default function EventsPage() {
                       <p className="mt-2 inline-block rounded-full bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700">
                         {TYPE_LABELS[eventItem.type] ?? eventItem.type}
                       </p>
+                      {eventItem.recordings?.length > 0 && <EventRecordingsPlayer recordings={eventItem.recordings} />}
                     </div>
                     <button
                       className="btn-primary mt-4 sm:mt-0"

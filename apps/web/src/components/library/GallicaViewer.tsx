@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Minus, Plus } from 'lucide-react';
-import { AudioPlayer } from './AudioPlayer';
+import { AudioPlayer, type AudioTrack } from './AudioPlayer';
 import { GallicaEmbed } from './GallicaEmbed';
 
 interface GallicaPage {
@@ -10,6 +10,8 @@ interface GallicaPage {
   label: string | null;
   imageUrl: string;
   audioUrl: string | null;
+  // Our own copy's noise-reduction versions (pages.json), once made.
+  restored?: AudioTrack['restored'];
 }
 
 const ATTRIBUTION = 'Source: gallica.bnf.fr / Bibliothèque nationale de France';
@@ -109,7 +111,7 @@ export function GallicaViewer({
   if (tracks.length > 0) {
     return (
       <AudioPlayer
-        tracks={tracks.map((track, position) => ({ title: track.label ?? `Track ${position + 1}`, url: track.audioUrl! }))}
+        tracks={tracks.map((track, position) => ({ title: track.label ?? `Track ${position + 1}`, url: track.audioUrl!, restored: track.restored ?? null }))}
         attribution={ATTRIBUTION}
         onProgress={onProgress}
       />

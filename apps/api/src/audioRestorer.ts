@@ -6,9 +6,10 @@ import { logger } from './utils/logger.js';
 
 // Entry point of the audio-restorer deployment (deploy/workloads/application/
 // audio-restorer.yaml): the API image with this command instead of the API.
-// It restores the Internet Archive 78s one side at a time, then looks for new
-// ones every 30 minutes (each Archive 78 import adds some). Kept out of the
-// API pod so ffmpeg never slows the site.
+// It restores every Library recording one side at a time (teachers' uploads
+// first), then looks for new ones every 30 minutes (imports, uploads and the
+// Library mirror add some). Kept out of the API pod so ffmpeg never slows
+// the site.
 
 const IDLE_MS = 30 * 60_000;
 // Recordings processed at the same time (each one download + one ffmpeg).

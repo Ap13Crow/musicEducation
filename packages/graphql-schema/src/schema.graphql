@@ -49,6 +49,9 @@ enum UploadPurpose {
   TEACHER_APPLICATION_DOCUMENT
   COURSE_SLIDE
   TEACHER_PROFILE_IMAGE
+  # TEACHER/ADMIN: one audio file of a recording for the Library
+  # (createLibraryRecording).
+  LIBRARY_RECORDING
 }
 
 type UploadTarget {
@@ -670,6 +673,8 @@ enum LibrarySource {
   INTERNET_ARCHIVE
   # Europeana open sound recordings.
   EUROPEANA
+  # Recordings uploaded by teachers and admins.
+  UPLOAD
 }
 
 enum LibraryItemCategory {
@@ -689,17 +694,82 @@ type LibraryFile {
   durationSeconds: Int
   # Permanent public link to this one file (https://<app>/l/<shortId>/<n>).
   shareUrl: String!
-  # Internet Archive 78s: restored versions of this side, beside the
-  # untouched original (url). Null until all three are rendered.
+  # Restored versions of this side or track, beside the untouched original
+  # (url). Null until all three are rendered.
   restored: LibraryRestoredAudio
 }
 
-# Same side, three strengths of noise reduction (apps/api/src/lib/
-# audioRestoration.ts). Strong is the player's default.
+# Which filter set made the restored versions (apps/api/src/lib/
+# audioRestoration.ts): HISTORIC for 78s and early transfers (Strong is the
+# player's default), MODERN for studio and home recordings (the original
+# stays the default).
+enum LibraryRestoreProfile {
+  HISTORIC
+  MODERN
+}
+
+# Same side, three strengths of noise reduction.
 type LibraryRestoredAudio {
   mild: String!
   medium: String!
   strong: String!
+  profile: LibraryRestoreProfile!
+}
+
+# Who uploaded a recording (source UPLOAD).
+type LibraryUploader {
+  id: ID!
+  name: String!
+}
+
+enum LibraryRecordingCopyright {
+  # Neither the music nor this recording is protected any more.
+  PUBLIC_DOMAIN
+  # Under copyright: the uploader grants mymusic.coach unlimited and
+  # unrestricted use (Query.libraryRecordingRightsGrant, confirmed with
+  # rightsConfirmed).
+  PROTECTED
+}
+
+input LibraryRecordingTrackInput {
+  # fileUrl from requestUploadUrl(purpose: LIBRARY_RECORDING).
+  fileUrl: String!
+  label: String
+}
+
+input CreateLibraryRecordingInput {
+  title: String!
+  composer: String!
+  performers: String!
+  date: String
+  description: String
+  instruments: [String!]
+  musicStyles: [String!]
+  skillLevels: [String!]
+  tracks: [LibraryRecordingTrackInput!]!
+  copyright: LibraryRecordingCopyright!
+  # PROTECTED only.
+  rightsHolder: String
+  rightsConfirmed: Boolean
+}
+
+input LibraryRecordingLabelsInput {
+  title: String!
+  composer: String!
+  performers: String!
+  date: String
+  description: String
+  instruments: [String!]
+  musicStyles: [String!]
+  skillLevels: [String!]
+  rightsHolder: String
+}
+
+# A Library recording on a platform event's card.
+type EventRecording {
+  id: ID!
+  order: Int!
+  item: LibraryItem!
 }
 
 enum LibraryImportSource {
@@ -799,6 +869,18 @@ type LibraryItem {
   musicStyles: [String!]!
   skillLevels: [String!]!
   ingestedAt: DateTime!
+  # Uploaded recordings (source UPLOAD).
+  performers: String
+  uploadedBy: LibraryUploader
+  rightsHolder: String
+  # The caller may present this item in their courses and on their events:
+  # admins any item, teachers any open item and their own uploads.
+  canUseInTeaching: Boolean!
+  # The caller uploaded it, or is an admin: they may edit or delete it.
+  canEditRecording: Boolean!
+  # Uploader and admins only: the confirmed rights grant, word for word.
+  rightsGrant: String
+  rightsGrantedAt: DateTime
 }
 
 # ── Library: federated admin import (Gallica + DNB) ─────────
@@ -1102,7 +1184,8 @@ input LibrarySearchInput {
   categories: [LibraryItemCategory!]
   # MUSICXML, PDF, AUDIO, SCANS
   formats: [String!]
-  # PUBLIC_DOMAIN, CC_BY, CC_BY_SA, FREE_ACCESS, BNF_TERMS, OTHER
+  # PUBLIC_DOMAIN, CC_BY, CC_BY_SA, FREE_ACCESS, BNF_TERMS, WITH_PERMISSION
+  # (uploads under copyright), OTHER
   licenses: [String!]
   # "18" = 1800-1899, "unknown" = undated
   centuries: [String!]
@@ -1515,6 +1598,8 @@ type Event {
   publisherId: ID!
   publisher: User
   reviews(page: Int, limit: Int): ReviewConnection!
+  # Recordings presented on the event's card.
+  recordings: [EventRecording!]!
   createdAt: DateTime!
   updatedAt: DateTime!
 }
@@ -2295,6 +2380,14 @@ type Query {
   adminLibraryUsage(query: String, sort: LibraryUsageSort, page: Int, limit: Int): LibraryUsageOverview!
   adminLibraryUserActivity(userId: ID!): LibraryUserActivity!
   libraryItem(id: ID!): LibraryItem
+  # TEACHER/ADMIN: recordings they uploaded (an admin: every upload).
+  myLibraryRecordings: [LibraryItem!]!
+  # TEACHER/ADMIN: recordings they may present in a course or on an event -
+  # their uploads (an admin: every upload) first, then, when searching, the
+  # open Library's recordings.
+  teachingRecordings(query: String, limit: Int): [LibraryItem!]!
+  # The rights grant an uploader confirms for a recording under copyright.
+  libraryRecordingRightsGrant: String!
   libraryPermalink(shortId: String!): LibraryPermalink
   # Signed-in user's own favorites and folders (any role).
   myLibraryFolders: [LibraryFolder!]!
@@ -2441,6 +2534,11 @@ type Mutation {
   revokeCourseInvitation(id: ID!): Boolean!
   updateLessonLibraryReference(id: ID!, note: String): LessonLibraryReference!
   removeLessonLibraryReference(id: ID!): Boolean!
+  # TEACHER/ADMIN: a recording of their own for the public Library.
+  createLibraryRecording(input: CreateLibraryRecordingInput!): LibraryItem!
+  # Its uploader or an admin.
+  updateLibraryRecording(id: ID!, input: LibraryRecordingLabelsInput!): LibraryItem!
+  deleteLibraryRecording(id: ID!): Boolean!
   reorderLessonLibraryReferences(lessonId: ID!, ids: [ID!]!): [LessonLibraryReference!]!
   importBnfAudio(lessonId: ID!, libraryItemId: ID!, page: Int): Lesson!
 
@@ -2489,6 +2587,10 @@ type Mutation {
   createEvent(input: CreateEventInput!): Event!
   updateEvent(id: ID!, input: UpdateEventInput!): Event!
   publishEvent(id: ID!): Event!
+  # The event's publisher or an admin; any recording the caller may use in
+  # teaching (LibraryItem.canUseInTeaching).
+  addEventRecording(eventId: ID!, itemId: ID!): EventRecording!
+  removeEventRecording(id: ID!): Boolean!
   bookEvent(eventId: ID!): EventBooking!
   cancelEventBooking(bookingId: ID!): EventBooking!
 

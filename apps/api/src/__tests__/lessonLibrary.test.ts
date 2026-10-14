@@ -16,7 +16,18 @@ function fakePrisma(overrides: any = {}) {
   return {
     refs,
     lesson: { findUnique: jest.fn(async () => ({ id: 'l1', section: { courseId: 'c1' } })) },
-    libraryItem: { findUnique: jest.fn(async ({ where }: any) => (where.id === 'gone' ? null : { id: where.id, hiddenAt: where.id === 'hidden' ? new Date() : null })) },
+    libraryItem: {
+      findUnique: jest.fn(async ({ where }: any) =>
+        where.id === 'gone'
+          ? null
+          : {
+              id: where.id,
+              hiddenAt: where.id === 'hidden' ? new Date() : null,
+              source: where.id.startsWith('upload') ? 'UPLOAD' : 'MUSOPEN',
+              uploadedById: where.id === 'upload-mine' ? 'teacher-1' : 'teacher-2',
+            },
+      ),
+    },
     libraryFolder: {
       findUnique: jest.fn(async ({ where }: any) => ({ id: where.id, name: 'Etudes', ownerId: where.id === 'f-other' ? 'teacher-2' : 'teacher-1' })),
       findMany: jest.fn(async ({ where }: any) => (where.parentId.in.includes('f1') ? [{ id: 'f1-child' }] : [])),
@@ -52,6 +63,14 @@ describe('lesson library references', () => {
     expect(prisma.lessonLibraryReference.create).toHaveBeenCalledTimes(1);
   });
 
+  it("attaches the teacher's own uploads but not another teacher's", async () => {
+    const ctx = { prisma: fakePrisma(), user: teacher } as any;
+    await expect(r.Mutation.addLessonLibraryReference(null, { input: { lessonId: 'l1', itemId: 'upload-mine' } }, ctx)).resolves.toMatchObject({ itemId: 'upload-mine' });
+    await expect(r.Mutation.addLessonLibraryReference(null, { input: { lessonId: 'l1', itemId: 'upload-theirs' } }, ctx)).rejects.toThrow('another teacher');
+    const adminCtx = { prisma: fakePrisma(), user: { id: 'admin-1', role: 'ADMIN' } } as any;
+    await expect(r.Mutation.addLessonLibraryReference(null, { input: { lessonId: 'l1', itemId: 'upload-theirs' } }, adminCtx)).resolves.toMatchObject({ itemId: 'upload-theirs' });
+  });
+
   it('needs exactly one of item or folder', async () => {
     const ctx = { prisma: fakePrisma(), user: teacher } as any;
     await expect(r.Mutation.addLessonLibraryReference(null, { input: { lessonId: 'l1' } }, ctx)).rejects.toThrow('either');
@@ -77,6 +96,18 @@ describe('lesson library references', () => {
     const folder = await r.LessonLibraryReference.folder({ folderId: 'f1' }, null, { prisma } as any);
     expect(folder).toEqual({ id: 'f1', name: 'Etudes', items: [{ id: 'a' }, { id: 'b' }] });
     expect(prisma.libraryFolderItem.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ folderId: { in: ['f1', 'f1-child'] } }) }));
+  });
+
+  it("leaves other teachers' uploads out of a folder in the lesson", async () => {
+    const prisma = fakePrisma();
+    prisma.libraryFolderItem.findMany = jest.fn(async () => [
+      { item: { id: 'a', source: 'MUSOPEN' } },
+      { item: { id: 'mine', source: 'UPLOAD', uploadedById: 'teacher-1' } },
+      { item: { id: 'theirs', source: 'UPLOAD', uploadedById: 'teacher-2' } },
+    ]);
+    prisma.lesson.findUnique = jest.fn(async () => ({ section: { course: { teacherProfile: { user: { id: 'teacher-1', role: 'TEACHER' } } } } }));
+    const folder: any = await r.LessonLibraryReference.folder({ folderId: 'f1', lessonId: 'l1' }, null, { prisma } as any);
+    expect(folder.items.map((item: any) => item.id)).toEqual(['a', 'mine']);
   });
 
   it('reads a removed item as null', async () => {

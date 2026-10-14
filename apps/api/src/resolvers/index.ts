@@ -21,6 +21,7 @@ import { libraryFolderResolvers } from './libraryFolders.js';
 import { libraryEngagementResolvers } from './libraryEngagement.js';
 import { libraryInsightsResolvers } from './libraryInsights.js';
 import { lessonLibraryResolvers } from './lessonLibrary.js';
+import { libraryRecordingResolvers } from './libraryRecordings.js';
 import { courseAccessResolvers } from './courseAccess.js';
 import { membershipRevenueResolvers } from './membershipRevenue.js';
 import { DateTimeResolver, JSONResolver } from 'graphql-scalars';
@@ -61,6 +62,7 @@ export const resolvers = mergeResolvers([
   libraryEngagementResolvers,
   libraryInsightsResolvers,
   lessonLibraryResolvers,
+  libraryRecordingResolvers,
   courseAccessResolvers,
   membershipRevenueResolvers,
 ]);

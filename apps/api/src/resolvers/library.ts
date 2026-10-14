@@ -32,17 +32,29 @@ function csvField(value: string | null | undefined): string {
 const OPENSCORE_CORPORA = ['LIEDER', 'STRING_QUARTETS'] as const;
 let openScoreIngestRunning = false;
 
+// The three restored versions of one side (position = index in
+// LibraryItem.files, or a Gallica track's page number), or null until all
+// three exist. Served by index.ts's /library/items/:id/files/:n/<level>.mp3.
+export async function restoredVersions(prisma: any, itemId: string, position: number, profile: string | null) {
+  const rows = await prisma.libraryAudioRestoration.findMany({ where: { itemId, fileIndex: position }, select: { level: true } });
+  const levels = new Set(rows.map((row: { level: string }) => row.level));
+  if (!['MILD', 'MEDIUM', 'STRONG'].every((level) => levels.has(level))) return null;
+  const base = `/api/library/items/${itemId}/files/${position}`;
+  return { mild: `${base}/mild.mp3`, medium: `${base}/medium.mp3`, strong: `${base}/strong.mp3`, profile: profile === 'MODERN' ? 'MODERN' : 'HISTORIC' };
+}
+
 export const libraryResolvers = {
-  // Restored versions of a 78 side (lib/audioRestoration.ts) - null until all
-  // three are rendered, so the player never offers a version that 404s.
+  // Restored versions of a side or track (lib/audioRestoration.ts) - null
+  // until all three are rendered, so the player never offers a version that
+  // 404s.
   LibraryFile: {
-    async restored(file: { itemId?: string; index?: number; contentType: string }, _: unknown, { prisma }: GraphQLContext) {
+    async restored(
+      file: { itemId?: string; index?: number; contentType: string; restoreProfile?: string | null },
+      _: unknown,
+      { prisma }: GraphQLContext,
+    ) {
       if (!file.itemId || file.index == null || !file.contentType.startsWith('audio/')) return null;
-      const rows = await prisma.libraryAudioRestoration.findMany({ where: { itemId: file.itemId, fileIndex: file.index }, select: { level: true } });
-      const levels = new Set(rows.map((row: { level: string }) => row.level));
-      if (!['MILD', 'MEDIUM', 'STRONG'].every((level) => levels.has(level))) return null;
-      const base = `/api/library/items/${file.itemId}/files/${file.index}`;
-      return { mild: `${base}/mild.mp3`, medium: `${base}/medium.mp3`, strong: `${base}/strong.mp3` };
+      return restoredVersions(prisma, file.itemId, file.index, file.restoreProfile ?? null);
     },
   },
 
@@ -90,7 +102,7 @@ export const libraryResolvers = {
     // direct range-request streaming - no reason to relay MBs through us).
     // Once the item has a local copy (lib/libraryMirror.ts) every file is
     // served from our own store.
-    files: (item: { id: string; shortId: string; files?: unknown; mirroredAt?: Date | null }) =>
+    files: (item: { id: string; shortId: string; files?: unknown; mirroredAt?: Date | null; restoreProfile?: string | null }) =>
       (Array.isArray(item.files) ? item.files : []).flatMap((file: any, index: number) => {
         const contentType = String(file?.contentType ?? 'application/pdf');
         const audio = contentType.startsWith('audio/');
@@ -109,6 +121,7 @@ export const libraryResolvers = {
           // For LibraryFile.restored - not part of the schema.
           itemId: item.id,
           index,
+          restoreProfile: item.restoreProfile ?? null,
         }];
       }),
     // Only from our local copy: our server never fetches Gallica for a

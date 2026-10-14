@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { gql, useLazyQuery, useMutation, useQuery } from '@apollo/client';
-import { ArrowDown, ArrowUp, Folder, Library, Plus, Search, Star, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Folder, Library, Plus, Search, Star, Trash2, X, Mic } from 'lucide-react';
 
 // Course builder: attach Library items or whole folders to a lesson as
 // references (API: resolvers/lessonLibrary.ts). Search the Library, or pick
@@ -22,13 +22,14 @@ export const LESSON_LIBRARY_REFERENCE_FIELDS = 'id note order item{id title crea
 
 const SEARCH = gql`
   query LessonPickerSearch($input: LibrarySearchInput!) {
-    searchLibrary(input: $input) { totalCount nodes { id title creator date source category availableHere } }
+    searchLibrary(input: $input) { totalCount nodes { id title creator date source category availableHere canUseInTeaching } }
   }
 `;
 const MINE = gql`
   query LessonPickerMine {
     myLibraryFolders { id name parentId itemCount }
-    myLibraryFavorites(limit: 50) { nodes { id title creator date source category availableHere } }
+    myLibraryFavorites(limit: 50) { nodes { id title creator date source category availableHere canUseInTeaching } }
+    teachingRecordings(limit: 50) { id title creator date source category availableHere canUseInTeaching }
   }
 `;
 const ADD = gql`
@@ -50,9 +51,12 @@ const REORDER = gql`
   }
 `;
 
-type Tab = 'search' | 'folders' | 'favorites';
+type Tab = 'search' | 'folders' | 'favorites' | 'recordings';
 
+// Another teacher's uploaded recording is listed but can't be added - only
+// its uploader and admins may use it (API: lib/libraryRecordings.ts).
 function ItemRow({ item, attached, onAdd }: { item: any; attached: boolean; onAdd(): void }) {
+  const usable = item.canUseInTeaching !== false;
   return (
     <li className="flex items-start gap-3 py-2">
       <div className="min-w-0 flex-1">
@@ -60,11 +64,12 @@ function ItemRow({ item, attached, onAdd }: { item: any; attached: boolean; onAd
         <p className="text-xs text-gray-500">
           {[item.creator, item.date].filter(Boolean).join(' · ')}
           {item.availableHere === false && ' · opens at the source for now'}
+          {!usable && ' · another teacher’s recording'}
         </p>
       </div>
       <button
         type="button"
-        disabled={attached}
+        disabled={attached || !usable}
         onClick={onAdd}
         className="inline-flex min-h-[2.5rem] shrink-0 items-center gap-1 rounded-lg border border-gray-300 px-3 text-sm hover:bg-gray-50 disabled:opacity-50"
       >
@@ -123,6 +128,7 @@ export function LessonLibraryPicker({
 
   const folders: any[] = mine?.myLibraryFolders ?? [];
   const favorites: any[] = mine?.myLibraryFavorites?.nodes ?? [];
+  const recordings: any[] = mine?.teachingRecordings ?? [];
   const results: any[] = searchData?.searchLibrary?.nodes ?? [];
 
   return (
@@ -187,6 +193,7 @@ export function LessonLibraryPicker({
               ['search', 'Search', Search],
               ['folders', 'My folders', Folder],
               ['favorites', 'Favorites', Star],
+              ['recordings', 'Recordings', Mic],
             ] as const).map(([key, label, Icon]) => (
               <button
                 key={key}
@@ -246,6 +253,18 @@ export function LessonLibraryPicker({
                     </button>
                   </li>
                 ))}
+              </ul>
+            )
+          )}
+
+          {tab === 'recordings' && (
+            recordings.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No recordings yet - <Link href="/dashboard/teacher/recordings" target="_blank" className="text-primary-700 underline">upload your own</Link> to use them in your lessons.
+              </p>
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {recordings.map((item) => <ItemRow key={item.id} item={item} attached={attachedItems.has(item.id)} onAdd={() => void attachItem(item.id)} />)}
               </ul>
             )
           )}

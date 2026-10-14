@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import type { Request, Response } from 'express';
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { PrismaClient } from '@my-music-coach/database';
 
 // Local media store for the Library: Garage (S3-compatible) on the server's
@@ -95,6 +95,23 @@ export const UPLOADS_PREFIX = 'uploads/';
 
 export async function putStoredUpload(key: string, bytes: Buffer, contentType: string): Promise<void> {
   await s3().send(new PutObjectCommand({ Bucket: bucket(), Key: `${UPLOADS_PREFIX}${key}`, Body: bytes, ContentType: contentType }));
+}
+
+// An uploaded file's bytes, at most maxBytes (lib/libraryRecordings.ts
+// moves a recording from here into the content-addressed store).
+export async function readStoredUpload(key: string, maxBytes: number): Promise<{ bytes: Buffer; contentType: string }> {
+  const object = await readStoredKey(`${UPLOADS_PREFIX}${key}`);
+  if (object.totalSize > maxBytes) {
+    object.body.destroy();
+    throw new Error(`Upload too large (${object.totalSize} bytes).`);
+  }
+  const chunks: Buffer[] = [];
+  for await (const chunk of object.body) chunks.push(Buffer.from(chunk));
+  return { bytes: Buffer.concat(chunks), contentType: object.contentType };
+}
+
+export async function deleteStoredUpload(key: string): Promise<void> {
+  await s3().send(new DeleteObjectCommand({ Bucket: bucket(), Key: `${UPLOADS_PREFIX}${key}` }));
 }
 
 export async function sendStoredUpload(req: Request, res: Response, key: string): Promise<void> {

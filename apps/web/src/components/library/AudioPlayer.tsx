@@ -7,28 +7,49 @@ export interface AudioTrack {
   title: string;
   url: string;
   durationSeconds?: number | null;
-  // Internet Archive 78s: restored versions of this side (API:
-  // lib/audioRestoration.ts), offered beside the untouched original.
-  restored?: { mild: string; medium: string; strong: string } | null;
+  // Restored versions of this side or track (API: lib/audioRestoration.ts),
+  // offered beside the untouched original.
+  restored?: { mild: string; medium: string; strong: string; profile?: RestoreProfile | null } | null;
 }
 
-// Strong is the default (operator's choice after an A/B listening test);
-// a listener's own pick is remembered on this device.
+// Two kinds of restoration: HISTORIC (78s and early transfers - Strong is
+// the default, the operator's choice after an A/B listening test) and
+// MODERN (studio and home recordings - the original stays the default).
+// A listener's own pick is remembered on this device, per kind.
+type RestoreProfile = 'HISTORIC' | 'MODERN';
 type Quality = 'original' | 'mild' | 'medium' | 'strong';
-const QUALITIES: { value: Quality; label: string; detail: string }[] = [
-  { value: 'strong', label: 'Strong', detail: 'Least surface noise' },
-  { value: 'medium', label: 'Medium', detail: 'Clicks and most hiss removed' },
-  { value: 'mild', label: 'Mild', detail: 'Only the obvious noise removed' },
-  { value: 'original', label: 'Original', detail: 'The transfer, untouched' },
-];
-const QUALITY_KEY = 'library-audio-quality';
+const QUALITY_ORDER: Quality[] = ['strong', 'medium', 'mild', 'original'];
+const QUALITY_LABELS: Record<Quality, string> = { strong: 'Strong', medium: 'Medium', mild: 'Mild', original: 'Original' };
+const PROFILES: Record<RestoreProfile, { key: string; fallback: Quality; details: Record<Quality, string> }> = {
+  HISTORIC: {
+    key: 'library-audio-quality',
+    fallback: 'strong',
+    details: {
+      strong: 'Least surface noise',
+      medium: 'Clicks and most hiss removed',
+      mild: 'Only the obvious noise removed',
+      original: 'The transfer, untouched',
+    },
+  },
+  MODERN: {
+    key: 'library-audio-quality-modern',
+    fallback: 'original',
+    details: {
+      strong: 'Most hiss, hum and clicks removed',
+      medium: 'Hiss and clicks reduced',
+      mild: 'A light touch on background hiss',
+      original: 'The recording, untouched',
+    },
+  },
+};
 
-function savedQuality(): Quality {
+function savedQuality(profile: RestoreProfile): Quality {
+  const { key, fallback } = PROFILES[profile];
   try {
-    const value = window.localStorage.getItem(QUALITY_KEY);
-    return QUALITIES.some((option) => option.value === value) ? (value as Quality) : 'strong';
+    const value = window.localStorage.getItem(key);
+    return QUALITY_ORDER.includes(value as Quality) ? (value as Quality) : fallback;
   } catch {
-    return 'strong';
+    return fallback;
   }
 }
 
@@ -72,17 +93,20 @@ export function AudioPlayer({
   const [loop, setLoop] = useState(false);
   const [error, setError] = useState(false);
   const autoPlayNext = useRef(false);
-  const [quality, setQuality] = useState<Quality>('strong');
+  const [qualities, setQualities] = useState<Record<RestoreProfile, Quality>>({ HISTORIC: 'strong', MODERN: 'original' });
   const [qualityOpen, setQualityOpen] = useState(false);
   // Where to carry on after switching versions of the same side.
   const resumeAt = useRef<{ time: number; play: boolean } | null>(null);
   const qualityMenu = useRef<HTMLDivElement>(null);
   const qualityPanel = useRef<HTMLDivElement>(null);
 
-  useEffect(() => setQuality(savedQuality()), []);
+  useEffect(() => setQualities({ HISTORIC: savedQuality('HISTORIC'), MODERN: savedQuality('MODERN') }), []);
 
   const track = tracks[Math.min(index, tracks.length - 1)];
   const restored = track?.restored ?? null;
+  const profile: RestoreProfile = restored?.profile === 'MODERN' ? 'MODERN' : 'HISTORIC';
+  const quality = qualities[profile];
+  const QUALITIES = QUALITY_ORDER.map((value) => ({ value, label: QUALITY_LABELS[value], detail: PROFILES[profile].details[value] }));
   const source = restored && quality !== 'original' ? restored[quality] : track?.url;
 
   function chooseQuality(next: Quality) {
@@ -90,9 +114,9 @@ export function AudioPlayer({
     if (next === quality) return;
     const audio = audioRef.current;
     if (audio && restored) resumeAt.current = { time: audio.currentTime, play: !audio.paused };
-    setQuality(next);
+    setQualities({ ...qualities, [profile]: next });
     try {
-      window.localStorage.setItem(QUALITY_KEY, next);
+      window.localStorage.setItem(PROFILES[profile].key, next);
     } catch {
       // Private mode: the choice lasts for this page only.
     }

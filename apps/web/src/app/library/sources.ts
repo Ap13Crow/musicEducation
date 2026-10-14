@@ -7,4 +7,6 @@ export const SOURCE_LABELS: Record<string, { viewLabel: string; credit: string }
   DNB: { viewLabel: 'View at the Deutsche Nationalbibliothek', credit: 'Source: Deutsche Nationalbibliothek' },
   INTERNET_ARCHIVE: { viewLabel: 'View on the Internet Archive', credit: 'Source: Great 78 Project, Internet Archive' },
   EUROPEANA: { viewLabel: 'View on Europeana', credit: 'Source: Europeana' },
+  // Teachers' and admins' own recordings: the "source" is this site.
+  UPLOAD: { viewLabel: 'Permanent link', credit: 'Recorded for mymusic.coach' },
 };

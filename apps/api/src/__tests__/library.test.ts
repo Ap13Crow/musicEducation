@@ -205,6 +205,7 @@ describe('LibraryItem.files', () => {
         shareUrl: 'https://mymusic.coach/l/q1short/1',
         itemId: 'q1',
         index: 0,
+        restoreProfile: null,
       },
     ]);
     expect(libraryResolvers.LibraryItem.files({ id: 'q2', shortId: 'q2short', files: null })).toEqual([]);
@@ -219,7 +220,10 @@ describe('LibraryItem.files', () => {
       mild: '/api/library/items/a1/files/1/mild.mp3',
       medium: '/api/library/items/a1/files/1/medium.mp3',
       strong: '/api/library/items/a1/files/1/strong.mp3',
+      profile: 'HISTORIC',
     });
+    findMany.mockResolvedValueOnce([{ level: 'MILD' }, { level: 'MEDIUM' }, { level: 'STRONG' }]);
+    expect(await libraryResolvers.LibraryFile.restored({ ...file, restoreProfile: 'MODERN' }, null, context)).toMatchObject({ profile: 'MODERN' });
     expect(await libraryResolvers.LibraryFile.restored({ itemId: 'a1', index: 0, contentType: 'application/pdf' }, null, context)).toBeNull();
   });
 
@@ -231,7 +235,7 @@ describe('LibraryItem.files', () => {
         shortId: 'm1short',
         files: [{ label: 'Meditation', sourceUrl: url, contentType: 'audio/mpeg', durationSeconds: 430 }],
       }),
-    ).toEqual([{ label: 'Meditation', url, contentType: 'audio/mpeg', durationSeconds: 430, shareUrl: 'https://mymusic.coach/l/m1short/1', itemId: 'm1', index: 0 }]);
+    ).toEqual([{ label: 'Meditation', url, contentType: 'audio/mpeg', durationSeconds: 430, shareUrl: 'https://mymusic.coach/l/m1short/1', itemId: 'm1', index: 0, restoreProfile: null }]);
   });
 });
 

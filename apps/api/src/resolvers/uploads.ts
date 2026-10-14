@@ -35,7 +35,7 @@ export const uploadResolvers = {
       { user }: GraphQLContext,
     ) {
       requireAuth(user);
-      if (purpose === 'COURSE_SLIDE') {
+      if (purpose === 'COURSE_SLIDE' || purpose === 'LIBRARY_RECORDING') {
         requireRole(user, 'TEACHER', 'ADMIN');
       } else if (!SELF_SERVICE_PURPOSES.has(purpose)) {
         throw new GraphQLError('Unknown upload purpose.', { extensions: { code: 'BAD_USER_INPUT' } });

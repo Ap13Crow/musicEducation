@@ -1,6 +1,7 @@
 import { GraphQLError } from 'graphql';
 import { requireRole } from '../middleware/auth.js';
 import { requireOwnedCourse, resolveLessonAccess } from './courses.js';
+import { canUseInTeaching } from '../lib/libraryRecordings.js';
 import type { GraphQLContext } from '../types.js';
 
 // Library items and folders as lesson references. A teacher attaches pieces
@@ -8,6 +9,8 @@ import type { GraphQLContext } from '../types.js';
 // of a course they own; enrolled students see them in the lesson (same
 // access rule as the lesson's video and slides) and open them in the
 // Library, where reading and listening earn library XP as usual.
+// Recordings uploaded by teachers are the exception: only their uploader
+// (and admins) may use them (lib/libraryRecordings.ts canUseInTeaching).
 
 const MAX_REFERENCES_PER_LESSON = 50;
 const MAX_FOLDER_ITEMS = 200;
@@ -22,6 +25,16 @@ async function loadOwnedLesson(prisma: any, user: any, lessonId: string) {
   if (!lesson) throw new GraphQLError('Lesson not found.', { extensions: { code: 'NOT_FOUND' } });
   await requireOwnedCourse(prisma, user, lesson.section.courseId);
   return lesson;
+}
+
+// Who teaches the lesson's course: an upload in a folder shows in the lesson
+// only if that teacher may use it.
+async function lessonTeacher(prisma: any, lessonId: string): Promise<{ id: string; role: string } | null> {
+  const lesson = await prisma.lesson.findUnique({
+    where: { id: lessonId },
+    select: { section: { select: { course: { select: { teacherProfile: { select: { user: { select: { id: true, role: true } } } } } } } } },
+  });
+  return lesson?.section?.course?.teacherProfile?.user ?? null;
 }
 
 async function loadOwnedReference(prisma: any, user: any, id: string) {
@@ -78,7 +91,12 @@ export const lessonLibraryResolvers = {
         take: MAX_FOLDER_ITEMS,
       });
       const seen = new Set<string>();
-      const items = entries.map((entry: any) => entry.item).filter((item: any) => !seen.has(item.id) && seen.add(item.id));
+      const hasUploads = entries.some((entry: any) => entry.item.source === 'UPLOAD');
+      const teacher = hasUploads ? await lessonTeacher(prisma, reference.lessonId) : null;
+      const items = entries
+        .map((entry: any) => entry.item)
+        .filter((item: any) => !seen.has(item.id) && seen.add(item.id))
+        .filter((item: any) => item.source !== 'UPLOAD' || canUseInTeaching(teacher, item));
       return { id: folder.id, name: folder.name, items };
     },
   },
@@ -92,8 +110,13 @@ export const lessonLibraryResolvers = {
       const note = cleanNote(input.note);
 
       if (itemId) {
-        const item = await prisma.libraryItem.findUnique({ where: { id: itemId }, select: { hiddenAt: true } });
+        const item = await prisma.libraryItem.findUnique({ where: { id: itemId }, select: { hiddenAt: true, source: true, uploadedById: true } });
         if (!item || item.hiddenAt) throw new GraphQLError('Library item not found.', { extensions: { code: 'NOT_FOUND' } });
+        if (!canUseInTeaching(user, item)) {
+          throw new GraphQLError('This recording was uploaded by another teacher - only they and admins may use it in a course.', {
+            extensions: { code: 'FORBIDDEN' },
+          });
+        }
       } else {
         const folder = await prisma.libraryFolder.findUnique({ where: { id: folderId }, select: { ownerId: true } });
         // Your own folders only - another user's folder isn't yours to share.

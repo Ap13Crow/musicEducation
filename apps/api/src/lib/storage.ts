@@ -103,7 +103,8 @@ export type UploadPurpose =
   | 'TEACHER_APPLICATION_DOCUMENT'
   | 'COURSE_SLIDE'
   | 'TEACHER_PROFILE_IMAGE'
-  | 'COURSE_LESSON_AUDIO';
+  | 'COURSE_LESSON_AUDIO'
+  | 'LIBRARY_RECORDING';
 
 // Matches the instrument/style/level vocabulary elsewhere in the codebase:
 // keep the allowed content types narrow and purpose-specific rather than a
@@ -131,6 +132,16 @@ const PURPOSES: Record<UploadPurpose, { prefix: string; allowedContentTypes: str
   // Public teacher directory/profile photo - image only, no PDF (unlike
   // TEACHER_APPLICATION_DOCUMENT, nothing here is ever opened as a document).
   TEACHER_PROFILE_IMAGE: { prefix: 'teacher-profile-images', allowedContentTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+  // A teacher's or admin's own recording for the public Library (lib/
+  // libraryRecordings.ts moves it into the Library's store). Formats every
+  // current browser plays: MP3, AAC/M4A, WAV, FLAC.
+  LIBRARY_RECORDING: {
+    prefix: 'library-recordings',
+    allowedContentTypes: [
+      'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/aac',
+      'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave', 'audio/flac', 'audio/x-flac',
+    ],
+  },
 };
 
 function sanitizeFilename(filename: string): string {

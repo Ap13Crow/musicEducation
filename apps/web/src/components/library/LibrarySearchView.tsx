@@ -44,6 +44,7 @@ const SOURCE_NAMES: Record<string, string> = {
   MUSOPEN: 'Musopen',
   INTERNET_ARCHIVE: 'Internet Archive (78 rpm)',
   EUROPEANA: 'Europeana',
+  UPLOAD: 'Teachers’ recordings',
 };
 const FORMAT_NAMES: Record<string, string> = { MUSICXML: 'Interactive score', PDF: 'PDF', AUDIO: 'Audio', SCANS: 'Page scans' };
 const LICENSE_NAMES: Record<string, string> = {
@@ -52,6 +53,7 @@ const LICENSE_NAMES: Record<string, string> = {
   CC_BY_SA: 'CC BY-SA',
   FREE_ACCESS: 'Free access (DNB)',
   BNF_TERMS: 'BnF reuse terms',
+  WITH_PERMISSION: 'Used with the rights holder’s permission',
   OTHER: 'Other',
 };
 const centuryName = (value: string) => (value === 'unknown' ? 'Undated' : `${value}00s`);

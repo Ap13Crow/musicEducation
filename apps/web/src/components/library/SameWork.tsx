@@ -22,7 +22,7 @@ const REJECT = gql`
 `;
 
 const SOURCE_NAMES: Record<string, string> = {
-  BNF: 'Gallica', OPENSCORE: 'OpenScore', MUSOPEN: 'Musopen', MUTOPIA: 'Mutopia', DNB: 'DNB', INTERNET_ARCHIVE: 'Great 78 Project', EUROPEANA: 'Europeana',
+  BNF: 'Gallica', OPENSCORE: 'OpenScore', MUSOPEN: 'Musopen', MUTOPIA: 'Mutopia', DNB: 'DNB', INTERNET_ARCHIVE: 'Great 78 Project', EUROPEANA: 'Europeana', UPLOAD: 'mymusic.coach',
 };
 
 type Linked = { id: string; title: string; creator?: string | null; date?: string | null; source: string };

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { gql, useMutation, useQuery } from '@apollo/client';
-import { BookOpen, Calendar, CalendarClock, CalendarPlus, CreditCard, Star, User, UserRoundCheck, Users } from 'lucide-react';
+import { BookOpen, Calendar, CalendarClock, CalendarPlus, CreditCard, Mic, Star, User, UserRoundCheck, Users } from 'lucide-react';
 import RoleGate from '@/components/auth/RoleGate';
 
 const GET_TEACHER_BOOKINGS = gql`
@@ -161,6 +161,7 @@ export default function TeacherWorkspacePage() {
           <WorkspaceCard href="/dashboard/teacher/reviews" icon={<Star />} title="Reviews" text="What students have said about your courses and events." />
           <WorkspaceCard href="/dashboard/teacher/content" icon={<BookOpen />} title="Theory studio" text="Create and publish native courses." />
           <WorkspaceCard href="/dashboard/teacher/content/performance" icon={<CalendarPlus />} title="Performance studio" text="Create and publish events." />
+          <WorkspaceCard href="/dashboard/teacher/recordings" icon={<Mic />} title="My recordings" text="Upload your recordings to the Library and use them in courses and events." />
           <WorkspaceCard href="/dashboard/teacher/payouts" icon={<CreditCard />} title="Payouts" text="Connect Stripe to receive your share of sales." />
         </div>
         <div className="mx-auto box-content max-w-6xl space-y-6 px-6 pb-10">

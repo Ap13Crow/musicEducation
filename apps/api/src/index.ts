@@ -13,6 +13,7 @@ import { resolveRequestUser } from './middleware/auth.js';
 import { resolvers } from './resolvers/index.js';
 import { createLoaders } from './lib/loaders.js';
 import { handleStripeWebhook, handleStripeV2Webhook } from './resolvers/payments.js';
+import { restoredVersions } from './resolvers/library.js';
 import { buildUserCalendarFeed } from './lib/calendarFeed.js';
 import { fetchScoreBytes, isAllowedScoreSource } from './lib/openscore.js';
 import { MUTOPIA_FTP_PREFIX } from './lib/openSources.js';
@@ -492,7 +493,8 @@ async function main() {
     }
   });
 
-  // Restored versions of an Internet Archive 78 side (lib/audioRestoration.ts).
+  // Restored versions of a recording's side or track (lib/audioRestoration.ts):
+  // <index> is the position in LibraryItem.files, or a Gallica track's page.
   app.get('/library/items/:id/files/:index/:level(mild|medium|strong).mp3', async (req, res) => {
     try {
       const fileIndex = Number(req.params.index);
@@ -538,7 +540,7 @@ async function main() {
     try {
       const item = await prisma.libraryItem.findUnique({
         where: { id: req.params.id },
-        select: { title: true, permalink: true, hiddenAt: true, source: true, mirroredAt: true, category: true },
+        select: { title: true, permalink: true, hiddenAt: true, source: true, mirroredAt: true, category: true, restoreProfile: true },
       });
       if (!item || item.hiddenAt || item.source !== 'BNF' || !item.mirroredAt || !libraryMediaStoreConfigured()) {
         return res.status(404).send('Not found');
@@ -550,6 +552,11 @@ async function main() {
         select: { position: true, label: true },
       });
       const base = `/api/library/items/${req.params.id}`;
+      // A recording's tracks with their noise-reduction versions, once made.
+      const restored = new Map<number, unknown>();
+      if (audio) {
+        for (const row of media) restored.set(row.position, await restoredVersions(prisma, req.params.id, row.position, item.restoreProfile ?? null));
+      }
       res.setHeader('cache-control', 'public, max-age=3600');
       return res.json({
         title: item.title,
@@ -559,6 +566,7 @@ async function main() {
           label: row.label ?? null,
           imageUrl: `${base}/pages/${row.position}.jpg`,
           audioUrl: audio ? `${base}/tracks/${row.position}.mp3` : null,
+          restored: restored.get(row.position) ?? null,
         })),
       });
     } catch (error) {

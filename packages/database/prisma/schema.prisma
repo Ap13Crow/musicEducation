@@ -194,6 +194,8 @@ model User {
   followers          Follow[]               @relation("following")
   reviews             Review[]
   publishedEvents     Event[]
+  // Recordings this teacher/admin uploaded to the Library (source UPLOAD).
+  uploadedLibraryItems LibraryItem[] @relation("LibraryItemUploader")
   studentAvailability StudentAvailability[]
   quizAttempts        QuizAttempt[]
   xpAwards            XpAward[]
@@ -995,9 +997,26 @@ model Event {
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
-  publisher User           @relation(fields: [publisherId], references: [id])
-  bookings  EventBooking[]
-  reviews   Review[]
+  publisher  User             @relation(fields: [publisherId], references: [id])
+  bookings   EventBooking[]
+  reviews    Review[]
+  recordings EventRecording[]
+}
+
+// A Library recording presented on a platform event's card (migration 059).
+// Teachers may present only their own uploads, admins any recording.
+model EventRecording {
+  id        String   @id @default(cuid())
+  eventId   String
+  itemId    String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  event Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  item  LibraryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, itemId])
+  @@index([itemId])
 }
 
 model EventBooking {
@@ -1508,6 +1527,9 @@ enum LibrarySource {
   INTERNET_ARCHIVE
   // Europeana open sound recordings; ark = the Europeana record id.
   EUROPEANA
+  // Recordings uploaded by a teacher or admin (lib/libraryRecordings.ts);
+  // ark = a random id, files = the tracks, already in our own store.
+  UPLOAD
 }
 
 enum LibraryItemCategory {
@@ -1609,6 +1631,19 @@ model LibraryItem {
   restoreError       String?
   restoreAttempts    Int      @default(0)
   restorations       LibraryAudioRestoration[]
+  // HISTORIC or MODERN: the filter set behind the restored versions (null =
+  // HISTORIC, the 78s restored before profiles existed).
+  restoreProfile     String?
+  // Uploaded recordings (source UPLOAD): who performs, who uploaded it, and -
+  // while it is under copyright - the rights holder plus the exact grant of
+  // unlimited, unrestricted use the uploader confirmed, and when.
+  performers         String?
+  uploadedById       String?
+  uploadedBy         User?    @relation("LibraryItemUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  rightsHolder       String?
+  rightsGrant        String?
+  rightsGrantedAt    DateTime?
+  eventRecordings    EventRecording[]
   ingestedAt         DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -1616,6 +1651,7 @@ model LibraryItem {
   @@index([category, hiddenAt])
   @@index([titleKey])
   @@index([year])
+  @@index([uploadedById])
 }
 
 // Card thumbnail for a LibraryItem, generated once by the thumbnail backfill

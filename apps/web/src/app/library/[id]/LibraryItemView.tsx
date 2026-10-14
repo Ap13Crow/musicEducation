@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
-import { ArrowLeft, ExternalLink, FileText } from 'lucide-react';
+import { ArrowLeft, ExternalLink, FileText, Pencil } from 'lucide-react';
 import { ScoreViewer } from '@/components/library/ScoreViewer';
 import { AudioPlayer } from '@/components/library/AudioPlayer';
 import { GallicaViewer } from '@/components/library/GallicaViewer';
@@ -24,7 +24,8 @@ const GET_LIBRARY_ITEM = gql`
     libraryItem(id: $id) {
       id shortId shareUrl source ark category title creator date documentType permalink catalogueUrl
       scoreUrl pagesUrl embedUrl audioUrl license attribution description thumbnailUrl instruments musicStyles skillLevels
-      files { label url contentType durationSeconds shareUrl restored { mild medium strong } }
+      files { label url contentType durationSeconds shareUrl restored { mild medium strong profile } }
+      uploadedBy { id name } canUseInTeaching canEditRecording
       ${SAME_WORK_FIELDS}
     }
   }
@@ -93,6 +94,7 @@ export default function LibraryItemView() {
               <p className="mt-2 text-gray-600">
                 {[item.creator, item.date, item.documentType].filter(Boolean).join(' · ')}
               </p>
+              {item.uploadedBy && <p className="mt-1 text-sm text-gray-500">Uploaded by {item.uploadedBy.name}</p>}
               {(item.instruments.length > 0 || item.musicStyles.length > 0 || item.skillLevels.length > 0) && (
                 <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
                   {item.instruments.map((value: string) => (
@@ -115,7 +117,15 @@ export default function LibraryItemView() {
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <FavoriteButton itemId={item.id} />
                 <AddToFolderButton itemId={item.id} />
-                <AddToLessonButton itemId={item.id} itemTitle={item.title} />
+                {item.canUseInTeaching && <AddToLessonButton itemId={item.id} itemTitle={item.title} />}
+                {item.canEditRecording && (
+                  <Link
+                    href={`/dashboard/teacher/recordings?edit=${item.id}`}
+                    className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-sm text-gray-600 shadow-sm hover:text-primary-700"
+                  >
+                    <Pencil className="h-4 w-4" /> Edit recording
+                  </Link>
+                )}
                 <ShareBar itemId={item.id} shareUrl={item.shareUrl} title={item.title} />
               </div>
               {item.description && (
@@ -215,9 +225,11 @@ export default function LibraryItemView() {
             )}
 
             <footer className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-gray-100 pt-4 text-sm">
-              <a href={item.permalink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-primary-600 hover:text-primary-800">
-                {source.viewLabel} <ExternalLink className="h-3.5 w-3.5" />
-              </a>
+              {item.source !== 'UPLOAD' && (
+                <a href={item.permalink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-primary-600 hover:text-primary-800">
+                  {source.viewLabel} <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
               {item.catalogueUrl && (
                 <a href={item.catalogueUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900">
                   Catalogue record <ExternalLink className="h-3.5 w-3.5" />

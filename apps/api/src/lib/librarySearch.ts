@@ -241,6 +241,7 @@ const LICENSE_SQL = Prisma.sql`CASE
   WHEN "license" ILIKE 'CC0%' OR "license" ILIKE 'Public Domain%' THEN 'PUBLIC_DOMAIN'
   WHEN "license" ILIKE '%ShareAlike%' THEN 'CC_BY_SA'
   WHEN "license" ILIKE 'Creative Commons Attribution%' THEN 'CC_BY'
+  WHEN "license" ILIKE 'All rights reserved%' THEN 'WITH_PERMISSION'
   WHEN "source" = 'DNB' THEN 'FREE_ACCESS'
   WHEN "source" = 'BNF' THEN 'BNF_TERMS'
   ELSE 'OTHER' END`;

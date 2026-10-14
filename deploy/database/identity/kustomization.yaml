@@ -63,3 +63,4 @@ configMapGenerator:
       - 056-site-search.sql
       - 057-library-work-links.sql
       - 058-library-audio-restoration.sql
+      - 059-library-recordings.sql
