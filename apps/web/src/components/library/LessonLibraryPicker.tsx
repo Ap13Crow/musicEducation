@@ -53,8 +53,8 @@ const REORDER = gql`
 
 type Tab = 'search' | 'folders' | 'favorites' | 'recordings';
 
-// Another teacher's uploaded recording is listed but can't be added - only
-// its uploader and admins may use it (API: lib/libraryRecordings.ts).
+// Another teacher's recording under their copyright is listed but can't be
+// added - its link can still go to students (API: lib/libraryRecordings.ts).
 function ItemRow({ item, attached, onAdd }: { item: any; attached: boolean; onAdd(): void }) {
   const usable = item.canUseInTeaching !== false;
   return (
@@ -64,7 +64,7 @@ function ItemRow({ item, attached, onAdd }: { item: any; attached: boolean; onAd
         <p className="text-xs text-gray-500">
           {[item.creator, item.date].filter(Boolean).join(' · ')}
           {item.availableHere === false && ' · opens at the source for now'}
-          {!usable && ' · another teacher’s recording'}
+          {!usable && ' · another teacher’s copyright - share the link instead'}
         </p>
       </div>
       <button

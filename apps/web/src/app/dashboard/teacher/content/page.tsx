@@ -16,7 +16,7 @@ export default function TheoryStudio(){
  const [publishCourse]=useMutation(PUBLISH_COURSE);
  const [course,setCourse]=useState({title:'',description:'',level:'BEGINNER',instrument:'Piano',price:'0'});
  async function addCourse(e:React.FormEvent){e.preventDefault();await provision();await createCourse({variables:{input:{title:course.title,description:course.description,level:course.level,instruments:[course.instrument],musicStyles:[],price:Number(course.price),currency:'CHF',isFreeTier:Number(course.price)===0,language:'en'}}});setCourse({...course,title:'',description:''});await refetch();}
- return <RoleGate allow={['TEACHER','ADMIN']} callbackUrl="/dashboard/teacher/content"><main className="mx-auto max-w-3xl px-6 py-10">
+ return <RoleGate allow={['TEACHER','ADMIN']} callbackUrl="/dashboard/teacher/content"><main className="mx-auto box-content max-w-6xl px-6 py-10">
   <Link href="/dashboard/teacher" className="text-sm text-primary-700">← Teacher workspace</Link>
   <p className="mt-4 inline-block rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">Learning pillar</p>
   <h1 className="mt-3 font-serif text-3xl font-bold">Theory studio</h1><p className="mt-2 text-gray-600">Author and publish native courses — theory, technique, and practice curricula.</p>

@@ -23,7 +23,7 @@ export default function PerformanceStudio(){
   // (not a hardcoded one) or the stored UTC instant and its label disagree.
   const timezone=Intl.DateTimeFormat().resolvedOptions().timeZone;
   await createEvent({variables:{input:{title:event.title,description:event.description,type:event.type,format:event.format,startsAt:new Date(event.startsAt).toISOString(),timezone,city:event.city||undefined,instruments:[],musicStyles:[],skillLevels:[],price:Number(event.price),currency:'CHF'}}});setEvent({...event,title:'',description:'',startsAt:''});await refetch();}
- return <RoleGate allow={['TEACHER','ADMIN']} callbackUrl="/dashboard/teacher/content/performance"><main className="mx-auto max-w-3xl px-6 py-10">
+ return <RoleGate allow={['TEACHER','ADMIN']} callbackUrl="/dashboard/teacher/content/performance"><main className="mx-auto box-content max-w-6xl px-6 py-10">
   <Link href="/dashboard/teacher" className="text-sm text-primary-700">← Teacher workspace</Link>
   <p className="mt-4 inline-block rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Performance pillar</p>
   <h1 className="mt-3 font-serif text-3xl font-bold">Performance studio</h1><p className="mt-2 text-gray-600">Publish concerts, masterclasses, and workshops directly on mymusic.coach.</p>

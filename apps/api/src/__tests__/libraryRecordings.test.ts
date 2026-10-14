@@ -1,4 +1,4 @@
-import { canUseInTeaching, cleanLabels, rightsLabels, requireRecordingOwner } from '../lib/libraryRecordings';
+import { canUseInTeaching, cleanLabels, deleteLibraryRecording, rightsLabels, requireRecordingOwner } from '../lib/libraryRecordings';
 import { libraryRecordingResolvers as r } from '../resolvers/libraryRecordings';
 
 const teacher = { id: 'teacher-1', role: 'TEACHER' };
@@ -7,7 +7,8 @@ const admin = { id: 'admin-1', role: 'ADMIN' };
 const student = { id: 'student-1', role: 'STUDENT' };
 
 const ownUpload = { source: 'UPLOAD', uploadedById: 'teacher-1' };
-const otherUpload = { source: 'UPLOAD', uploadedById: 'teacher-2' };
+const otherUpload = { source: 'UPLOAD', uploadedById: 'teacher-2', isPublicDomainWork: false };
+const otherPublicDomain = { source: 'UPLOAD', uploadedById: 'teacher-2', isPublicDomainWork: true };
 const open78 = { source: 'INTERNET_ARCHIVE', uploadedById: null };
 
 describe('who may use a recording in teaching', () => {
@@ -15,10 +16,21 @@ describe('who may use a recording in teaching', () => {
     expect([ownUpload, otherUpload, open78].every((item) => canUseInTeaching(admin, item))).toBe(true);
   });
 
-  it('lets a teacher use the open Library and only their own uploads', () => {
+  it("lets a teacher use the open Library, their own uploads and others' public-domain ones", () => {
     expect(canUseInTeaching(teacher, ownUpload)).toBe(true);
     expect(canUseInTeaching(teacher, open78)).toBe(true);
+    expect(canUseInTeaching(teacher, otherPublicDomain)).toBe(true);
     expect(canUseInTeaching(teacher, otherUpload)).toBe(false);
+  });
+
+  it('lets only admins delete an upload - never its uploader', async () => {
+    const prisma = {
+      libraryItem: { findUnique: jest.fn(async () => ownUpload), delete: jest.fn(async () => ({})) },
+    } as any;
+    await expect(deleteLibraryRecording(prisma, teacher, 'i1')).rejects.toThrow('Only an admin');
+    expect(prisma.libraryItem.delete).not.toHaveBeenCalled();
+    await expect(deleteLibraryRecording(prisma, admin, 'i1')).resolves.toBe(true);
+    await expect(r.Mutation.deleteLibraryRecording(null, { id: 'i1' }, { prisma, user: teacher } as any)).rejects.toThrow('FORBIDDEN');
   });
 
   it('never lets students or visitors', () => {
@@ -88,6 +100,12 @@ describe('event recordings', () => {
   it('refuses another teacher’s upload, and another teacher’s event', async () => {
     await expect(r.Mutation.addEventRecording(null, { eventId: 'e1', itemId: 'i1' }, { prisma: fakePrisma(otherUpload), user: teacher } as any)).rejects.toThrow('another teacher');
     await expect(r.Mutation.addEventRecording(null, { eventId: 'e1', itemId: 'i1' }, { prisma: fakePrisma(otherUpload), user: otherTeacher } as any)).rejects.toThrow('Access denied');
+  });
+
+  it("presents another teacher's public-domain upload", async () => {
+    const prisma = fakePrisma(otherPublicDomain);
+    await r.Mutation.addEventRecording(null, { eventId: 'e1', itemId: 'i1' }, { prisma, user: teacher } as any);
+    expect(prisma.eventRecording.create).toHaveBeenCalled();
   });
 
   it('lets an admin present any recording on any event', async () => {

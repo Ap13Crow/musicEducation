@@ -9,8 +9,9 @@ import type { GraphQLContext } from '../types.js';
 // of a course they own; enrolled students see them in the lesson (same
 // access rule as the lesson's video and slides) and open them in the
 // Library, where reading and listening earn library XP as usual.
-// Recordings uploaded by teachers are the exception: only their uploader
-// (and admins) may use them (lib/libraryRecordings.ts canUseInTeaching).
+// Recordings uploaded by teachers are the exception: under copyright only
+// their uploader (and admins) may use them, released into the public domain
+// every teacher (lib/libraryRecordings.ts canUseInTeaching).
 
 const MAX_REFERENCES_PER_LESSON = 50;
 const MAX_FOLDER_ITEMS = 200;
@@ -110,10 +111,10 @@ export const lessonLibraryResolvers = {
       const note = cleanNote(input.note);
 
       if (itemId) {
-        const item = await prisma.libraryItem.findUnique({ where: { id: itemId }, select: { hiddenAt: true, source: true, uploadedById: true } });
+        const item = await prisma.libraryItem.findUnique({ where: { id: itemId }, select: { hiddenAt: true, source: true, uploadedById: true, isPublicDomainWork: true } });
         if (!item || item.hiddenAt) throw new GraphQLError('Library item not found.', { extensions: { code: 'NOT_FOUND' } });
         if (!canUseInTeaching(user, item)) {
-          throw new GraphQLError('This recording was uploaded by another teacher - only they and admins may use it in a course.', {
+          throw new GraphQLError('This recording is under another teacher’s copyright - you can recommend its link to students, but not build it into your course.', {
             extensions: { code: 'FORBIDDEN' },
           });
         }

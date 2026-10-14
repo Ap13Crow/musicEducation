@@ -14,20 +14,25 @@ import { logger } from '../utils/logger.js';
 // Recordings uploaded by teachers and admins (LibrarySource UPLOAD). They
 // appear in the public Library like any other recording - the same player,
 // the same noise-reduction versions (lib/audioRestoration.ts) - and their
-// uploader can present them in courses and on event cards. Admins may use
-// every recording; a teacher only their own uploads (canUseInTeaching).
+// uploader can present them in courses and on event cards.
 //
-// Labelling is required (work, composer, performers), and a recording under
-// copyright needs the uploader's confirmation of RIGHTS_GRANT, stored word
-// for word with the date on the item.
+// Every upload grants mymusic.coach unlimited and unrestricted use
+// (RIGHTS_GRANT, confirmed by the uploader and stored word for word with
+// the date), so an upload belongs to the platform: its uploader may correct
+// its labels but never delete it - only an admin removes Library items
+// (bad quality, a licence problem, ...). Under copyright (the default) other
+// teachers may listen to it and share its link with students, but only the
+// uploader and admins may use it in courses and events; released into the
+// public domain, every teacher may (canUseInTeaching).
 
-export const RIGHTS_GRANT_VERSION = '2026-10-14';
+export const RIGHTS_GRANT_VERSION = '2026-10-14.2';
 export const RIGHTS_GRANT =
-  'I confirm that I hold all rights in this recording - in the music, in the performance and in the sound recording itself - ' +
-  'or that every rights holder has authorised me to grant them. I grant mymusic.coach the unlimited and unrestricted right to use ' +
-  'this recording: worldwide, without time limit, free of charge and irrevocably, in any form and in any medium - including ' +
-  'publishing it in the public Library, using it in courses and at events, editing and processing it (for example noise ' +
-  'reduction), and passing these rights on. I keep my own right to use the recording elsewhere.';
+  'I confirm that I made this recording myself, or that every rights holder has authorised me to upload it, and that it does ' +
+  'not violate any existing copyright, licence or other agreement - neither in the music, nor in the performance, nor in the ' +
+  'sound recording. By uploading it I grant mymusic.coach the unlimited and unrestricted right to use this recording: worldwide, ' +
+  'without time limit, free of charge and irrevocably, in any form and in any medium - including publishing it in the public ' +
+  'Library, using it in courses and at events, editing and processing it (for example noise reduction), and passing these ' +
+  'rights on. I understand that I cannot withdraw this permission or delete the recording; only mymusic.coach can remove it.'
 
 const MAX_UPLOAD_BYTES = 150 * 1024 * 1024;
 const MAX_TRACKS = 30;
@@ -51,6 +56,8 @@ const AUDIO_TYPES: Record<string, string> = {
 
 type User = { id: string; role: string };
 
+// PROTECTED: the uploader keeps the copyright (named rightsHolder) -
+// PUBLIC_DOMAIN: released for everyone, other teachers' courses included.
 export type RecordingCopyright = 'PUBLIC_DOMAIN' | 'PROTECTED';
 
 export interface RecordingLabels {
@@ -117,19 +124,25 @@ export function cleanLabels(input: RecordingLabels) {
 
 // License and credit line shown with the player.
 export function rightsLabels(copyright: RecordingCopyright, rightsHolder: string | null, year: string | null) {
-  if (copyright === 'PUBLIC_DOMAIN') return { license: 'Public Domain', attribution: 'Uploaded to mymusic.coach' };
+  if (copyright === 'PUBLIC_DOMAIN') return { license: 'Public Domain', attribution: 'Released into the public domain on mymusic.coach' };
   return {
     license: 'All rights reserved - used by mymusic.coach with permission',
     attribution: `© ${[year?.match(/\d{4}/)?.[0], rightsHolder].filter(Boolean).join(' ')}`,
   };
 }
 
-// Admins may use every recording in their courses and events; a teacher any
-// open Library item but, of the uploaded recordings, only their own.
-export function canUseInTeaching(user: User | null | undefined, item: { source: string; uploadedById?: string | null }): boolean {
+// Admins may use every recording in their courses and events. A teacher
+// may use the open Library, their own uploads, and other teachers' uploads
+// only once released into the public domain - a recording still under a
+// teacher's copyright can be listened to and linked, not built into
+// another teacher's paid courses or events.
+export function canUseInTeaching(
+  user: User | null | undefined,
+  item: { source: string; uploadedById?: string | null; isPublicDomainWork?: boolean | null },
+): boolean {
   if (!user || !['TEACHER', 'ADMIN'].includes(user.role)) return false;
   if (user.role === 'ADMIN') return true;
-  return item.source !== 'UPLOAD' || item.uploadedById === user.id;
+  return item.source !== 'UPLOAD' || item.uploadedById === user.id || item.isPublicDomainWork === true;
 }
 
 export function requireRecordingOwner(user: User, item: { source: string; uploadedById: string | null } | null) {
@@ -176,8 +189,8 @@ export async function createLibraryRecording(prisma: PrismaClient, user: User, i
   const labels = cleanLabels(input);
   const copyright: RecordingCopyright = input.copyright === 'PUBLIC_DOMAIN' ? 'PUBLIC_DOMAIN' : 'PROTECTED';
   const rightsHolder = copyright === 'PROTECTED' ? text(input.rightsHolder, 'the rights holder', 200, true) : null;
-  if (copyright === 'PROTECTED' && input.rightsConfirmed !== true) {
-    badInput('Please confirm that you grant mymusic.coach the rights to use this recording.');
+  if (input.rightsConfirmed !== true) {
+    badInput('Please confirm that you made this recording, that it violates no existing rights, and that you grant mymusic.coach the rights to use it.');
   }
   const tracks = Array.isArray(input.tracks) ? input.tracks : [];
   if (tracks.length === 0) badInput('Add at least one audio file.');
@@ -220,8 +233,8 @@ export async function createLibraryRecording(prisma: PrismaClient, user: User, i
       mirroredAt: grantedAt,
       uploadedById: user.id,
       rightsHolder,
-      rightsGrant: copyright === 'PROTECTED' ? `[${RIGHTS_GRANT_VERSION}] ${RIGHTS_GRANT}` : null,
-      rightsGrantedAt: copyright === 'PROTECTED' ? grantedAt : null,
+      rightsGrant: `[${RIGHTS_GRANT_VERSION}] ${RIGHTS_GRANT}`,
+      rightsGrantedAt: grantedAt,
       media: {
         create: files.map((file, position) => ({
           kind: 'FILE',
@@ -248,7 +261,8 @@ export async function updateLibraryRecording(prisma: PrismaClient, user: User, i
   const item = await prisma.libraryItem.findUnique({ where: { id } });
   requireRecordingOwner(user, item as any);
   const labels = cleanLabels(input);
-  const isProtected = Boolean(item!.rightsGrantedAt);
+  // The copyright choice is part of the grant and stays as uploaded.
+  const isProtected = !item!.isPublicDomainWork;
   const rightsHolder = isProtected ? text(input.rightsHolder ?? item!.rightsHolder, 'the rights holder', 200, true) : null;
   const updated = await prisma.libraryItem.update({
     where: { id },
@@ -263,9 +277,13 @@ export async function updateLibraryRecording(prisma: PrismaClient, user: User, i
   return updated;
 }
 
-// Removes the recording from the Library and from every course and event
-// that used it. Restored versions go with it.
+// ADMIN only - uploaders granted mymusic.coach the recording and cannot take
+// it back. Removes it from the Library and from every course and event that
+// used it; restored versions go with it.
 export async function deleteLibraryRecording(prisma: PrismaClient, user: User, id: string): Promise<boolean> {
+  if (user.role !== 'ADMIN') {
+    throw new GraphQLError('Only an admin can remove a recording from the Library.', { extensions: { code: 'FORBIDDEN' } });
+  }
   const item = await prisma.libraryItem.findUnique({ where: { id }, select: { source: true, uploadedById: true } });
   requireRecordingOwner(user, item as any);
   await prisma.libraryItem.delete({ where: { id } });
@@ -274,8 +292,9 @@ export async function deleteLibraryRecording(prisma: PrismaClient, user: User, i
 }
 
 // The recordings a teacher or admin may choose from for a course or an
-// event (canUseInTeaching): uploads first - a teacher's own, an admin's
-// every one - then the open Library's recordings.
+// event (canUseInTeaching): uploads first - a teacher's own plus other
+// teachers' public-domain ones, an admin's every one - then the open
+// Library's recordings.
 export async function teachingRecordings(prisma: PrismaClient, user: User, query: string | null | undefined, limit = 20) {
   const take = Math.min(Math.max(limit, 1), 50);
   const words = (query ?? '').trim().split(/\s+/).filter(Boolean).slice(0, 6);
@@ -287,7 +306,11 @@ export async function teachingRecordings(prisma: PrismaClient, user: User, query
     })),
   };
   const uploads = await prisma.libraryItem.findMany({
-    where: { ...where, source: 'UPLOAD', ...(user.role === 'ADMIN' ? {} : { uploadedById: user.id }) },
+    where: {
+      ...where,
+      source: 'UPLOAD',
+      ...(user.role === 'ADMIN' ? {} : { OR: [{ uploadedById: user.id }, { isPublicDomainWork: true }] }),
+    },
     orderBy: { ingestedAt: 'desc' },
     take,
   });

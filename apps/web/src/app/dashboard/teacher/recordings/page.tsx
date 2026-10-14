@@ -11,14 +11,16 @@ import { INSTRUMENTS, MUSIC_STYLES } from '@/lib/musicVocabulary';
 
 // Teachers and admins upload their own recordings to the public Library
 // (API: lib/libraryRecordings.ts). Every recording is labelled (work,
-// composer, performers), and one under copyright needs the uploader's
-// confirmation that mymusic.coach may use it without limits. Teachers then
-// present their recordings in courses (lesson Library references) and on
-// event cards (Performance studio); admins may use every recording.
+// composer, performers) and every uploader confirms the rights grant: they
+// made it, it violates no existing rights, and mymusic.coach may use it
+// without limits. Uploads can't be deleted by their uploader - only admins
+// remove Library items. Under the uploader's copyright other teachers may
+// only listen and share the link; released into the public domain, every
+// teacher may use it in courses and events.
 
 const RECORDING_FIELDS = `
   id title creator performers date description instruments musicStyles skillLevels
-  license rightsHolder rightsGrantedAt ingestedAt
+  license rightsHolder rightsGrantedAt isPublicDomainWork canDeleteRecording ingestedAt
   uploadedBy { id name }
   files { label durationSeconds restored { profile } }
 `;
@@ -205,7 +207,7 @@ function UploadForm({ grant, onDone }: { grant: string; onDone(itemId: string): 
     event.preventDefault();
     setError('');
     if (files.length === 0) return setError('Add at least one audio file.');
-    if (copyright === 'PROTECTED' && !confirmed) return setError('Please confirm the rights grant below.');
+    if (!confirmed) return setError('Please confirm the rights grant below.');
     setBusy(true);
     try {
       const tracks = [];
@@ -224,7 +226,7 @@ function UploadForm({ grant, onDone }: { grant: string; onDone(itemId: string): 
             tracks,
             copyright,
             rightsHolder: copyright === 'PROTECTED' ? labels.rightsHolder.trim() : null,
-            rightsConfirmed: copyright === 'PROTECTED' ? confirmed : null,
+            rightsConfirmed: confirmed,
           },
         },
       });
@@ -286,36 +288,37 @@ function UploadForm({ grant, onDone }: { grant: string; onDone(itemId: string): 
       <LabelFields labels={labels} setLabels={setLabels} />
 
       <fieldset className="space-y-3 rounded-xl border border-gray-200 p-4">
-        <legend className="px-1 text-sm font-semibold text-gray-800">Copyright</legend>
+        <legend className="px-1 text-sm font-semibold text-gray-800">Copyright and rights</legend>
         <label className="flex gap-3 text-sm">
           <input type="radio" name="copyright" checked={copyright === 'PROTECTED'} onChange={() => setCopyright('PROTECTED')} className="mt-1" />
           <span>
-            <span className="font-medium text-gray-900">Protected by copyright</span>
+            <span className="font-medium text-gray-900">Keep my copyright</span>
             <span className="block text-gray-600">
-              Almost every recording made in the last 70 years - including your own performance of a piece by Bach.
+              Other teachers can listen to it and recommend its link to their students, but only you (and mymusic.coach) may use
+              it in courses and events.
             </span>
           </span>
         </label>
         <label className="flex gap-3 text-sm">
           <input type="radio" name="copyright" checked={copyright === 'PUBLIC_DOMAIN'} onChange={() => setCopyright('PUBLIC_DOMAIN')} className="mt-1" />
           <span>
-            <span className="font-medium text-gray-900">Public domain</span>
-            <span className="block text-gray-600">Neither the music nor this recording is protected any more (for example a historic recording).</span>
+            <span className="font-medium text-gray-900">Release into the public domain</span>
+            <span className="block text-gray-600">Every teacher may also use it in their own courses and events.</span>
           </span>
         </label>
-        {copyright === 'PROTECTED' && (
-          <div className="space-y-3 border-t border-gray-100 pt-3">
+        <div className="space-y-3 border-t border-gray-100 pt-3">
+          {copyright === 'PROTECTED' && (
             <label className="block text-sm font-medium text-gray-700">
               Rights holder *
               <input required maxLength={200} className="input mt-1 w-full" placeholder="Your name, ensemble or label" value={labels.rightsHolder} onChange={(event) => setLabels({ ...labels, rightsHolder: event.target.value })} />
             </label>
-            <p className="rounded-lg bg-gray-50 p-3 text-sm leading-relaxed text-gray-700" data-testid="rights-grant">{grant}</p>
-            <label className="flex gap-3 text-sm font-medium text-gray-900">
-              <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5" />
-              I confirm this and grant mymusic.coach these rights.
-            </label>
-          </div>
-        )}
+          )}
+          <p className="rounded-lg bg-gray-50 p-3 text-sm leading-relaxed text-gray-700" data-testid="rights-grant">{grant}</p>
+          <label className="flex gap-3 text-sm font-medium text-gray-900">
+            <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5" />
+            I confirm this and grant mymusic.coach these rights.
+          </label>
+        </div>
       </fieldset>
 
       {error && <p className="text-sm text-red-700">{error}</p>}
@@ -340,7 +343,7 @@ function EditDialog({ recording, onClose }: { recording: any; onClose(): void })
     rightsHolder: recording.rightsHolder ?? '',
   });
   const [update, { loading, error }] = useMutation(UPDATE);
-  const isProtected = Boolean(recording.rightsGrantedAt);
+  const isProtected = !recording.isPublicDomainWork;
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -401,15 +404,15 @@ function RecordingsPage() {
   }, [params, recordings, editing]);
 
   async function deleteRecording(recording: any) {
-    if (!confirm(`Delete “${recording.title}”? It disappears from the Library and from every course and event that uses it.`)) return;
+    if (!confirm(`Remove “${recording.title}” from the Library? It also disappears from every course and event that uses it.`)) return;
     await remove({ variables: { id: recording.id } });
     await refetch();
   }
 
   return (
-    <main className="mx-auto box-content max-w-4xl space-y-8 px-6 py-10">
+    <main className="mx-auto box-content max-w-6xl space-y-8 px-6 py-10">
       <div>
-        <Link href="/dashboard/teacher" className="text-sm text-primary-700">← Teacher workspace</Link>
+        <Link href="/dashboard/teacher" className="block w-fit text-sm text-primary-700">← Teacher workspace</Link>
         <p className="mt-4 inline-block rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">Library</p>
         <h1 className="mt-3 font-serif text-3xl font-bold">My recordings</h1>
         <p className="mt-2 text-gray-600">
@@ -426,51 +429,62 @@ function RecordingsPage() {
           <span className="text-gray-500">- the noise-reduction versions follow within the hour.</span>
         </p>
       )}
-      {data?.storageConfigured && (
-        <UploadForm
-          grant={data.libraryRecordingRightsGrant}
-          onDone={(id) => {
-            setJustAdded(id);
-            void refetch();
-          }}
-        />
-      )}
+      <div className="grid items-start gap-8 lg:grid-cols-[2fr_1fr]">
+        {data?.storageConfigured ? (
+          <UploadForm
+            grant={data.libraryRecordingRightsGrant}
+            onDone={(id) => {
+              setJustAdded(id);
+              void refetch();
+            }}
+          />
+        ) : <div />}
 
-      <section className="card p-6" data-testid="recording-list">
-        <h2 className="text-xl font-semibold">{isAdmin ? 'Uploaded recordings' : 'Your recordings'}</h2>
-        {error && <p className="mt-3 text-sm text-red-700">{error.message}</p>}
-        {loading && !data && <p className="mt-3 text-sm text-gray-500">Loading…</p>}
-        {data && recordings.length === 0 && <p className="mt-3 text-sm text-gray-500">No recordings yet - upload your first one above.</p>}
-        <ul className="mt-4 divide-y divide-gray-100">
-          {recordings.map((recording) => (
-            <li key={recording.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="font-medium text-gray-900">{recording.title}</p>
-                <p className="text-sm text-gray-600">{[recording.creator, recording.performers, recording.date].filter(Boolean).join(' · ')}</p>
-                <p className="text-xs text-gray-500">
-                  {[
-                    `${recording.files.length} ${recording.files.length === 1 ? 'track' : 'tracks'}`,
-                    recording.rightsGrantedAt ? `© ${recording.rightsHolder} - rights granted ${new Date(recording.rightsGrantedAt).toLocaleDateString()}` : 'Public domain',
-                    restorationState(recording),
-                    isAdmin && recording.uploadedBy ? `by ${recording.uploadedBy.name}` : null,
-                  ].filter(Boolean).join(' · ')}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <Link href={`/library/${recording.id}`} className="inline-flex h-10 items-center gap-1 rounded-lg px-3 text-sm text-primary-700 hover:bg-primary-50">
-                  <ExternalLink className="h-4 w-4" /> Open
-                </Link>
-                <button type="button" onClick={() => setEditing(recording)} className="inline-flex h-10 items-center gap-1 rounded-lg px-3 text-sm text-gray-700 hover:bg-gray-100">
-                  <Pencil className="h-4 w-4" /> Edit
-                </button>
-                <button type="button" onClick={() => void deleteRecording(recording)} aria-label={`Delete ${recording.title}`} className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-red-600 hover:bg-red-50">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
+        <section className="card p-6" data-testid="recording-list">
+          <h2 className="text-xl font-semibold">{isAdmin ? 'Uploaded recordings' : 'Your recordings'}</h2>
+          {error && <p className="mt-3 text-sm text-red-700">{error.message}</p>}
+          {loading && !data && <p className="mt-3 text-sm text-gray-500">Loading…</p>}
+          {data && recordings.length === 0 && <p className="mt-3 text-sm text-gray-500">No recordings yet - upload your first one with the form.</p>}
+          <ul className="mt-4 divide-y divide-gray-100">
+            {recordings.map((recording) => (
+              <li key={recording.id} className="flex flex-col gap-2 py-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-900">{recording.title}</p>
+                  <p className="text-sm text-gray-600">{[recording.creator, recording.performers, recording.date].filter(Boolean).join(' · ')}</p>
+                  <p className="text-xs text-gray-500">
+                    {[
+                      `${recording.files.length} ${recording.files.length === 1 ? 'track' : 'tracks'}`,
+                      recording.isPublicDomainWork ? 'Public domain' : `© ${recording.rightsHolder}`,
+                      recording.rightsGrantedAt ? `rights granted ${new Date(recording.rightsGrantedAt).toLocaleDateString()}` : null,
+                      restorationState(recording),
+                      isAdmin && recording.uploadedBy ? `by ${recording.uploadedBy.name}` : null,
+                    ].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Link href={`/library/${recording.id}`} className="inline-flex h-10 items-center gap-1 rounded-lg px-3 text-sm text-primary-700 hover:bg-primary-50">
+                    <ExternalLink className="h-4 w-4" /> Open
+                  </Link>
+                  <button type="button" onClick={() => setEditing(recording)} className="inline-flex h-10 items-center gap-1 rounded-lg px-3 text-sm text-gray-700 hover:bg-gray-100">
+                    <Pencil className="h-4 w-4" /> Edit
+                  </button>
+                  {recording.canDeleteRecording && (
+                    <button type="button" onClick={() => void deleteRecording(recording)} aria-label={`Remove ${recording.title}`} className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-red-600 hover:bg-red-50">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {!isAdmin && recordings.length > 0 && (
+            <p className="mt-3 text-xs text-gray-500">
+              Uploaded recordings belong to mymusic.coach and can&rsquo;t be deleted - you can correct their details. Ask an admin if
+              one has to be removed.
+            </p>
+          )}
+        </section>
+      </div>
 
       {editing && (
         <EditDialog

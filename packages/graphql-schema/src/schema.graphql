@@ -723,12 +723,13 @@ type LibraryUploader {
 }
 
 enum LibraryRecordingCopyright {
-  # Neither the music nor this recording is protected any more.
+  # Released into the public domain: every teacher may use it in courses
+  # and events.
   PUBLIC_DOMAIN
-  # Under copyright: the uploader grants mymusic.coach unlimited and
-  # unrestricted use (Query.libraryRecordingRightsGrant, confirmed with
-  # rightsConfirmed).
-  PROTECTED
+  # The uploader keeps the copyright (rightsHolder): other teachers may
+  # listen and share the link only. Either way the uploader confirms
+  # Query.libraryRecordingRightsGrant (rightsConfirmed) - mymusic.coach gets
+  # unlimited, unrestricted use and only admins can delete the recording.
 }
 
 input LibraryRecordingTrackInput {
@@ -750,6 +751,7 @@ input CreateLibraryRecordingInput {
   copyright: LibraryRecordingCopyright!
   # PROTECTED only.
   rightsHolder: String
+  # Required for every upload.
   rightsConfirmed: Boolean
 }
 
@@ -874,10 +876,13 @@ type LibraryItem {
   uploadedBy: LibraryUploader
   rightsHolder: String
   # The caller may present this item in their courses and on their events:
-  # admins any item, teachers any open item and their own uploads.
+  # admins any item, teachers any open item, their own uploads and other
+  # teachers' uploads released into the public domain.
   canUseInTeaching: Boolean!
-  # The caller uploaded it, or is an admin: they may edit or delete it.
+  # The caller uploaded it, or is an admin: they may correct its labels.
   canEditRecording: Boolean!
+  # Admins only: uploads belong to mymusic.coach, the uploader can't delete.
+  canDeleteRecording: Boolean!
   # Uploader and admins only: the confirmed rights grant, word for word.
   rightsGrant: String
   rightsGrantedAt: DateTime
@@ -2536,8 +2541,9 @@ type Mutation {
   removeLessonLibraryReference(id: ID!): Boolean!
   # TEACHER/ADMIN: a recording of their own for the public Library.
   createLibraryRecording(input: CreateLibraryRecordingInput!): LibraryItem!
-  # Its uploader or an admin.
+  # Its uploader or an admin (labels only).
   updateLibraryRecording(id: ID!, input: LibraryRecordingLabelsInput!): LibraryItem!
+  # ADMIN only.
   deleteLibraryRecording(id: ID!): Boolean!
   reorderLessonLibraryReferences(lessonId: ID!, ids: [ID!]!): [LessonLibraryReference!]!
   importBnfAudio(lessonId: ID!, libraryItemId: ID!, page: Int): Lesson!

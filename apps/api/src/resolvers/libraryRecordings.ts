@@ -49,6 +49,8 @@ export const libraryRecordingResolvers = {
       canUseInTeaching(user, item),
     canEditRecording: (item: { source: string; uploadedById?: string | null }, _: unknown, { user }: GraphQLContext) =>
       item.source === 'UPLOAD' && isOwnerOrAdmin(user, item),
+    // Only admins remove Library items - never the uploader.
+    canDeleteRecording: (item: { source: string }, _: unknown, { user }: GraphQLContext) => item.source === 'UPLOAD' && user?.role === 'ADMIN',
     rightsGrant: (item: { rightsGrant?: string | null; uploadedById?: string | null }, _: unknown, { user }: GraphQLContext) =>
       isOwnerOrAdmin(user, item) ? item.rightsGrant ?? null : null,
     rightsGrantedAt: (item: { rightsGrantedAt?: Date | null; uploadedById?: string | null }, _: unknown, { user }: GraphQLContext) =>
@@ -91,7 +93,7 @@ export const libraryRecordingResolvers = {
       return updateLibraryRecording(prisma, user!, id, input);
     },
     async deleteLibraryRecording(_: unknown, { id }: { id: string }, { prisma, user }: GraphQLContext) {
-      requireRole(user, 'TEACHER', 'ADMIN');
+      requireRole(user, 'ADMIN');
       return deleteLibraryRecording(prisma, user!, id);
     },
 
@@ -99,10 +101,13 @@ export const libraryRecordingResolvers = {
       requireAuth(user);
       requireRole(user, 'TEACHER', 'ADMIN');
       await loadEditableEvent(prisma, user, eventId);
-      const item = await prisma.libraryItem.findUnique({ where: { id: itemId }, select: { id: true, source: true, uploadedById: true, category: true, hiddenAt: true } });
+      const item = await prisma.libraryItem.findUnique({
+        where: { id: itemId },
+        select: { id: true, source: true, uploadedById: true, isPublicDomainWork: true, category: true, hiddenAt: true },
+      });
       if (!item || item.hiddenAt || item.category !== 'AUDIO_RECORDING') notFound('Recording not found.');
       if (!canUseInTeaching(user, item)) {
-        throw new GraphQLError('This recording was uploaded by another teacher - only they and admins may present it.', { extensions: { code: 'FORBIDDEN' } });
+        throw new GraphQLError('This recording is under another teacher’s copyright - you can listen to it and share its link, but not present it on your event.', { extensions: { code: 'FORBIDDEN' } });
       }
       const existing = await prisma.eventRecording.findUnique({ where: { eventId_itemId: { eventId, itemId } }, include: { item: true } });
       if (existing) return existing;
