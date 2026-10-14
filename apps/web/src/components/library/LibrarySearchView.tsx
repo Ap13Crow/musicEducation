@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
 import { Library, Search, SlidersHorizontal, X } from 'lucide-react';
@@ -93,6 +93,8 @@ const SORTS = [
   { value: 'YEAR_DESC', label: 'Newest first' },
 ];
 
+const SELECT = 'rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm';
+
 const list = (value: string | null) => (value ? value.split(',').filter(Boolean) : []);
 const year = (value: string | null) => {
   const number = Number(value);
@@ -127,14 +129,20 @@ export function LibrarySearchView({ liveApiEnabled }: { liveApiEnabled: boolean 
   const [from, setFrom] = useState(yearFrom ? String(yearFrom) : '');
   const [to, setTo] = useState(yearTo ? String(yearTo) : '');
   const [filtersOpen, setFiltersOpen] = useState(false);
-  useEffect(() => setInput(query), [query]);
+  // The query this field last sent: a URL change that merely echoes it must not
+  // overwrite what has been typed since.
+  const sent = useRef(query);
+  useEffect(() => {
+    if (query !== sent.current) setInput(query);
+    sent.current = query;
+  }, [query]);
   useEffect(() => {
     setFrom(yearFrom ? String(yearFrom) : '');
     setTo(yearTo ? String(yearTo) : '');
   }, [yearFrom, yearTo]);
 
   // Every change goes through the URL; any change but paging restarts at page 1.
-  function update(changes: Record<string, string | null>) {
+  function update(changes: Record<string, string | null>, replace = false) {
     const next = new URLSearchParams(params.toString());
     for (const [key, value] of Object.entries(changes)) {
       if (value === null || value === '') next.delete(key);
@@ -142,7 +150,9 @@ export function LibrarySearchView({ liveApiEnabled }: { liveApiEnabled: boolean 
     }
     if (!('page' in changes)) next.delete('page');
     const text = next.toString();
-    router.push(text ? `${pathname}?${text}` : pathname, { scroll: 'page' in changes });
+    const href = text ? `${pathname}?${text}` : pathname;
+    if (replace) router.replace(href, { scroll: false });
+    else router.push(href, { scroll: 'page' in changes });
   }
 
   const variables = useMemo(
@@ -179,7 +189,20 @@ export function LibrarySearchView({ liveApiEnabled }: { liveApiEnabled: boolean 
     ...FACETS.flatMap((facet) => selected[facet.key].map((value) => ({ key: facet.key, value, label: facet.name(value) }))),
   ];
   const hasFilters = activeChips.length > 0 || yearFrom || yearTo || query;
-  const filterCount = activeChips.length + (yearFrom || yearTo ? 1 : 0);
+  const filterCount =
+    activeChips.length + (yearFrom || yearTo ? 1 : 0) + [match !== 'ALL', field !== 'ANY', caseSensitive, sort !== 'RELEVANCE'].filter(Boolean).length;
+
+  // Typing searches after a short pause; Enter searches straight away.
+  function submit(text: string, replace = false) {
+    if (text.trim() === query) return;
+    sent.current = text.trim();
+    update({ q: text.trim() || null }, replace);
+  }
+  useEffect(() => {
+    const timer = setTimeout(() => submit(input, true), 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input]);
 
   function toggleFacet(key: FacetKey, value: string) {
     const current = selected[key];
@@ -196,109 +219,117 @@ export function LibrarySearchView({ liveApiEnabled }: { liveApiEnabled: boolean 
 
   return (
     <>
+      {/* The same bar as Courses, Teachers and Events: the field searches as
+          you type, and everything else sits behind Filters. */}
       <form
-        className="mb-3"
+        className="mb-6 flex gap-3"
         role="search"
         onSubmit={(event) => {
           event.preventDefault();
-          update({ q: input.trim() || null });
+          submit(input);
         }}
       >
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <input
-              type="search"
-              placeholder='Title, composer, instrument… e.g. Schubert "Gute Nacht" -Liszt'
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              aria-label="Search the Library"
-              className="input w-full pl-10"
-            />
-          </div>
-          <button type="submit" className="btn-primary">Search</button>
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder='Title, composer, instrument… e.g. Schubert "Gute Nacht" -Liszt'
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            aria-label="Search the Library"
+            className="input w-full pl-10"
+          />
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-700">
-          <label className="inline-flex items-center gap-1.5">
-            Match
-            <select value={match} onChange={(event) => update({ match: event.target.value === 'ALL' ? null : event.target.value })} className="rounded-md border border-gray-300 px-2 py-1 text-sm">
-              {MATCHES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          </label>
-          <label className="inline-flex items-center gap-1.5">
-            in
-            <select value={field} onChange={(event) => update({ in: event.target.value === 'ANY' ? null : event.target.value })} className="rounded-md border border-gray-300 px-2 py-1 text-sm">
-              {FIELDS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          </label>
-          <label className="inline-flex items-center gap-1.5">
-            <input type="checkbox" checked={caseSensitive} onChange={(event) => update({ case: event.target.checked ? '1' : null })} className="h-4 w-4 rounded border-gray-300" />
-            Match case
-          </label>
-          <label className="inline-flex items-center gap-1.5 sm:ml-auto">
-            Sort
-            <select value={sort} onChange={(event) => update({ sort: event.target.value === 'RELEVANCE' ? null : event.target.value })} className="rounded-md border border-gray-300 px-2 py-1 text-sm">
-              {SORTS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          </label>
-        </div>
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((open) => !open)}
+          aria-expanded={filtersOpen}
+          className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+            filtersOpen ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <SlidersHorizontal className="h-4 w-4" /> Filters
+          {filterCount > 0 && (
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-xs text-white">{filterCount}</span>
+          )}
+        </button>
       </form>
 
-      <button
-        type="button"
-        onClick={() => setFiltersOpen((open) => !open)}
-        aria-expanded={filtersOpen}
-        className="mb-3 inline-flex min-h-[2.75rem] items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm text-gray-700 hover:border-primary-300"
-      >
-        <SlidersHorizontal className="h-4 w-4" /> Filters{filterCount ? ` (${filterCount})` : ''}
-      </button>
+      {filtersOpen && (
+        <div className="mb-4 rounded-xl border border-gray-200 bg-white">
+          <div className={`flex flex-wrap items-center gap-x-4 gap-y-2 p-4 text-sm text-gray-700 ${facets ? 'border-b border-gray-100' : ''}`}>
+            <label className="inline-flex items-center gap-1.5">
+              Match
+              <select value={match} onChange={(event) => update({ match: event.target.value === 'ALL' ? null : event.target.value })} className={SELECT}>
+                {MATCHES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <label className="inline-flex items-center gap-1.5">
+              in
+              <select value={field} onChange={(event) => update({ in: event.target.value === 'ANY' ? null : event.target.value })} className={SELECT}>
+                {FIELDS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <label className="inline-flex items-center gap-1.5">
+              <input type="checkbox" checked={caseSensitive} onChange={(event) => update({ case: event.target.checked ? '1' : null })} className="h-4 w-4 rounded border-gray-300" />
+              Match case
+            </label>
+            <label className="inline-flex items-center gap-1.5 sm:ml-auto">
+              Sort
+              <select value={sort} onChange={(event) => update({ sort: event.target.value === 'RELEVANCE' ? null : event.target.value })} className={SELECT}>
+                {SORTS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+          </div>
 
-      {filtersOpen && facets && (
-        <div className="mb-4 grid gap-4 rounded-xl border border-gray-200 p-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="library-facets">
-          {FACETS.map((facet) => {
-            const values: { value: string; count: number }[] = [...(facets[facet.field] ?? [])];
-            if (facet.sort) values.sort((a, b) => facet.sort!(a.value, b.value));
-            // Keep a selected value visible even when nothing else matches it.
-            for (const value of selected[facet.key]) if (!values.some((entry) => entry.value === value)) values.push({ value, count: 0 });
-            if (!values.length) return null;
-            return (
-              <fieldset key={facet.key}>
-                <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{facet.title}</legend>
-                <ul className="space-y-1">
-                  {values.map((entry) => (
-                    <li key={entry.value}>
-                      <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
-                        <input
-                          type="checkbox"
-                          checked={selected[facet.key].includes(entry.value)}
-                          onChange={() => toggleFacet(facet.key, entry.value)}
-                          className="h-4 w-4 rounded border-gray-300"
-                        />
-                        <span className="flex-1">{facet.name(entry.value)}</span>
-                        <span className="tabular-nums text-xs text-gray-400">{entry.count.toLocaleString()}</span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              </fieldset>
-            );
-          })}
-          <fieldset>
-            <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Years</legend>
-            <form
-              className="flex items-center gap-2 text-sm"
-              onSubmit={(event) => {
-                event.preventDefault();
-                update({ from: year(from) ? from : null, to: year(to) ? to : null });
-              }}
-            >
-              <input inputMode="numeric" value={from} onChange={(event) => setFrom(event.target.value)} placeholder="from" aria-label="From year" className="w-20 rounded-md border border-gray-300 px-2 py-1" />
-              –
-              <input inputMode="numeric" value={to} onChange={(event) => setTo(event.target.value)} placeholder="to" aria-label="To year" className="w-20 rounded-md border border-gray-300 px-2 py-1" />
-              <button type="submit" className="rounded-md border border-gray-300 px-2 py-1 hover:bg-gray-50">Apply</button>
-            </form>
-            <p className="mt-1 text-xs text-gray-400">Undated items are left out of a year range.</p>
-          </fieldset>
+        {facets && (
+          <div className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="library-facets">
+            {FACETS.map((facet) => {
+              const values: { value: string; count: number }[] = [...(facets[facet.field] ?? [])];
+              if (facet.sort) values.sort((a, b) => facet.sort!(a.value, b.value));
+              // Keep a selected value visible even when nothing else matches it.
+              for (const value of selected[facet.key]) if (!values.some((entry) => entry.value === value)) values.push({ value, count: 0 });
+              if (!values.length) return null;
+              return (
+                <fieldset key={facet.key}>
+                  <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{facet.title}</legend>
+                  <ul className="space-y-1">
+                    {values.map((entry) => (
+                      <li key={entry.value}>
+                        <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={selected[facet.key].includes(entry.value)}
+                            onChange={() => toggleFacet(facet.key, entry.value)}
+                            className="h-4 w-4 rounded border-gray-300"
+                          />
+                          <span className="flex-1">{facet.name(entry.value)}</span>
+                          <span className="tabular-nums text-xs text-gray-400">{entry.count.toLocaleString()}</span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                </fieldset>
+              );
+            })}
+            <fieldset>
+              <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Years</legend>
+              <form
+                className="flex items-center gap-2 text-sm"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  update({ from: year(from) ? from : null, to: year(to) ? to : null });
+                }}
+              >
+                <input inputMode="numeric" value={from} onChange={(event) => setFrom(event.target.value)} placeholder="from" aria-label="From year" className="w-20 rounded-md border border-gray-300 px-2 py-1" />
+                –
+                <input inputMode="numeric" value={to} onChange={(event) => setTo(event.target.value)} placeholder="to" aria-label="To year" className="w-20 rounded-md border border-gray-300 px-2 py-1" />
+                <button type="submit" className="rounded-md border border-gray-300 px-2 py-1 hover:bg-gray-50">Apply</button>
+              </form>
+              <p className="mt-1 text-xs text-gray-400">Undated items are left out of a year range.</p>
+            </fieldset>
+          </div>
+        )}
         </div>
       )}
 

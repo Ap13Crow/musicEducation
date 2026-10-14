@@ -143,17 +143,23 @@ function LibraryPageContent() {
     [pathname, router],
   );
 
+  // Signed in, the folder sidebar needs the extra width.
+  const width = signedIn ? 'max-w-7xl' : 'max-w-6xl';
+
   return (
-    <main className="px-4 py-12 sm:px-6 sm:py-16">
-      <section className={`mx-auto ${signedIn ? 'max-w-7xl' : 'max-w-6xl'}`}>
-        <div className="mb-8">
+    <main className="min-h-screen bg-gray-50">
+      {/* Same white header band over a grey page as Courses, Teachers and Events. */}
+      <div className="border-b border-gray-200 bg-white px-6 py-10">
+        <div className={`mx-auto ${width}`}>
           <PillarHeader pillar="library" title="Sheet Music, Recordings and Books">
             Browse historical scores, recordings and music literature from the Bibliothèque nationale de France, the
             Deutsche Nationalbibliothek and openly licensed collections.
             {signedIn ? ' Star what you like and keep it in your own folders.' : ' Sign in to keep favorites and folders.'}
           </PillarHeader>
         </div>
+      </div>
 
+      <section className={`mx-auto box-content ${width} px-6 py-10`}>
         {!liveApiEnabled && (
           <p className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
             Live API is disabled in this environment, so the library catalogue can&rsquo;t be loaded.
@@ -167,11 +173,11 @@ function LibraryPageContent() {
                 type="button"
                 onClick={() => setSidebarOpen((value) => !value)}
                 aria-expanded={sidebarOpen}
-                className="mb-3 inline-flex min-h-[2.75rem] items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm text-gray-700 lg:hidden"
+                className="mb-3 inline-flex min-h-[2.75rem] items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 lg:hidden"
               >
                 <PanelLeft className="h-4 w-4" /> Favorites &amp; folders
               </button>
-              <div className={`${sidebarOpen ? 'block' : 'hidden'} rounded-xl border border-gray-200 p-2 lg:sticky lg:top-20 lg:block lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto`}>
+              <div className={`${sidebarOpen ? 'block' : 'hidden'} rounded-xl border border-gray-200 bg-white p-2 lg:sticky lg:top-20 lg:block lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto`}>
                 <LibrarySidebar view={view} onSelect={selectView} />
               </div>
             </aside>
