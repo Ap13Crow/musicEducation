@@ -178,7 +178,8 @@ type ZoomMeetingInfo {
 
 type User {
   id: ID!
-  email: String!
+  """Only the user themself, an admin, or the teacher of one of their bookings sees this; null otherwise."""
+  email: String
   username: String!
   displayName: String!
   role: Role!

@@ -10,6 +10,11 @@ import {
 import { getBookableSlots, validateBookableRange } from '../lib/bookableSlots.js';
 import { siteSearch, searchInfo, TEACHER_SEARCH } from '../lib/siteSearch.js';
 import type { GraphQLContext } from '../types.js';
+import { CONTACT_VISIBLE_TO, canSeeContact } from '../lib/contactVisibility.js';
+
+function emptyConnection() {
+  return { nodes: [], pageInfo: { hasNextPage: false, hasPreviousPage: false, totalCount: 0 } };
+}
 
 // The languages courses are published in (Course.language).
 const COURSE_LANGUAGES = ['en', 'de', 'fr'];
@@ -88,7 +93,12 @@ export const userResolvers = {
       return null;
     },
 
-    async searchUsers(_: unknown, { query, role, page = 1, limit = 20 }: any, { prisma }: GraphQLContext) {
+    // Matches on email, so admins only - anonymously it would be a lookup
+    // service for who has an account.
+    async searchUsers(_: unknown, { query, role, page = 1, limit = 20 }: any, { prisma, user }: GraphQLContext) {
+      requireRole(user, 'ADMIN');
+      const take = Math.min(Math.max(1, limit), 50);
+      const skip = (Math.max(1, page) - 1) * take;
       const where: any = {
         status: 'ACTIVE',
         OR: [
@@ -97,7 +107,11 @@ export const userResolvers = {
         ],
       };
       if (role) where.role = role;
-      return prisma.user.findMany({ where, take: limit, skip: (page - 1) * limit });
+      const [nodes, totalCount] = await Promise.all([
+        prisma.user.findMany({ where, take, skip }),
+        prisma.user.count({ where }),
+      ]);
+      return { nodes, pageInfo: { hasNextPage: skip + nodes.length < totalCount, hasPreviousPage: skip > 0, totalCount } };
     },
 
     async teachers(_: unknown, { filter, page = 1, limit = 20 }: any, { prisma }: GraphQLContext) {
@@ -500,13 +514,19 @@ export const userResolvers = {
   },
 
   User: {
-    async username(u: any) {
+    email(u: any, _: unknown, { user }: GraphQLContext) {
+      return canSeeContact(u.id, user, u[CONTACT_VISIBLE_TO]) ? u.email : null;
+    },
+    async username(u: any, _: unknown, { user }: GraphQLContext) {
+      if (!canSeeContact(u.id, user, u[CONTACT_VISIBLE_TO])) return u.id;
       return u.email?.split('@')[0] ?? u.id;
     },
-    async displayName(u: any, _: unknown, { prisma }: GraphQLContext) {
+    async displayName(u: any, _: unknown, { prisma, user }: GraphQLContext) {
       if (u.profile?.displayName) return u.profile.displayName;
       const profile = await prisma.userProfile.findUnique({ where: { userId: u.id }, select: { displayName: true } });
-      return profile?.displayName ?? u.email?.split('@')[0] ?? 'Musician';
+      if (profile?.displayName) return profile.displayName;
+      if (canSeeContact(u.id, user, u[CONTACT_VISIBLE_TO])) return u.email?.split('@')[0] ?? 'Musician';
+      return 'Musician';
     },
     isEmailVerified(u: any) {
       return Boolean(u.emailVerified);
@@ -525,7 +545,8 @@ export const userResolvers = {
     async gamification(u: any, _: unknown, { prisma }: GraphQLContext) {
       return prisma.gamificationProfile.findUnique({ where: { userId: u.id } });
     },
-    async enrollments(u: any, { page = 1, limit = 10 }: any, { prisma }: GraphQLContext) {
+    async enrollments(u: any, { page = 1, limit = 10 }: any, { prisma, user }: GraphQLContext) {
+      if (!canSeeContact(u.id, user)) return emptyConnection();
       const skip = (page - 1) * limit;
       const where = { userId: u.id };
       // include: { course: true } so Enrollment.course's fast path (see
@@ -567,6 +588,9 @@ export const userResolvers = {
     },
   },
   UserProfile: {
+    notificationEmail(profile: any, _: unknown, { user }: GraphQLContext) {
+      return canSeeContact(profile.userId, user) ? (profile.notificationEmail ?? null) : null;
+    },
     timezone(profile: any) {
       return profile.timezone ?? 'Europe/Zurich';
     },

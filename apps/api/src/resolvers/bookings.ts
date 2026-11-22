@@ -10,6 +10,7 @@ import { reserveInstrumentCapacity } from '../lib/capacity.js';
 import { getBookableSlots, LESSON_DURATION_MINUTES } from '../lib/bookableSlots.js';
 import { consumeCredit, restoreCredit } from '../lib/lessonCredits.js';
 import { displayNameOf } from '../lib/displayName.js';
+import { CONTACT_VISIBLE_TO } from '../lib/contactVisibility.js';
 import type { GraphQLContext } from '../types.js';
 import type { Prisma, PrismaClient } from '@my-music-coach/database';
 
@@ -635,8 +636,15 @@ export const bookingResolvers = {
   },
 
   Booking: {
-    async student(booking: any, _: unknown, { prisma }: GraphQLContext) {
-      return prisma.user.findUnique({ where: { id: booking.userId } });
+    async student(booking: any, _: unknown, { prisma, user }: GraphQLContext) {
+      const student: any = await prisma.user.findUnique({ where: { id: booking.userId } });
+      // The booking's teacher needs the student's email to run the lesson
+      // (the Students roster); see lib/contactVisibility.ts.
+      if (student && user) {
+        const teacher = await prisma.teacherProfile.findUnique({ where: { id: booking.teacherProfileId }, select: { userId: true } });
+        if (teacher?.userId === user.id) student[CONTACT_VISIBLE_TO] = user.id;
+      }
+      return student;
     },
     async teacher(booking: any, _: unknown, { prisma }: GraphQLContext) {
       return prisma.teacherProfile.findUnique({ where: { id: booking.teacherProfileId } });
