@@ -55,7 +55,7 @@ jobs:
           version: v1.36.3
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
       - name: Run account and transactional-email regression tests
         shell: bash

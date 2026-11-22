@@ -88,7 +88,7 @@ kubectl -n mymusic-coach rollout status deployment/api deployment/web deployment
 - **There is no node/npm on the host.** Test and type-check inside the images: `docker build
   --target builder -f apps/<app>/Dockerfile -t <tag> .` then `docker run --rm <tag> sh -c 'cd /app
   && npm test --workspace @my-music-coach/<app>'`; the web image build runs `next build`
-  (type-check). Lockfile updates: `npm install … --package-lock-only` in a `node:20-bookworm-slim`
+  (type-check). Lockfile updates: `npm install … --package-lock-only` in a `node:24-bookworm-slim`
   container as the repo owner's uid (npm re-sorts `package.json`; restore the original order).
 - After a deploy, verify against the public site (`https://mymusic.coach`, public GraphQL at
   `/api/graphql`) rather than assuming the rollout means the feature works.

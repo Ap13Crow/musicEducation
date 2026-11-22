@@ -19,11 +19,11 @@
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
-    "@types/node": "^20.14.0",
+    "@types/node": "^24.19.2",
     "@types/pg": "^8.11.6",
     "typescript": "^5.4.5"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=24.0.0"
   }
 }

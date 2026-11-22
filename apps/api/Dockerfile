@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim AS base
+FROM node:24-bookworm-slim AS base
 WORKDIR /app
 
 FROM base AS manifests
@@ -30,7 +30,7 @@ FROM manifests AS production-deps
 RUN npm ci --omit=dev --workspace @my-music-coach/api --workspace @my-music-coach/database --workspace @my-music-coach/external-events --workspace @my-music-coach/bnf-gallica --include-workspace-root \
  && npm cache clean --force
 
-FROM node:20-bookworm-slim AS runner
+FROM node:24-bookworm-slim AS runner
 RUN apt-get update -qq \
  && apt-get install -y --no-install-recommends ca-certificates openssl poppler-utils imagemagick ffmpeg \
  && rm -rf /var/lib/apt/lists/*

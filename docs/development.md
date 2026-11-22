@@ -4,7 +4,7 @@ This repository is an npm workspace managed by Turborepo. Run commands from the 
 
 ## Prerequisites
 
-- Node.js 20 or newer
+- Node.js 24 (LTS) or newer
 - npm 10 or newer (the repository pins npm 10.9.4)
 - Docker with Compose v2 only when working with the legacy local stack
 - `kubectl` with Kustomize support only for rendering the new deployment scaffold

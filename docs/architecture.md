@@ -26,7 +26,7 @@ implemented natively (no external LMS, booking, or ticketing system):
 ### Backend
 | Concern | Technology |
 |---------|-----------|
-| Runtime | Node.js 20 (TypeScript) |
+| Runtime | Node.js 24 LTS (TypeScript) |
 | API | GraphQL (Apollo Server 4 + Express, `expressMiddleware` at `/graphql`) |
 | Database | PostgreSQL + Prisma ORM (`db push` workflow in dev; forward-only SQL under `deploy/database/identity/` ships schema changes to the cluster) |
 | Auth | Keycloak (OIDC), verified server-side; no parallel/custom auth system |
