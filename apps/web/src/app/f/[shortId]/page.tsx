@@ -28,7 +28,8 @@ async function loadFolder(shortId: string): Promise<PublicFolder | null> {
   return (await serverGraphql<{ publicLibraryFolder: PublicFolder | null }>(PUBLIC_FOLDER, { shortId }))?.publicLibraryFolder ?? null;
 }
 
-export async function generateMetadata({ params }: { params: { shortId: string } }): Promise<Metadata> {
+export async function generateMetadata({ params: paramsPromise }: { params: Promise<{ shortId: string }> }): Promise<Metadata> {
+  const params = await paramsPromise;
   const folder = await loadFolder(params.shortId);
   if (!folder) return { title: 'Library folder' };
   const description = `${folder.items.length} scores and recordings from the My Music Coach library`;
@@ -42,7 +43,8 @@ export async function generateMetadata({ params }: { params: { shortId: string }
 
 // A folder an admin has made public - readable by anyone, no login, at a
 // permanent /f/<shortId> link (shareable and printable as a QR code).
-export default async function PublicFolderPage({ params }: { params: { shortId: string } }) {
+export default async function PublicFolderPage({ params: paramsPromise }: { params: Promise<{ shortId: string }> }) {
+  const params = await paramsPromise;
   const folder = await loadFolder(params.shortId);
   if (!folder) notFound();
 

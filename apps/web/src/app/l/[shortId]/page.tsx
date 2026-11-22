@@ -11,7 +11,8 @@ const PERMALINK = `
 
 // Permanent share link /l/<shortId> (printed QR codes, links shared outside
 // mymusic.coach). It never breaks: a hidden item gets a notice, not a 404.
-export default async function LibraryPermalinkPage({ params }: { params: { shortId: string } }) {
+export default async function LibraryPermalinkPage({ params: paramsPromise }: { params: Promise<{ shortId: string }> }) {
+  const params = await paramsPromise;
   const data = await serverGraphql<{ libraryPermalink: { itemId: string; title: string; available: boolean } | null }>(
     PERMALINK,
     { shortId: params.shortId },

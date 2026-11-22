@@ -11,7 +11,8 @@ const ITEM_META = `
 
 // Rich previews when a library link is shared (messengers, mail, social) -
 // the page itself stays a client component.
-export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
+export async function generateMetadata({ params: paramsPromise }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const params = await paramsPromise;
   const data = await serverGraphql<{ libraryItem: any }>(ITEM_META, { id: params.id });
   const item = data?.libraryItem;
   if (!item) return { title: 'Library' };

@@ -9,7 +9,8 @@ const GRAPHQL_UPSTREAM =
 const API_ORIGIN = GRAPHQL_UPSTREAM.replace(/\/graphql\/?$/, '');
 const PASSTHROUGH_HEADERS = ['content-type', 'content-length', 'cache-control'];
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) {
+  const params = await paramsPromise;
   try {
     const upstream = await fetch(`${API_ORIGIN}/events/external/${encodeURIComponent(params.id)}/image`, { cache: 'no-store' });
     const headers = new Headers();

@@ -15,7 +15,8 @@ const ITEM_FILES = `
 // Permanent link to one file of an item (/l/<shortId>/<n>, 1-based) - sends
 // the browser to wherever that file is served today; an unavailable item or
 // file falls back to the item's own permanent page.
-export async function GET(_req: NextRequest, { params }: { params: { shortId: string; n: string } }) {
+export async function GET(_req: NextRequest, { params: paramsPromise }: { params: Promise<{ shortId: string; n: string }> }) {
+  const params = await paramsPromise;
   const itemPage = new URL(`/l/${encodeURIComponent(params.shortId)}`, APP_URL);
   const index = Number(params.n) - 1;
   const permalink = (

@@ -3,8 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { applicationId: string; kind: string } },
+  { params: paramsPromise }: { params: Promise<{ applicationId: string; kind: string }> },
 ) {
+  const params = await paramsPromise;
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
   if (typeof token?.accessToken !== 'string') {
     return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });

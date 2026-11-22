@@ -10,7 +10,8 @@ const GRAPHQL_UPSTREAM =
 const API_ORIGIN = GRAPHQL_UPSTREAM.replace(/\/graphql\/?$/, '');
 const PASSTHROUGH_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control', 'content-disposition'];
 
-export async function GET(req: NextRequest, { params }: { params: { path: string[] } }) {
+export async function GET(req: NextRequest, { params: paramsPromise }: { params: Promise<{ path: string[] }> }) {
+  const params = await paramsPromise;
   try {
     const path = params.path.map(encodeURIComponent).join('/');
     const range = req.headers.get('range');

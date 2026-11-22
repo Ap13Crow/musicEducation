@@ -9,7 +9,8 @@ const GRAPHQL_UPSTREAM =
   process.env.GRAPHQL_SERVER_URL ?? process.env.INTERNAL_GRAPHQL_URL ?? 'http://api:4000/graphql';
 const API_ORIGIN = GRAPHQL_UPSTREAM.replace(/\/graphql\/?$/, '');
 
-export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
+export async function GET(_req: NextRequest, { params: paramsPromise }: { params: Promise<{ token: string }> }) {
+  const params = await paramsPromise;
   try {
     const upstream = await fetch(`${API_ORIGIN}/calendar/feed/${params.token}`, { cache: 'no-store' });
     const body = await upstream.text();

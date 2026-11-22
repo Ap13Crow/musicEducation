@@ -56,8 +56,9 @@ blob-report/
 *.tsbuildinfo
 next-env.d.ts
 
-# Runtime data
+# Runtime data (the web app's api/uploads route is source code, not data)
 uploads/
+!apps/web/src/app/api/uploads/
 *.pid
 *.log
 
