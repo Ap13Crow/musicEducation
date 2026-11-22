@@ -39,6 +39,9 @@ spec:
     rememberMe: true
     verifyEmail: true
     bruteForceProtected: true
+    # Applied to the live realm via the admin API on 2026-11-22; this import
+    # only runs when the realm is first created.
+    passwordPolicy: length(12) and maxLength(64) and notUsername(undefined) and notEmail(undefined) and passwordHistory(3)
     internationalizationEnabled: true
     supportedLocales:
       - en
