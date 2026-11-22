@@ -113,6 +113,15 @@ for role in query-users view-users manage-users view-realm; do
   fi
 done
 
+# Keycloak 26.8.2+ only accepts Admin REST API tokens that carry the
+# kc-admin-api client scope; without it every call returns 401.
+admin_api_scope_id="$(kubectl -n "$NAMESPACE" exec "$keycloak_pod" -- \
+  /opt/keycloak/bin/kcadm.sh get client-scopes --config "$admin_config" -r "$REALM" --fields id,name |
+  jq -er '[.[] | select(.name == "kc-admin-api")] | if length == 1 then .[0].id else error("kc-admin-api client scope missing") end')"
+kubectl -n "$NAMESPACE" exec "$keycloak_pod" -- \
+  /opt/keycloak/bin/kcadm.sh update "clients/$client_uuid/default-client-scopes/$admin_api_scope_id" \
+  --config "$admin_config" -r "$REALM" >/dev/null
+
 # Prove the scoped credential itself can authenticate and list users before
 # the application rollout consumes it. No secret values or realm users are
 # printed.
