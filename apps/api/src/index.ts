@@ -28,7 +28,8 @@ import { relinkLibraryWorksSoon } from './lib/libraryWorkLinks.js';
 import { configureDatabaseUrl } from './lib/databaseUrl.js';
 import type { GraphQLContext } from './types.js';
 
-const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
+// Errors are logged as { error }; pino only formats `err` by default.
+const logger = pino({ level: process.env.LOG_LEVEL ?? 'info', serializers: { error: pino.stdSerializers.err } });
 
 configureDatabaseUrl();
 const prisma = new PrismaClient();
