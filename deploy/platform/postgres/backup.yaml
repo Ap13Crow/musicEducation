@@ -54,10 +54,29 @@ spec:
               command: [sh, -ec]
               args:
                 - |
+                  # k3s' network-policy controller admits a new pod's IP a
+                  # second or two after it starts; until then Postgres
+                  # refuses the connection. Wait for it instead of failing.
+                  tries=0
+                  until pg_isready --timeout=2 >/dev/null 2>&1; do
+                    tries=$((tries + 1))
+                    if [ "$tries" -ge 30 ]; then
+                      echo "postgres not reachable after 60s" >&2
+                      exit 1
+                    fi
+                    sleep 2
+                  done
                   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
                   for database in mymusiccoach keycloak; do
-                    pg_dump --format=custom --file="/backups/${database}-${stamp}.dump" "$database"
+                    target="/backups/${database}-${stamp}.dump"
+                    pg_dump --format=custom --file="${target}.partial" "$database"
+                    # A dump only counts once pg_restore can read its table of contents.
+                    pg_restore --list "${target}.partial" >/dev/null
+                    mv "${target}.partial" "$target"
+                    echo "backup ok: $target ($(du -h "$target" | cut -f1))"
                   done
+                  find /backups -type f -name '*.partial' -delete
+                  find /backups -type f -name '*.dump' -size 0 -delete
                   find /backups -type f -name '*.dump' -mtime +14 -delete
               env:
                 - name: PGHOST
