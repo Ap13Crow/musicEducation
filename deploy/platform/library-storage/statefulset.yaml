@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: garage
-          image: dxflrs/garage:v2.4.1
+          image: dxflrs/garage:v2.5.0
           imagePullPolicy: IfNotPresent
           command: ['/garage', '-c', '/etc/garage/garage.toml', 'server']
           env:

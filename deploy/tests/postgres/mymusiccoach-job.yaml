@@ -27,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: psql
-          image: postgres:17.10-alpine3.24
+          image: postgres:17.12-alpine3.24
           imagePullPolicy: IfNotPresent
           envFrom:
             - secretRef:

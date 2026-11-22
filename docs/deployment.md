@@ -53,7 +53,7 @@ It does not yet run Prisma migrations or create Keycloak tables. Those are separ
 After `deploy-and-test` succeeds, open **Actions → Development Keycloak → Run workflow** on the `main` branch and choose one operation:
 
 - `plan` renders the pinned official operator, Keycloak custom resource, and one-time development realm import; it rejects committed Kubernetes Secrets and mutable `latest` tags without contacting the cluster.
-- `deploy` verifies the database prerequisites, installs Keycloak Operator `26.7.0`, reconciles one Keycloak instance, checks internal health, creates the runtime web-client Secret if the realm does not exist, imports the realm once, cleans up the import Job, and verifies public OIDC discovery through Cloudflare.
+- `deploy` verifies the database prerequisites, installs Keycloak Operator `26.8.2`, reconciles one Keycloak instance, checks internal health, creates the runtime web-client Secret if the realm does not exist, imports the realm once, cleans up the import Job, and verifies public OIDC discovery through Cloudflare.
 - `status` performs read-only cluster inspection and reports the Keycloak custom resource, operator Deployment, Keycloak StatefulSet, internal Service, NetworkPolicy, Pods, public discovery reachability, and available resource metrics.
 
 The workflow refuses cluster access from branches other than `main`. Merging these manifests does not deploy them; a reviewed manual `deploy` run is still required.

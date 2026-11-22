@@ -35,7 +35,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: cloudflared
-          image: cloudflare/cloudflared:1899-3a2b45c2a511
+          image: cloudflare/cloudflared:2012-518d7f7969b7
           imagePullPolicy: IfNotPresent
           command:
             - cloudflared

@@ -26,7 +26,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: psql
-          image: postgres:17.10-alpine3.23
+          image: postgres:17.12-alpine3.23
           command: [sh, -ec]
           args:
             - |

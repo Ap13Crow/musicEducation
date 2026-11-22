@@ -67,5 +67,5 @@ Keycloak uses the fixed external hostname `https://auth-dev.mymusic.coach` and a
 - The connector accepts no inbound connection from the Internet; it initiates outbound connections to Cloudflare.
 - There is intentionally no Kubernetes Service for `cloudflared`. Port `2000` is a pod-local readiness and Prometheus metrics endpoint.
 - The container runs as the image's non-root user, has a read-only root filesystem, receives no Kubernetes API token, and has all Linux capabilities dropped.
-- The image uses Cloudflare's immutable build tag `1899-3a2b45c2a511`, corresponding to the 2026.7.3 release. Upgrade it through a reviewed manifest change.
+- The image uses Cloudflare's immutable build tag `2012-518d7f7969b7`, corresponding to the 2026.11.1 release. Upgrade it through a reviewed manifest change.
 - If the tunnel token is exposed, rotate it in Cloudflare, update the GitHub Environment secret, and run `deploy` again.

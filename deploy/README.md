@@ -35,7 +35,7 @@ render-time placeholders replaced by the deployment workflow.
 - One `web`, `api`, and `worker` replica.
 - One local PostgreSQL StatefulSet with TLS, a 50 GiB local-path volume, and
   daily logical backups to a separate 20 GiB local-path volume.
-- One Keycloak instance managed by the pinned `26.7.0` operator.
+- One Keycloak instance managed by the pinned `26.8.2` operator.
 - Two `cloudflared` connector Pods and no ingress controller, LoadBalancer,
   NodePort, Caddy, or public Kubernetes API.
 - Namespace default-deny ingress plus explicit web, API, Keycloak, and
